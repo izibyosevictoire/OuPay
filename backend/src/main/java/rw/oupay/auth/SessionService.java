@@ -1,8 +1,5 @@
 package rw.oupay.auth;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -82,19 +79,24 @@ public class SessionService {
         sessions.findById(sessionId).ifPresent(s -> s.revoke(clock.instant()));
     }
 
-    /** Signs a user out everywhere: used after a password change or when access is withdrawn. */
+    /** Signs a user out everywhere: used after a password reset or when access is withdrawn. */
     @Transactional
     public void revokeAll(UUID userId) {
         Instant now = clock.instant();
         sessions.findByUserIdAndRevokedAtIsNull(userId).forEach(s -> s.revoke(now));
     }
 
+    /** After a password change: every other device is signed out, the one that changed it stays signed in. */
+    @Transactional
+    public void revokeAllExcept(UUID userId, UUID keepSessionId) {
+        Instant now = clock.instant();
+        sessions.findByUserIdAndRevokedAtIsNull(userId).stream()
+                .filter(s -> !s.getId().equals(keepSessionId))
+                .forEach(s -> s.revoke(now));
+    }
+
     static byte[] hash(String raw) {
-        try {
-            return MessageDigest.getInstance("SHA-256").digest(raw.getBytes(StandardCharsets.UTF_8));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
-        }
+        return rw.oupay.common.TokenHashing.sha256(raw);
     }
 
     private static String truncate(String value, int max) {

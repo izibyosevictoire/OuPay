@@ -8,5 +8,7 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
 
     List<AuditLog> findByMerchantIdOrderByIdDesc(UUID merchantId, org.springframework.data.domain.Pageable pageable);
 
+    List<AuditLog> findByMerchantIdAndIdLessThanOrderByIdDesc(UUID merchantId, long beforeId, org.springframework.data.domain.Pageable pageable);
+
     List<AuditLog> findByMerchantIdAndBankTransactionIdOrderByIdAsc(UUID merchantId, UUID bankTransactionId);
 }

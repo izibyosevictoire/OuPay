@@ -22,6 +22,7 @@ import rw.oupay.branch.Branch;
 import rw.oupay.branch.BranchAssignmentRepository;
 import rw.oupay.branch.BranchRepository;
 import rw.oupay.common.ApiException;
+import rw.oupay.common.Pagination;
 import rw.oupay.ledger.InvoiceBalanceReader;
 import rw.oupay.ledger.LedgerMath;
 import rw.oupay.membership.Actor;
@@ -83,15 +84,19 @@ public class InvoiceService {
 
     /** Cashiers receive only invoices assigned to them: the restriction is in the query itself. */
     @Transactional(readOnly = true)
-    public InvoiceDtos.InvoicePage list(UUID merchantId, Integer limit) {
+    public InvoiceDtos.InvoicePage list(UUID merchantId, Integer limit, String cursor) {
         Actor actor = access.require(merchantId, Permission.INVOICES_VIEW);
-        List<Invoice> all = actor.hasFullScope(Permission.INVOICES_VIEW)
-                ? invoices.findAllForMerchant(merchantId)
-                : invoices.findAssignedTo(merchantId, actor.userId());
-        List<Invoice> page = limit != null && limit > 0 && limit < all.size() ? all.subList(0, limit) : all;
-        Map<UUID, Long> allocated = balances.allocatedByInvoice(page.stream().map(Invoice::getId).toList());
-        return new InvoiceDtos.InvoicePage(page.stream().map(i -> toDto(i, allocated.getOrDefault(i.getId(), 0L))).toList(),
-                all.size(), null);
+        int size = Pagination.limit(limit);
+        var position = Pagination.decode(cursor);
+        boolean everything = actor.hasFullScope(Permission.INVOICES_VIEW);
+        List<Invoice> fetched = everything
+                ? invoices.pageForMerchant(merchantId, position.at(), position.id(), Pagination.fetch(size))
+                : invoices.pageAssignedTo(merchantId, actor.userId(), position.at(), position.id(), Pagination.fetch(size));
+        long total = everything ? invoices.countByMerchantId(merchantId) : invoices.countByMerchantIdAndAssignedToUserId(merchantId, actor.userId());
+        var page = Pagination.page(fetched, size, Invoice::getCreatedAt, Invoice::getId, total);
+        Map<UUID, Long> allocated = balances.allocatedByInvoice(page.items().stream().map(Invoice::getId).toList());
+        return new InvoiceDtos.InvoicePage(page.items().stream().map(i -> toDto(i, allocated.getOrDefault(i.getId(), 0L))).toList(),
+                total, page.nextCursor());
     }
 
     @Transactional(readOnly = true)

@@ -24,8 +24,9 @@ public class InvoiceController {
     }
 
     @GetMapping
-    InvoiceDtos.InvoicePage list(@PathVariable UUID merchantId, @RequestParam(required = false) Integer limit) {
-        return service.list(merchantId, limit);
+    InvoiceDtos.InvoicePage list(@PathVariable UUID merchantId, @RequestParam(required = false) Integer limit,
+                                 @RequestParam(required = false) String cursor) {
+        return service.list(merchantId, limit, cursor);
     }
 
     @GetMapping("/form-options")

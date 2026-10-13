@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import rw.oupay.common.Pagination;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -25,8 +27,9 @@ public class ReconciliationController {
     }
 
     @GetMapping("/bank-transactions")
-    List<ReconciliationDtos.BankTransactionView> list(@PathVariable UUID merchantId) {
-        return service.listTransactions(merchantId);
+    Pagination.Page<ReconciliationDtos.BankTransactionView> list(@PathVariable UUID merchantId, @RequestParam(required = false) Integer limit,
+                                                                 @RequestParam(required = false) String cursor) {
+        return service.listTransactions(merchantId, limit, cursor);
     }
 
     @GetMapping("/bank-transactions/{transactionId}")
@@ -35,8 +38,9 @@ public class ReconciliationController {
     }
 
     @GetMapping("/payment-allocations")
-    List<ReconciliationDtos.AllocationView> allocations(@PathVariable UUID merchantId) {
-        return service.listAllocations(merchantId);
+    Pagination.Page<ReconciliationDtos.AllocationView> allocations(@PathVariable UUID merchantId, @RequestParam(required = false) Integer limit,
+                                                                   @RequestParam(required = false) String cursor) {
+        return service.listAllocations(merchantId, limit, cursor);
     }
 
     @GetMapping("/payable-invoices")

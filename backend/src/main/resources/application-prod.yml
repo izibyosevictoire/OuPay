@@ -1,13 +1,24 @@
-# Production hardening. Required environment: OUPAY_DB_URL, OUPAY_DB_USER, OUPAY_DB_PASSWORD.
+# Production hardening. Required environment: OUPAY_DB_URL, OUPAY_DB_USER, OUPAY_DB_PASSWORD,
+# OUPAY_APP_BASE_URL (https), OUPAY_SMTP_HOST (and credentials). See docs/operations.md.
 springdoc:
   api-docs:
     enabled: false
   swagger-ui:
     enabled: false
+logging:
+  structured:
+    format:
+      # One JSON object per line (ECS), including the correlation id from the logging context.
+      console: ecs
 oupay:
   security:
     session:
       secure-cookie: true
+      # The __Host- prefix makes the browser refuse the cookie unless it is Secure, Path=/ and has no Domain.
+      cookie-name: __Host-oupay_session
+  email:
+    provider: smtp
+    sink-endpoint-enabled: false
   integrations:
     simulated:
       enabled: false

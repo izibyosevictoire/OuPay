@@ -4,6 +4,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.HexFormat;
@@ -36,12 +38,17 @@ public class SimulatedProviderAdapter implements BankingProviderAdapter,
     private static final Pattern DEMO_REFERENCE = Pattern.compile("^SIM-[A-Z0-9]{4,12}$");
     private static final long MAX_AMOUNT = 10_000_000_000L;
 
+    /** An event signed longer ago (or further in the future) than this is a replay or a clock fault: refused. */
+    static final Duration TIMESTAMP_TOLERANCE = Duration.ofMinutes(5);
+
     private final JsonMapper json;
     private final SimulatedProviderProperties properties;
+    private final Clock clock;
 
-    public SimulatedProviderAdapter(JsonMapper json, SimulatedProviderProperties properties) {
+    public SimulatedProviderAdapter(JsonMapper json, SimulatedProviderProperties properties, Clock clock) {
         this.json = json;
         this.properties = properties;
+        this.clock = clock;
     }
 
     @Override
@@ -81,6 +88,12 @@ public class SimulatedProviderAdapter implements BankingProviderAdapter,
                 "••••" + reference.substring(reference.length() - 4), null);
     }
 
+    /**
+     * The header looks like {@code t=<epoch seconds>,v1=<hex>} and the signature is the HMAC-SHA256 of
+     * {@code t + "." + body}. Binding the timestamp into the signature means a captured request cannot be
+     * replayed later (it falls outside the tolerance) and the timestamp cannot be changed without
+     * invalidating the signature. (A stand-in format: a real provider defines its own.)
+     */
     @Override
     public boolean isAuthentic(Map<String, String> headers, String rawBody) {
         String secret = properties.sharedSecret();
@@ -88,24 +101,49 @@ public class SimulatedProviderAdapter implements BankingProviderAdapter,
         if (secret == null || secret.isBlank() || supplied == null || rawBody == null) {
             return false;
         }
+        String timestamp = null;
+        String signature = null;
+        for (String part : supplied.split(",")) {
+            String piece = part.trim();
+            if (piece.startsWith("t=")) {
+                timestamp = piece.substring(2);
+            } else if (piece.startsWith("v1=")) {
+                signature = piece.substring(3);
+            }
+        }
+        if (timestamp == null || signature == null) {
+            return false;
+        }
         try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            byte[] expected = mac.doFinal(rawBody.getBytes(StandardCharsets.UTF_8));
-            byte[] given = HexFormat.of().parseHex(supplied.trim().toLowerCase(Locale.ROOT));
+            long signedAt = Long.parseLong(timestamp);
+            if (Math.abs(clock.instant().getEpochSecond() - signedAt) > TIMESTAMP_TOLERANCE.toSeconds()) {
+                return false;
+            }
+            byte[] expected = hmac(secret, timestamp + "." + rawBody);
+            byte[] given = HexFormat.of().parseHex(signature.trim().toLowerCase(Locale.ROOT));
             // Constant-time comparison: no timing signal about how much of the signature matched.
             return MessageDigest.isEqual(expected, given);
-        } catch (NoSuchAlgorithmException | InvalidKeyException | IllegalArgumentException e) {
+        } catch (IllegalArgumentException e) {
             return false;
         }
     }
 
-    /** Computes the signature a legitimate simulator would send. Used by tests and the dev tooling. */
+    /** Computes the header a legitimate simulator would send for a body signed at the given time. */
+    public static String sign(String secret, String rawBody, Instant signedAt) {
+        String timestamp = Long.toString(signedAt.getEpochSecond());
+        return "t=" + timestamp + ",v1=" + HexFormat.of().formatHex(hmac(secret, timestamp + "." + rawBody));
+    }
+
+    /** Signed now. Used by tests and the dev tooling. */
     public static String sign(String secret, String rawBody) {
+        return sign(secret, rawBody, Instant.now());
+    }
+
+    private static byte[] hmac(String secret, String message) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            return HexFormat.of().formatHex(mac.doFinal(rawBody.getBytes(StandardCharsets.UTF_8)));
+            return mac.doFinal(message.getBytes(StandardCharsets.UTF_8));
         } catch (NoSuchAlgorithmException | InvalidKeyException e) {
             throw new IllegalStateException(e);
         }

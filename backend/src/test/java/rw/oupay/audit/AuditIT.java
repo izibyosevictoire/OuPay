@@ -25,7 +25,7 @@ class AuditIT extends IntegrationTest {
     void importantActionsLeaveAnAuditTrailThatOwnersAndManagersCanRead() {
         var invoice = w.issuedInvoice(10_000);
         w.bank.pay("POSTED", 4_000, jdbc.queryForObject("select invoice_number from invoices where id = ?", String.class, invoice));
-        var entries = w.manager.get(log() + "?limit=200").json();
+        var entries = w.manager.get(log() + "?limit=200").json().path("items");
         var kinds = new java.util.HashSet<String>();
         entries.forEach(e -> kinds.add(e.path("kind").asString()));
         assertThat(kinds).contains("MERCHANT_REGISTERED", "BANK_LINK_COMPLETED", "INVOICE_DRAFT_CREATED", "INVOICE_ISSUED",

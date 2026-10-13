@@ -15,6 +15,7 @@ import rw.oupay.audit.AuditService;
 import rw.oupay.banking.BankConnection;
 import rw.oupay.banking.BankConnectionRepository;
 import rw.oupay.banking.BankingProviderAdapter.NormalizedBankEvent;
+import rw.oupay.common.TokenHashing;
 import rw.oupay.invoice.Invoice;
 import rw.oupay.invoice.InvoiceRepository;
 import rw.oupay.invoice.InvoiceStatus;
@@ -60,11 +61,12 @@ public class BankEventProcessor {
     private final LedgerOperations ledger;
     private final NotificationService notifications;
     private final AuditService audit;
+    private final FinancialMetrics metrics;
     private final Clock clock;
 
     public BankEventProcessor(JdbcClient jdbc, BankConnectionRepository connections, BankTransactionRepository transactions,
                               PaymentRequestRepository requests, InvoiceRepository invoices, LedgerOperations ledger,
-                              NotificationService notifications, AuditService audit, Clock clock) {
+                              NotificationService notifications, AuditService audit, FinancialMetrics metrics, Clock clock) {
         this.jdbc = jdbc;
         this.connections = connections;
         this.transactions = transactions;
@@ -73,23 +75,49 @@ public class BankEventProcessor {
         this.ledger = ledger;
         this.notifications = notifications;
         this.audit = audit;
+        this.metrics = metrics;
         this.clock = clock;
     }
 
-    /** @param rawPayload the exact payload as received; stored immutably before anything else happens. */
+    /**
+     * @param rawPayload the payload as received. It is hashed, then stored REDACTED (see {@link EventPayloadRedactor}),
+     *                   immutably, before anything else happens.
+     */
     @Transactional
     public Result process(NormalizedBankEvent event, String rawPayload) {
+        Result result = processInternal(event, rawPayload);
+        metrics.bankEvent(event.providerId().name(), result.outcome().name(), merchantOf(event), result.transactionId());
+        return result;
+    }
+
+    private UUID merchantOf(NormalizedBankEvent event) {
+        return jdbc.sql("select merchant_id from bank_events where provider_id = :p and provider_event_id = :e")
+                .param("p", event.providerId().name()).param("e", event.providerEventId()).query(UUID.class).optional().orElse(null);
+    }
+
+    private Result processInternal(NormalizedBankEvent event, String rawPayload) {
         Instant now = clock.instant();
+        String payloadHash = TokenHashing.sha256Hex(rawPayload);
 
         // 1. Idempotency. The unique index makes this the single point that decides "seen before".
-        int inserted = jdbc.sql("insert into bank_events (id, provider_id, provider_event_id, provider_transaction_id, outcome, raw_payload, received_at) "
-                        + "values (:id, :p, :e, :t, 'RECEIVED', :raw, :now) on conflict (provider_id, provider_event_id) do nothing")
+        int inserted = jdbc.sql("insert into bank_events (id, provider_id, provider_event_id, provider_transaction_id, outcome, raw_payload, payload_sha256, received_at) "
+                        + "values (:id, :p, :e, :t, 'RECEIVED', :raw, :hash, :now) on conflict (provider_id, provider_event_id) do nothing")
                 .param("id", UUID.randomUUID()).param("p", event.providerId().name()).param("e", event.providerEventId())
-                .param("t", event.providerTransactionId()).param("raw", rawPayload).param("now", Timestamp.from(now)).update();
+                .param("t", event.providerTransactionId()).param("raw", EventPayloadRedactor.redact(rawPayload)).param("hash", payloadHash)
+                .param("now", Timestamp.from(now)).update();
         if (inserted == 0) {
             Optional<UUID> knownMerchant = jdbc.sql("select merchant_id from bank_events where provider_id = :p and provider_event_id = :e")
                     .param("p", event.providerId().name()).param("e", event.providerEventId()).query(UUID.class).optional();
             UUID txId = findTransactionId(event).orElse(null);
+            // Same event id, different content: a replay with a tampered body (or a provider bug). Never applied; always recorded.
+            boolean mismatch = jdbc.sql("select payload_sha256 is not null and payload_sha256 <> :h from bank_events where provider_id = :p and provider_event_id = :e")
+                    .param("h", payloadHash).param("p", event.providerId().name()).param("e", event.providerEventId())
+                    .query(Boolean.class).optional().orElse(false);
+            if (mismatch) {
+                knownMerchant.ifPresent(m -> audit.recordLedger(m, null, "REPLAY_PAYLOAD_MISMATCH", txId, null,
+                        "A repeated provider event id arrived with different content and was ignored."));
+                metrics.replayMismatch(event.providerId().name(), knownMerchant.orElse(null));
+            }
             knownMerchant.ifPresent(m -> audit.recordLedger(m, null, "DUPLICATE_EVENT_IGNORED", txId, null,
                     "Ignored a repeated provider event."));
             return new Result(Outcome.DUPLICATE, txId, "This event was already processed.");

@@ -46,6 +46,9 @@ public class User {
     @Column(name = "password_changed_at")
     private Instant passwordChangedAt;
 
+    @Column(name = "email_verified_at")
+    private Instant emailVerifiedAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -77,6 +80,8 @@ public class User {
     public UserStatus getStatus() { return status; }
     public int getFailedLoginAttempts() { return failedLoginAttempts; }
     public Instant getLockedUntil() { return lockedUntil; }
+    public Instant getEmailVerifiedAt() { return emailVerifiedAt; }
+    public boolean isEmailVerified() { return emailVerifiedAt != null; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public long getVersion() { return version; }
@@ -84,6 +89,31 @@ public class User {
     public void setPasswordHash(String hash, Instant now) {
         this.passwordHash = hash;
         this.passwordChangedAt = now;
+        this.updatedAt = now;
+    }
+
+    public void markEmailVerified(Instant now) {
+        if (this.emailVerifiedAt == null) {
+            this.emailVerifiedAt = now;
+            this.updatedAt = now;
+        }
+    }
+
+    /** A password reset also lifts a lockout: the owner of the mailbox has proven who they are. */
+    public void clearLockout(Instant now) {
+        this.failedLoginAttempts = 0;
+        this.lockedUntil = null;
+        this.updatedAt = now;
+    }
+
+    /** Turns the placeholder created for an invitation into a real account (the invitation link proved the mailbox). */
+    public void activateFromInvitation(String fullName, String phoneNumber, String passwordHash, Instant now) {
+        this.fullName = fullName;
+        this.phoneNumber = phoneNumber;
+        this.passwordHash = passwordHash;
+        this.passwordChangedAt = now;
+        this.status = UserStatus.ACTIVE;
+        this.emailVerifiedAt = now;
         this.updatedAt = now;
     }
 

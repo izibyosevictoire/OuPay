@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import rw.oupay.common.Pagination;
 
 /**
  * Writes audit entries in the caller's transaction, so a change and its audit record commit or
@@ -25,12 +26,25 @@ public class AuditService {
     }
 
     /** The business's own audit trail (owners and managers). */
+    /** Newest first, keyed by the (strictly increasing) id, so paging is stable while new entries are appended. */
     @Transactional(readOnly = true)
-    public java.util.List<Entry> listForMerchant(UUID merchantId, int limit) {
+    public Pagination.Page<Entry> listForMerchant(UUID merchantId, Integer limit, String cursor) {
         access.require(merchantId, rw.oupay.membership.Permission.REPORTS_VIEW);
-        return repository.findByMerchantIdOrderByIdDesc(merchantId, org.springframework.data.domain.PageRequest.of(0, Math.max(1, Math.min(limit, 200)))).stream()
+        int size = Pagination.limit(limit);
+        long before = Long.MAX_VALUE;
+        if (cursor != null && !cursor.isBlank()) {
+            try {
+                before = Long.parseLong(cursor);
+            } catch (NumberFormatException e) {
+                throw new rw.oupay.common.ApiException(org.springframework.http.HttpStatus.BAD_REQUEST, "bad_request", "The page cursor is not valid.");
+            }
+        }
+        var fetched = repository.findByMerchantIdAndIdLessThanOrderByIdDesc(merchantId, before, Pagination.fetch(size));
+        boolean more = fetched.size() > size;
+        var items = (more ? fetched.subList(0, size) : fetched).stream()
                 .map(e -> new Entry(e.getId(), e.getKind(), e.getActorUserId(), e.getBankTransactionId(), e.getInvoiceId(), e.getMessage(), e.getCreatedAt()))
                 .toList();
+        return new Pagination.Page<>(items, more ? String.valueOf(items.get(size - 1).id()) : null, null);
     }
 
     @Transactional

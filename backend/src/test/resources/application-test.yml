@@ -11,7 +11,14 @@ oupay:
     public-read-per-minute: 100000
     public-write-per-minute: 100000
     auth-per-minute: 100000
+    recovery-per-minute: 100000
     webhook-per-minute: 100000
+  email:
+    provider: sink
+    sink-endpoint-enabled: true
+    dispatcher:
+      # Tests call the dispatcher themselves, so delivery is deterministic.
+      enabled: false
   integrations:
     simulated:
       enabled: true

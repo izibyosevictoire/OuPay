@@ -7,6 +7,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import rw.oupay.common.Pagination;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -20,8 +22,9 @@ public class NotificationController {
     }
 
     @GetMapping
-    List<NotificationService.NotificationDto> list(@PathVariable UUID merchantId) {
-        return service.list(merchantId);
+    Pagination.Page<NotificationService.NotificationDto> list(@PathVariable UUID merchantId, @RequestParam(required = false) Integer limit,
+                                                              @RequestParam(required = false) String cursor) {
+        return service.list(merchantId, limit, cursor);
     }
 
     @PostMapping("/{notificationId}/read")

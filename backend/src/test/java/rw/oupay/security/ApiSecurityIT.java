@@ -55,7 +55,8 @@ class ApiSecurityIT extends IntegrationTest {
 
     private static final Set<String> ANONYMOUS_BY_DESIGN_PREFIXES = Set.of("/api/v1/public/", "/api/v1/integrations/");
     private static final Set<String> ANONYMOUS_BY_DESIGN_EXACT = Set.of("/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/auth/session",
-            "/api/v1/auth/password-reset/request", "/api/v1/auth/password-reset/verify", "/api/v1/auth/password-reset/confirm");
+            "/api/v1/auth/password-reset/request", "/api/v1/auth/password-reset/verify", "/api/v1/auth/password-reset/confirm",
+            "/api/v1/auth/email-verification/confirm", "/api/v1/dev/mail");
 
     private static boolean anonymousByDesign(Route route) {
         return ANONYMOUS_BY_DESIGN_EXACT.contains(route.pattern())
@@ -76,7 +77,8 @@ class ApiSecurityIT extends IntegrationTest {
         // The ENTIRE anonymous surface, spelled out. Adding anything here must be a conscious decision.
         assertThat(anonymous).containsExactlyInAnyOrder(
                 "GET /api/v1/auth/session", "POST /api/v1/auth/login", "POST /api/v1/auth/register",
-                "POST /api/v1/auth/password-reset/request", "GET /api/v1/auth/password-reset/verify", "POST /api/v1/auth/password-reset/confirm",
+                "POST /api/v1/auth/password-reset/request", "POST /api/v1/auth/password-reset/verify", "POST /api/v1/auth/password-reset/confirm",
+                "POST /api/v1/auth/email-verification/confirm", "GET /api/v1/dev/mail",
                 "GET /api/v1/public/payment-profiles/{token}", "POST /api/v1/public/payment-profiles/{token}/requests",
                 "GET /api/v1/public/payment-profiles/{token}/requests/{reference}",
                 "POST /api/v1/public/payment-profiles/{token}/requests/{reference}/instructions-opened",

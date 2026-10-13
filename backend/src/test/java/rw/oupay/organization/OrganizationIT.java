@@ -201,12 +201,4 @@ class OrganizationIT extends IntegrationTest {
         assertThat(w.cafeOwner.post(m("/memberships/" + w.cashierMembershipId + "/suspend"), null).status()).isEqualTo(404);
     }
 
-    @Test
-    void invitationsAreHonestlyNotImplemented() {
-        for (TestApi api : List.of(w.owner, w.manager)) {
-            var invite = api.post(m("/invitations"), Map.of("email", "x@y.rw", "role", "CASHIER", "branchIds", List.of()));
-            assertThat(invite.status()).isEqualTo(501);
-            assertThat(invite.code()).isEqualTo("not_implemented");
-        }
-    }
 }

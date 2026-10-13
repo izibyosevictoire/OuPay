@@ -30,10 +30,10 @@ public final class AuthDtos {
             Boolean rememberMe) {}
 
     public record UserDto(UUID id, String fullName, String email, String phoneNumber, UserStatus status,
-                          Instant createdAt, Instant updatedAt) {
+                          Instant createdAt, Instant updatedAt, boolean emailVerified) {
         static UserDto of(User u) {
             return new UserDto(u.getId(), u.getFullName(), u.getEmail(), u.getPhoneNumber(), u.getStatus(),
-                    u.getCreatedAt(), u.getUpdatedAt());
+                    u.getCreatedAt(), u.getUpdatedAt(), u.isEmailVerified());
         }
     }
 
@@ -44,6 +44,14 @@ public final class AuthDtos {
                     m.getCreatedAt(), m.getUpdatedAt());
         }
     }
+
+    public record PasswordResetRequest(@NotBlank @Email @Size(max = 254) String email) {}
+
+    public record PasswordResetConfirm(@NotBlank @Size(max = 128) String token, @NotBlank @Size(max = 128) String newPassword) {}
+
+    public record ChangePasswordRequest(@NotBlank @Size(max = 128) String currentPassword, @NotBlank @Size(max = 128) String newPassword) {}
+
+    public record TokenRequest(@NotBlank @Size(max = 128) String token) {}
 
     /** Contains no credentials or tokens: the session itself lives in an HttpOnly cookie. */
     public record SessionDto(UserDto user, List<MembershipDto> memberships, Instant expiresAt) {}

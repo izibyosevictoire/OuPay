@@ -11,6 +11,9 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
 
     List<Notification> findByMerchantIdAndRecipientUserIdOrderByCreatedAtDesc(UUID merchantId, UUID recipientUserId);
 
+    @Query("select n from Notification n where n.merchantId = :merchantId and n.recipientUserId = :userId and (n.createdAt < :at or (n.createdAt = :at and n.id < :id)) order by n.createdAt desc, n.id desc")
+    List<Notification> page(UUID merchantId, UUID userId, java.time.Instant at, UUID id, org.springframework.data.domain.Pageable pageable);
+
     Optional<Notification> findByIdAndMerchantIdAndRecipientUserId(UUID id, UUID merchantId, UUID recipientUserId);
 
     @Modifying

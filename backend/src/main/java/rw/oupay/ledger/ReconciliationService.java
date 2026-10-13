@@ -17,6 +17,7 @@ import rw.oupay.audit.AuditLogRepository;
 import rw.oupay.audit.AuditService;
 import rw.oupay.banking.BankConnectionRepository;
 import rw.oupay.common.ApiException;
+import rw.oupay.common.Pagination;
 import rw.oupay.invoice.Invoice;
 import rw.oupay.invoice.InvoiceRepository;
 import rw.oupay.invoice.InvoiceStatus;
@@ -69,9 +70,16 @@ public class ReconciliationService {
     // ---- reads ---------------------------------------------------------------------------------
 
     @Transactional(readOnly = true)
-    public List<ReconciliationDtos.BankTransactionView> listTransactions(UUID merchantId) {
+    public Pagination.Page<ReconciliationDtos.BankTransactionView> listTransactions(UUID merchantId, Integer limit, String cursor) {
         Actor actor = access.require(merchantId, Permission.TRANSACTIONS_VIEW);
-        return views(merchantId, scopeUser(actor, Permission.TRANSACTIONS_VIEW));
+        UUID restrict = scopeUser(actor, Permission.TRANSACTIONS_VIEW);
+        int size = Pagination.limit(limit);
+        var position = Pagination.decode(cursor);
+        List<BankTransaction> fetched = restrict == null
+                ? transactions.pageForMerchant(merchantId, position.at(), position.id(), Pagination.fetch(size))
+                : transactions.pageForAssignee(merchantId, restrict, position.at(), position.id(), Pagination.fetch(size));
+        var page = Pagination.page(fetched, size, BankTransaction::getProviderOccurredAt, BankTransaction::getId, null);
+        return new Pagination.Page<>(buildViews(merchantId, page.items(), restrict), page.nextCursor(), null);
     }
 
     @Transactional(readOnly = true)
@@ -81,9 +89,16 @@ public class ReconciliationService {
     }
 
     @Transactional(readOnly = true)
-    public List<ReconciliationDtos.AllocationView> listAllocations(UUID merchantId) {
+    public Pagination.Page<ReconciliationDtos.AllocationView> listAllocations(UUID merchantId, Integer limit, String cursor) {
         Actor actor = access.require(merchantId, Permission.PAYMENTS_VIEW_CONFIRMATIONS);
-        return allocationViews(merchantId, scopeUser(actor, Permission.PAYMENTS_VIEW_CONFIRMATIONS));
+        UUID restrict = scopeUser(actor, Permission.PAYMENTS_VIEW_CONFIRMATIONS);
+        int size = Pagination.limit(limit);
+        var position = Pagination.decode(cursor);
+        List<PaymentAllocation> fetched = restrict == null
+                ? allocations.pageForMerchant(merchantId, position.at(), position.id(), Pagination.fetch(size))
+                : allocations.pageForAssignee(merchantId, restrict, position.at(), position.id(), Pagination.fetch(size));
+        var page = Pagination.page(fetched, size, PaymentAllocation::getCreatedAt, PaymentAllocation::getId, null);
+        return new Pagination.Page<>(toAllocationViews(merchantId, page.items(), restrict), page.nextCursor(), null);
     }
 
     @Transactional(readOnly = true)
@@ -217,14 +232,25 @@ public class ReconciliationService {
         return result;
     }
 
+    /** Every transaction of the business (dashboard aggregates). The paged endpoints use {@link #pageTransactions}. */
     public List<ReconciliationDtos.BankTransactionView> views(UUID merchantId, UUID restrictToUserId) {
-        Map<UUID, Invoice> invoicesById = invoices.findAllForMerchant(merchantId).stream().collect(Collectors.toMap(Invoice::getId, Function.identity()));
-        Map<UUID, List<PaymentAllocation>> byTransaction = allocations.findByMerchantId(merchantId).stream()
+        return buildViews(merchantId, transactions.findAllForMerchant(merchantId), restrictToUserId);
+    }
+
+    /** Builds read models for exactly these transactions: allocations and invoices are loaded for them only. */
+    private List<ReconciliationDtos.BankTransactionView> buildViews(UUID merchantId, List<BankTransaction> txs, UUID restrictToUserId) {
+        if (txs.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, List<PaymentAllocation>> byTransaction = allocations.findByTransactionIds(txs.stream().map(BankTransaction::getId).toList()).stream()
                 .collect(Collectors.groupingBy(PaymentAllocation::getBankTransactionId));
+        Set<UUID> invoiceIds = byTransaction.values().stream().flatMap(List::stream).map(PaymentAllocation::getInvoiceId).collect(Collectors.toSet());
+        Map<UUID, Invoice> invoicesById = invoiceIds.isEmpty() ? Map.of()
+                : invoices.findAllByIdsAndMerchant(invoiceIds, merchantId).stream().collect(Collectors.toMap(Invoice::getId, Function.identity()));
         Map<UUID, String> accounts = connections.findByMerchantIdOrderByCreatedAtAsc(merchantId).stream()
                 .collect(Collectors.toMap(c -> c.getId(), c -> c.getProviderAccountId() == null ? "" : c.getProviderAccountId()));
         List<ReconciliationDtos.BankTransactionView> result = new ArrayList<>();
-        for (BankTransaction tx : transactions.findAllForMerchant(merchantId)) {
+        for (BankTransaction tx : txs) {
             List<PaymentAllocation> own = byTransaction.getOrDefault(tx.getId(), List.of());
             if (restrictToUserId != null) {
                 own = own.stream().filter(a -> restrictToUserId.equals(invoicesById.get(a.getInvoiceId()).getAssignedToUserId())).toList();
@@ -259,12 +285,18 @@ public class ReconciliationService {
                 links, cashiers);
     }
 
-    List<ReconciliationDtos.AllocationView> allocationViews(UUID merchantId, UUID restrictToUserId) {
-        Map<UUID, Invoice> invoicesById = invoices.findAllForMerchant(merchantId).stream().collect(Collectors.toMap(Invoice::getId, Function.identity()));
-        Map<UUID, BankTransaction> txById = transactions.findAllForMerchant(merchantId).stream().collect(Collectors.toMap(BankTransaction::getId, Function.identity()));
-        return allocations.findByMerchantId(merchantId).stream()
+    /** Allocation read models for exactly these allocations (invoices and transactions loaded for them only). */
+    private List<ReconciliationDtos.AllocationView> toAllocationViews(UUID merchantId, List<PaymentAllocation> list, UUID restrictToUserId) {
+        if (list.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, Invoice> invoicesById = invoices.findAllByIdsAndMerchant(
+                list.stream().map(PaymentAllocation::getInvoiceId).collect(Collectors.toSet()), merchantId).stream()
+                .collect(Collectors.toMap(Invoice::getId, Function.identity()));
+        Map<UUID, BankTransaction> txById = transactions.findAllById(list.stream().map(PaymentAllocation::getBankTransactionId).collect(Collectors.toSet()))
+                .stream().collect(Collectors.toMap(BankTransaction::getId, Function.identity()));
+        return list.stream()
                 .filter(a -> restrictToUserId == null || restrictToUserId.equals(invoicesById.get(a.getInvoiceId()).getAssignedToUserId()))
-                .sorted(Comparator.comparing(PaymentAllocation::getCreatedAt).reversed())
                 .map(a -> {
                     Invoice invoice = invoicesById.get(a.getInvoiceId());
                     BankTransaction tx = txById.get(a.getBankTransactionId());
@@ -277,9 +309,13 @@ public class ReconciliationService {
     }
 
     private ReconciliationDtos.Details detailsOf(UUID merchantId, UUID transactionId, UUID restrictToUserId) {
-        var transaction = views(merchantId, restrictToUserId).stream().filter(v -> v.id().equals(transactionId)).findFirst()
+        BankTransaction tx = transactions.findByIdAndMerchantId(transactionId, merchantId)
                 .orElseThrow(() -> ApiException.notFound("This transaction could not be found."));
-        var txAllocations = allocationViews(merchantId, restrictToUserId).stream().filter(a -> a.bankTransactionId().equals(transactionId)).toList();
+        var transaction = buildViews(merchantId, List.of(tx), restrictToUserId).stream().findFirst()
+                .orElseThrow(() -> ApiException.notFound("This transaction could not be found."));
+        var txAllocations = toAllocationViews(merchantId,
+                allocations.findByBankTransactionId(transactionId).stream().sorted(Comparator.comparing(PaymentAllocation::getCreatedAt).reversed()).toList(),
+                restrictToUserId);
         Set<UUID> ownInvoices = txAllocations.stream().map(ReconciliationDtos.AllocationView::invoiceId).collect(Collectors.toSet());
         // Cashiers see the audit entries of their own invoices only; staff-level history stays private.
         List<ReconciliationDtos.AuditEntry> history = auditLog.findByMerchantIdAndBankTransactionIdOrderByIdAsc(merchantId, transactionId).stream()

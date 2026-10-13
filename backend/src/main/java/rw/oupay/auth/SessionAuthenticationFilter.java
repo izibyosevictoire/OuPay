@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
+import org.slf4j.MDC;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -32,6 +33,7 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
                     sessions.authenticate(cookie.getValue()).ifPresent(principal -> {
                         var authentication = UsernamePasswordAuthenticationToken.authenticated(principal, null, List.of());
                         SecurityContextHolder.getContext().setAuthentication(authentication);
+                        MDC.put("userId", principal.userId().toString());
                     });
                     break;
                 }

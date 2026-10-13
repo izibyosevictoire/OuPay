@@ -30,17 +30,19 @@ public class LedgerOperations {
     private final InvoiceRepository invoices;
     private final AuditService audit;
     private final NotificationService notifications;
+    private final FinancialMetrics metrics;
     private final Clock clock;
 
     public LedgerOperations(PaymentAllocationRepository allocations, BankTransactionRepository transactions,
                             InvoiceBalanceReader balances, InvoiceRepository invoices, AuditService audit,
-                            NotificationService notifications, Clock clock) {
+                            NotificationService notifications, FinancialMetrics metrics, Clock clock) {
         this.allocations = allocations;
         this.transactions = transactions;
         this.balances = balances;
         this.invoices = invoices;
         this.audit = audit;
         this.notifications = notifications;
+        this.metrics = metrics;
         this.clock = clock;
     }
 
@@ -85,6 +87,7 @@ public class LedgerOperations {
                 tx.getId(), invoice.getId(),
                 (origin == PaymentAllocation.Origin.MANUAL ? "Manually" : "Automatically") + " applied RWF " + amount + " to invoice "
                         + invoice.getInvoiceNumber() + "." + (note == null || note.isBlank() ? "" : " Note: " + note));
+        metrics.allocated(origin.name(), amount, tx.getMerchantId(), tx.getId(), invoice.getId());
         return allocation;
     }
 
@@ -99,6 +102,8 @@ public class LedgerOperations {
         transactions.findById(allocation.getBankTransactionId()).ifPresent(t -> t.touch(clock.instant()));
         audit.recordLedger(allocation.getMerchantId(), actorUserId, "ALLOCATION_REVERSED", allocation.getBankTransactionId(),
                 allocation.getInvoiceId(), "Reversed the allocation of RWF " + allocation.getAmountRwf() + " (" + reason + ").");
+        metrics.reversed(kind.name(), allocation.getAmountRwf(), allocation.getMerchantId(), allocation.getBankTransactionId(),
+                allocation.getInvoiceId());
         return allocation;
     }
 
@@ -120,6 +125,7 @@ public class LedgerOperations {
     public void flagForReview(BankTransaction tx, String reason) {
         tx.flagForReview(reason, clock.instant());
         audit.recordLedger(tx.getMerchantId(), null, "FLAGGED_FOR_REVIEW", tx.getId(), null, reason);
+        metrics.flaggedForReview(tx.getMerchantId(), tx.getId());
         notifications.needsReview(tx, reason);
     }
 }

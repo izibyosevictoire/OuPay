@@ -31,7 +31,12 @@ public class PasswordService {
     }
 
     public boolean matches(String rawPassword, String hash) {
-        return hash != null && encoder.matches(rawPassword, hash);
+        if (hash == null) {
+            // An invited placeholder has no password: spend the same time as a real check.
+            burnTime(rawPassword);
+            return false;
+        }
+        return encoder.matches(rawPassword, hash);
     }
 
     /** Equalises response time for unknown accounts, so login cannot be used to probe for emails. */

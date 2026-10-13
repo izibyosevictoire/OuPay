@@ -25,6 +25,16 @@ public interface BankTransactionRepository extends JpaRepository<BankTransaction
     @Query("select t from BankTransaction t where t.merchantId = :merchantId order by t.providerOccurredAt desc")
     List<BankTransaction> findAllForMerchant(UUID merchantId);
 
+    /** Keyset page, newest first, total order (provider_occurred_at, id). */
+    @Query("select t from BankTransaction t where t.merchantId = :merchantId and (t.providerOccurredAt < :at or (t.providerOccurredAt = :at and t.id < :id)) order by t.providerOccurredAt desc, t.id desc")
+    List<BankTransaction> pageForMerchant(UUID merchantId, java.time.Instant at, UUID id, org.springframework.data.domain.Pageable pageable);
+
+    /** A cashier sees only transactions with money applied (now or formerly) to one of their own invoices. */
+    @Query("select t from BankTransaction t where t.merchantId = :merchantId and (t.providerOccurredAt < :at or (t.providerOccurredAt = :at and t.id < :id)) "
+            + "and exists (select 1 from PaymentAllocation a, Invoice i where a.bankTransactionId = t.id and i.id = a.invoiceId and i.assignedToUserId = :userId) "
+            + "order by t.providerOccurredAt desc, t.id desc")
+    List<BankTransaction> pageForAssignee(UUID merchantId, UUID userId, java.time.Instant at, UUID id, org.springframework.data.domain.Pageable pageable);
+
     @Query("select t from BankTransaction t where t.merchantId = :merchantId and (t.paymentRequestId = :requestId or t.paymentReference = :reference)")
     List<BankTransaction> findForRequest(UUID merchantId, UUID requestId, String reference);
 }

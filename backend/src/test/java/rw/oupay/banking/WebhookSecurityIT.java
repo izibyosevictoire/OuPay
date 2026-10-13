@@ -102,10 +102,13 @@ class WebhookSecurityIT extends IntegrationTest {
     }
 
     @Test
-    void theRawEventIsStoredExactlyAsReceived() {
+    void theEventIsStoredRedactedWithAHashOfTheOriginal() {
         String raw = payload();
         assertThat(bank.post(raw, SimulatedProviderAdapter.sign(Bank.SECRET, raw)).status()).isEqualTo(200);
-        assertThat(jdbc.queryForObject("select raw_payload from bank_events", String.class)).isEqualTo(raw);
+        String stored = jdbc.queryForObject("select raw_payload from bank_events", String.class);
+        // Personal data is redacted before it is stored; the hash of the original is kept for replay detection.
+        assertThat(stored).doesNotContain("Test Payer").contains("T***").contains("\"eventId\"");
+        assertThat(jdbc.queryForObject("select payload_sha256 from bank_events", String.class)).isEqualTo(rw.oupay.common.TokenHashing.sha256Hex(raw));
         assertThat(jdbc.queryForObject("select outcome from bank_events", String.class)).isEqualTo("APPLIED");
     }
 

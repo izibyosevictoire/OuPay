@@ -90,7 +90,7 @@ class LedgerIT extends IntegrationTest {
         bank.pay("POSTED", 5_000, number(invoice).toLowerCase());           // near miss
         bank.pay("POSTED", 5_000, number(invoice) + "X");                   // extra character
         assertThat(paymentStatus(invoice)).isEqualTo("UNPAID");
-        var list = w.owner.get(m("/bank-transactions")).json();
+        var list = w.owner.get(m("/bank-transactions")).json().path("items");
         assertThat(list.size()).isEqualTo(3);
         for (var tx : list) {
             assertThat(tx.path("reconciliationStatus").asString()).isEqualTo("UNMATCHED");
@@ -112,7 +112,7 @@ class LedgerIT extends IntegrationTest {
     void anUnknownReferenceNeedsReviewAndMatchesNothing() {
         w.issuedInvoice(5_000);
         bank.pay("POSTED", 5_000, "NO-SUCH-INVOICE");
-        var tx = w.owner.get(m("/bank-transactions")).json().get(0);
+        var tx = w.owner.get(m("/bank-transactions")).json().path("items").get(0);
         assertThat(tx.path("reviewState").asString()).isEqualTo("NEEDS_REVIEW");
         assertThat(tx.path("reconciliationStatus").asString()).isEqualTo("UNMATCHED");
     }
@@ -189,7 +189,7 @@ class LedgerIT extends IntegrationTest {
         bank.pay("POSTED", 60_000, number(invoice));
         assertThat(remaining(invoice)).isZero();
         assertThat(paymentStatus(invoice)).isEqualTo("PAID");
-        var tx = w.owner.get(m("/bank-transactions")).json().get(0);
+        var tx = w.owner.get(m("/bank-transactions")).json().path("items").get(0);
         assertThat(tx.path("allocatedAmount").asLong()).isEqualTo(50_000);
         assertThat(tx.path("unappliedAmount").asLong()).isEqualTo(10_000);
         assertThat(tx.path("reviewState").asString()).isEqualTo("NEEDS_REVIEW");
@@ -326,15 +326,15 @@ class LedgerIT extends IntegrationTest {
         bank.pay("POSTED", 6_000, number(theirs));
         var unmatched = bank.pay("POSTED", 3_333, null);
 
-        var visible = w.cashier.get(m("/bank-transactions")).json();
+        var visible = w.cashier.get(m("/bank-transactions")).json().path("items");
         assertThat(visible.size()).isEqualTo(1);
         assertThat(visible.get(0).path("paymentReference").asString()).isEqualTo(number(mine));
         assertThat(visible.get(0).path("unappliedAmount").asLong()).isZero();
         assertThat(w.cashier.get(m("/bank-transactions/" + txId(unmatched))).status()).isEqualTo(404);
-        assertThat(w.cashier.get(m("/payment-allocations")).json().size()).isEqualTo(1);
+        assertThat(w.cashier.get(m("/payment-allocations")).json().path("items").size()).isEqualTo(1);
         assertThat(w.cashier.get(m("/payable-invoices")).status()).isEqualTo(403);
         assertThat(w.cashier.post(m("/reconciliation/allocations"), allocate(txId(unmatched), 0, line(mine, 1, 1))).status()).isEqualTo(403);
-        assertThat(w.owner.get(m("/bank-transactions")).json().size()).isEqualTo(3);
+        assertThat(w.owner.get(m("/bank-transactions")).json().path("items").size()).isEqualTo(3);
     }
 
     @Test
@@ -342,7 +342,7 @@ class LedgerIT extends IntegrationTest {
         UUID a = w.issuedInvoice(5_000);
         String tx = txId(bank.pay("POSTED", 5_000, number(a)));
         String cafe = "/api/v1/merchants/" + w.cafeMerchantId;
-        assertThat(w.cafeOwner.get(cafe + "/bank-transactions").json().size()).isZero();
+        assertThat(w.cafeOwner.get(cafe + "/bank-transactions").json().path("items").size()).isZero();
         assertThat(w.cafeOwner.get(cafe + "/bank-transactions/" + tx).status()).isEqualTo(404);
         assertThat(w.cafeOwner.get(m("/bank-transactions")).status()).isEqualTo(404);
         assertThat(w.cafeOwner.post(cafe + "/reconciliation/allocations", allocate(tx, 0, line(a, 1, 5_000))).status()).isIn(404, 409);
@@ -393,15 +393,15 @@ class LedgerIT extends IntegrationTest {
         UUID invoice = w.issuedInvoice(10_000);
         bank.pay("POSTED", 4_000, number(invoice));
         String n = "/api/v1/merchants/" + w.merchantId + "/notifications";
-        var mine = w.cashier.get(n).json();
+        var mine = w.cashier.get(n).json().path("items");
         assertThat(mine.size()).isEqualTo(1);
         assertThat(mine.get(0).path("isSimulated").asBoolean()).isTrue();
         String ownersId = jdbc.queryForObject("select n.id from notifications n join users u on u.id = n.recipient_user_id where u.email = 'owner@shop.rw'", String.class);
         assertThat(w.cashier.post(n + "/" + ownersId + "/read", null).status()).isEqualTo(404);
         assertThat(w.cashier.post(n + "/" + mine.get(0).path("id").asString() + "/read", null).status()).isEqualTo(200);
-        assertThat(w.cashier.get(n).json().get(0).path("readAt").isNull()).isFalse();
-        assertThat(w.owner.get(n).json().get(0).path("readAt").isMissingNode() || w.owner.get(n).json().get(0).path("readAt").isNull()).isTrue();
-        assertThat(w.otherCashier.get(n).json().size()).isZero();
+        assertThat(w.cashier.get(n).json().path("items").get(0).path("readAt").isNull()).isFalse();
+        assertThat(w.owner.get(n).json().path("items").get(0).path("readAt").isMissingNode() || w.owner.get(n).json().path("items").get(0).path("readAt").isNull()).isTrue();
+        assertThat(w.otherCashier.get(n).json().path("items").size()).isZero();
         assertThat(w.cafeOwner.get(n).status()).isEqualTo(404);
         assertThat(w.cashier.post(n + "/read-all", null).status()).isEqualTo(204);
     }

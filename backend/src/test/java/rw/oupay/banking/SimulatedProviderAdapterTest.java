@@ -11,8 +11,10 @@ import tools.jackson.databind.json.JsonMapper;
 
 class SimulatedProviderAdapterTest {
 
+    private static final java.time.Clock CLOCK = java.time.Clock.fixed(java.time.Instant.parse("2026-10-12T10:00:00Z"), java.time.ZoneOffset.UTC);
+
     private final SimulatedProviderAdapter adapter =
-            new SimulatedProviderAdapter(JsonMapper.builder().build(), new SimulatedProviderProperties(true, "unit-secret"));
+            new SimulatedProviderAdapter(JsonMapper.builder().build(), new SimulatedProviderProperties(true, "unit-secret"), CLOCK);
 
     private static final String VALID = "{\"simulated\":true,\"eventId\":\"e1\",\"transactionId\":\"t1\",\"state\":\"POSTED\",\"amount\":1000,"
             + "\"currency\":\"RWF\",\"reference\":\" INV-0001 \",\"payerName\":\"Someone\",\"occurredAt\":\"2026-10-12T10:00:00Z\",\"accountRef\":\"bacc-1\"}";
@@ -44,19 +46,36 @@ class SimulatedProviderAdapterTest {
 
     @Test
     void authenticatesWithAConstantTimeHmacAndRefusesEverythingElse() {
-        String good = SimulatedProviderAdapter.sign("unit-secret", VALID);
+        String good = SimulatedProviderAdapter.sign("unit-secret", VALID, CLOCK.instant());
         var header = SimulatedProviderAdapter.SIGNATURE_HEADER;
         assertThat(adapter.isAuthentic(Map.of(header, good), VALID)).isTrue();
-        assertThat(adapter.isAuthentic(Map.of(header, good.toUpperCase()), VALID)).isTrue();   // hex is case-insensitive
+        assertThat(adapter.isAuthentic(Map.of(header, good.substring(0, good.indexOf("v1=") + 3) + good.substring(good.indexOf("v1=") + 3).toUpperCase()), VALID)).isTrue();   // hex is case-insensitive
         assertThat(adapter.isAuthentic(Map.of(), VALID)).isFalse();
         assertThat(adapter.isAuthentic(Map.of(header, "zz"), VALID)).isFalse();
         assertThat(adapter.isAuthentic(Map.of(header, good), VALID + " ")).isFalse();
-        assertThat(adapter.isAuthentic(Map.of(header, SimulatedProviderAdapter.sign("other", VALID)), VALID)).isFalse();
+        assertThat(adapter.isAuthentic(Map.of(header, SimulatedProviderAdapter.sign("other", VALID, CLOCK.instant())), VALID)).isFalse();
+    }
+
+    @Test
+    void refusesReplaysAndForgedTimestamps() {
+        var header = SimulatedProviderAdapter.SIGNATURE_HEADER;
+        var now = CLOCK.instant();
+        // Inside the tolerance (both directions) it is accepted; outside it is a replay or a clock fault.
+        assertThat(adapter.isAuthentic(Map.of(header, SimulatedProviderAdapter.sign("unit-secret", VALID, now.minusSeconds(299))), VALID)).isTrue();
+        assertThat(adapter.isAuthentic(Map.of(header, SimulatedProviderAdapter.sign("unit-secret", VALID, now.plusSeconds(299))), VALID)).isTrue();
+        assertThat(adapter.isAuthentic(Map.of(header, SimulatedProviderAdapter.sign("unit-secret", VALID, now.minusSeconds(301))), VALID)).isFalse();
+        assertThat(adapter.isAuthentic(Map.of(header, SimulatedProviderAdapter.sign("unit-secret", VALID, now.plusSeconds(301))), VALID)).isFalse();
+        // Moving a captured signature to a fresh timestamp breaks it: the timestamp is part of what is signed.
+        String old = SimulatedProviderAdapter.sign("unit-secret", VALID, now.minusSeconds(3600));
+        String forged = "t=" + now.getEpochSecond() + "," + old.substring(old.indexOf("v1="));
+        assertThat(adapter.isAuthentic(Map.of(header, forged), VALID)).isFalse();
+        assertThat(adapter.isAuthentic(Map.of(header, "t=abc,v1=00"), VALID)).isFalse();
+        assertThat(adapter.isAuthentic(Map.of(header, "v1=00"), VALID)).isFalse();
     }
 
     @Test
     void withoutAConfiguredSecretNothingIsEverAuthentic() {
-        var noSecret = new SimulatedProviderAdapter(JsonMapper.builder().build(), new SimulatedProviderProperties(true, ""));
+        var noSecret = new SimulatedProviderAdapter(JsonMapper.builder().build(), new SimulatedProviderProperties(true, ""), CLOCK);
         assertThat(noSecret.isAuthentic(Map.of(SimulatedProviderAdapter.SIGNATURE_HEADER, "abcd"), VALID)).isFalse();
     }
 

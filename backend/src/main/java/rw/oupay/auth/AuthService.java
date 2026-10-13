@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import rw.oupay.audit.AuditService;
 import rw.oupay.common.ApiException;
 import rw.oupay.membership.MembershipRepository;
+import rw.oupay.staff.InvitationService;
 import rw.oupay.user.User;
 import rw.oupay.user.UserRepository;
 import rw.oupay.user.UserStatus;
@@ -29,16 +30,21 @@ public class AuthService {
     private final SessionService sessions;
     private final SecurityProperties properties;
     private final AuditService audit;
+    private final InvitationService invitations;
+    private final AccountRecoveryService recovery;
     private final Clock clock;
 
     public AuthService(UserRepository users, MembershipRepository memberships, PasswordService passwords,
-                       SessionService sessions, SecurityProperties properties, AuditService audit, Clock clock) {
+                       SessionService sessions, SecurityProperties properties, AuditService audit,
+                       InvitationService invitations, AccountRecoveryService recovery, Clock clock) {
         this.users = users;
         this.memberships = memberships;
         this.passwords = passwords;
         this.sessions = sessions;
         this.properties = properties;
         this.audit = audit;
+        this.invitations = invitations;
+        this.recovery = recovery;
         this.clock = clock;
     }
 
@@ -46,16 +52,19 @@ public class AuthService {
 
     @Transactional
     public SignedIn register(AuthDtos.RegisterRequest request, String clientIp, String userAgent) {
-        if (request.invitationToken() != null && !request.invitationToken().isBlank()) {
-            // Invitation-based registration needs the email invitation flow, which is not built yet.
-            throw ApiException.notImplemented("Registering from an invitation is not available yet.");
-        }
         String email = normaliseEmail(request.email());
         String phone = request.phoneNumber() == null ? "" : request.phoneNumber().trim();
         if (!phone.isEmpty() && !PHONE.matcher(phone).matches()) {
             throw ApiException.validation("The phone number is not valid.");
         }
         passwords.validatePolicy(request.password(), email);
+        if (request.invitationToken() != null && !request.invitationToken().isBlank()) {
+            // Registering through an invitation link: the address is fixed by the invitation and the membership is activated.
+            User invited = invitations.registerFromInvitation(request.invitationToken(), email, request.fullName(), phone, request.password());
+            var issuedForInvite = sessions.issue(invited, false, clientIp, userAgent);
+            audit.record(null, invited.getId(), "USER_REGISTERED", "user", invited.getId(), "An invited person created an account.");
+            return new SignedIn(toSession(invited, issuedForInvite.session()), issuedForInvite);
+        }
         if (users.findByEmailIgnoreCase(email).isPresent()) {
             throw new ApiException(HttpStatus.CONFLICT, "email_taken", "That email address is already registered.");
         }
@@ -69,6 +78,7 @@ public class AuthService {
             throw new ApiException(HttpStatus.CONFLICT, "email_taken", "That email address is already registered.");
         }
         audit.record(null, user.getId(), "USER_REGISTERED", "user", user.getId(), "A new account was registered.");
+        recovery.queueVerification(user, clientIp);
         var issued = sessions.issue(user, false, clientIp, userAgent);
         return new SignedIn(toSession(user, issued.session()), issued);
     }
@@ -130,7 +140,7 @@ public class AuthService {
         return new ApiException(HttpStatus.UNAUTHORIZED, "invalid_credentials", "The email or password is not correct.");
     }
 
-    static String normaliseEmail(String email) {
+    public static String normaliseEmail(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
     }
 }

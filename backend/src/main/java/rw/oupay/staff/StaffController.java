@@ -3,24 +3,27 @@ package rw.oupay.staff;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import rw.oupay.auth.AuthDtos;
-import rw.oupay.common.ApiException;
 
 @RestController
 @RequestMapping("/api/v1")
 public class StaffController {
 
     private final StaffService service;
+    private final InvitationService invitations;
 
-    public StaffController(StaffService service) {
+    public StaffController(StaffService service, InvitationService invitations) {
         this.service = service;
+        this.invitations = invitations;
     }
 
     @GetMapping("/merchants/{merchantId}/staff")
@@ -49,26 +52,28 @@ public class StaffController {
         return service.revoke(merchantId, membershipId);
     }
 
-    // ---- Invitations: contract only. They need an email channel and single-use tokens, which are
-    // ---- not built. The endpoints exist so the frontend contract is visible, and say so honestly.
+    // ---- Invitations ----
 
     @PostMapping("/merchants/{merchantId}/invitations")
-    void invite(@PathVariable UUID merchantId) {
-        service.invitationsNotImplemented(merchantId);
+    @ResponseStatus(HttpStatus.CREATED)
+    StaffDtos.InvitationDto invite(@PathVariable UUID merchantId, @Valid @RequestBody StaffDtos.InviteRequest request) {
+        return invitations.invite(merchantId, request);
     }
 
     @GetMapping("/merchants/{merchantId}/invitations")
-    void listInvitations(@PathVariable UUID merchantId) {
-        service.invitationsNotImplemented(merchantId);
+    List<StaffDtos.InvitationDto> listInvitations(@PathVariable UUID merchantId) {
+        return invitations.list(merchantId);
     }
 
+    /** Open to anyone holding the link, and rate limited. Reveals only what an invitee needs. */
     @GetMapping("/public/invitations/{token}")
-    void invitationPreview(@PathVariable String token) {
-        throw ApiException.notImplemented("Staff invitations are not implemented yet (needs an email channel).");
+    StaffDtos.InvitationPreviewDto invitationPreview(@PathVariable String token) {
+        return invitations.preview(token);
     }
 
+    /** Signed-in users only: the invitation must have been sent to the signed-in user's own address. */
     @PostMapping("/invitations/{token}/accept")
-    void accept(@PathVariable String token) {
-        throw ApiException.notImplemented("Staff invitations are not implemented yet (needs an email channel).");
+    AuthDtos.MembershipDto accept(@PathVariable String token) {
+        return invitations.accept(token);
     }
 }

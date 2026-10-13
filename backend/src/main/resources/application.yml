@@ -8,6 +8,29 @@ spring:
     url: ${OUPAY_DB_URL:jdbc:postgresql://localhost:5432/oupay}
     username: ${OUPAY_DB_USER:oupay}
     password: ${OUPAY_DB_PASSWORD:}
+    hikari:
+      pool-name: oupay-pool
+      # Size the pool to the database, not to the traffic: a few connections per CPU core of the DB server.
+      maximum-pool-size: ${OUPAY_DB_POOL_MAX:10}
+      minimum-idle: ${OUPAY_DB_POOL_MIN_IDLE:2}
+      # Fail fast when the pool is exhausted instead of letting requests pile up.
+      connection-timeout: ${OUPAY_DB_CONNECTION_TIMEOUT_MS:5000}
+      validation-timeout: 3000
+      idle-timeout: 600000
+      # Retire connections before a firewall / PgBouncer / server limit silently drops them.
+      max-lifetime: 1500000
+      keepalive-time: 300000
+      leak-detection-threshold: ${OUPAY_DB_LEAK_DETECTION_MS:0}
+      # Server-side guards for every connection: no runaway query, no endless lock wait, no forgotten transaction.
+      connection-init-sql: >-
+        SET statement_timeout = '${OUPAY_DB_STATEMENT_TIMEOUT:30s}';
+        SET lock_timeout = '${OUPAY_DB_LOCK_TIMEOUT:10s}';
+        SET idle_in_transaction_session_timeout = '${OUPAY_DB_IDLE_TX_TIMEOUT:60s}'
+      data-source-properties:
+        connectTimeout: 10
+        socketTimeout: 60
+        tcpKeepAlive: true
+        ApplicationName: oupay-backend
   jpa:
     open-in-view: false
     hibernate:
@@ -17,15 +40,46 @@ spring:
       hibernate:
         jdbc:
           time_zone: UTC
+      jakarta:
+        persistence:
+          query:
+            timeout: 30000
   flyway:
     enabled: true
     locations: classpath:db/migration
   jackson:
     default-property-inclusion: non_null
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  mvc:
+    async:
+      request-timeout: 30s
+  mail:
+    # Only used when oupay.email.provider=smtp (production). Left empty otherwise, so no mail sender is created.
+    host: ${OUPAY_SMTP_HOST:}
+    port: ${OUPAY_SMTP_PORT:587}
+    username: ${OUPAY_SMTP_USER:}
+    password: ${OUPAY_SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${OUPAY_SMTP_AUTH:true}
+          starttls:
+            enable: ${OUPAY_SMTP_STARTTLS:true}
+          connectiontimeout: 10000
+          timeout: 15000
+          writetimeout: 15000
 
 server:
+  shutdown: graceful
   # Set to "native" when running behind a TRUSTED reverse proxy so the real client IP is used.
   forward-headers-strategy: none
+  max-http-request-header-size: 16KB
+  tomcat:
+    connection-timeout: 10s
+    threads:
+      max: ${OUPAY_HTTP_THREADS:100}
+    max-swallow-size: 256KB
   error:
     include-message: never
     include-stacktrace: never
@@ -34,11 +88,24 @@ management:
   endpoints:
     web:
       exposure:
+        # Health only. Metrics are NOT exposed over HTTP here (any signed-in user could read them).
         include: health
   endpoint:
     health:
+      show-details: never
       probes:
         enabled: true
+      status:
+        # DEGRADED (e-mail delivery trouble) is reported, but must not take the service out of rotation.
+        order: DOWN,OUT_OF_SERVICE,DEGRADED,UP,UNKNOWN
+        http-mapping:
+          DEGRADED: 200
+      group:
+        liveness:
+          include: livenessState
+        # Readiness = can serve traffic: the database must answer. E-mail is deliberately not part of it.
+        readiness:
+          include: readinessState,db
 
 springdoc:
   api-docs:
@@ -47,15 +114,29 @@ springdoc:
     enabled: true
 
 oupay:
+  app:
+    # The browser application, used to build links in e-mails.
+    base-url: ${OUPAY_APP_BASE_URL:http://localhost:5173}
   security:
     session:
       # true in production (HTTPS only). The dev profile turns it off for plain-http localhost.
       secure-cookie: true
+    proxy:
+      # Comma-separated IPs/CIDRs of reverse proxies whose X-Forwarded-For is believed. Empty: header ignored.
+      trusted: ${OUPAY_TRUSTED_PROXIES:}
+    origins:
+      # Extra origins allowed for state-changing browser requests (same-host is always allowed).
+      allowed: ${OUPAY_ALLOWED_ORIGINS:}
   rate-limit:
     public-read-per-minute: 120
     public-write-per-minute: 20
     auth-per-minute: 20
+    recovery-per-minute: 10
     webhook-per-minute: 600
+  email:
+    provider: ${OUPAY_EMAIL_PROVIDER:sink}
+    from: ${OUPAY_EMAIL_FROM:OuPay <no-reply@oupay.rw>}
+    sink-endpoint-enabled: false
   integrations:
     # The simulated provider is for local development ONLY. It is disabled unless explicitly enabled,
     # and it needs a shared secret: there is no default.

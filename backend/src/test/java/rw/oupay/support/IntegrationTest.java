@@ -66,9 +66,41 @@ public abstract class IntegrationTest {
     @Autowired
     protected Fixtures fixtures;
 
+    @Autowired(required = false)
+    protected rw.oupay.email.DevMailSink mailSink;
+
+    @Autowired
+    protected rw.oupay.email.EmailOutboxDispatcher dispatcher;
+
+    /**
+     * Delivers the queued e-mail through the (development) sink and returns the one-time token in the link of the
+     * newest message to {@code recipient} whose link starts with {@code pathPrefix} (for example "/reset-password/").
+     */
+    protected String tokenFrom(String recipient, String pathPrefix) {
+        dispatcher.dispatchDue();
+        var messages = mailSink.messages();
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            var message = messages.get(i);
+            if (message.to().equalsIgnoreCase(recipient)) {
+                var matcher = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote(pathPrefix) + "([A-Za-z0-9_-]+)").matcher(message.text());
+                if (matcher.find()) {
+                    return matcher.group(1);
+                }
+            }
+        }
+        throw new AssertionError("no message to " + recipient + " with a link " + pathPrefix);
+    }
+
+    protected long outbox(String recipient, String kind) {
+        return jdbc.queryForObject("select count(*) from email_outbox where recipient = ? and kind = ?", Long.class, recipient, kind);
+    }
+
     /** Every test starts from empty business data (the schema and migrations stay). */
     @BeforeEach
     void cleanDatabase() {
+        if (mailSink != null) {
+            mailSink.clear();
+        }
         List<String> tables = jdbc.queryForList(
                 "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> 'flyway_schema_history'",
                 String.class);

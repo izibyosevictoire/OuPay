@@ -5,12 +5,14 @@ import jakarta.validation.Valid;
 import java.time.Duration;
 import java.time.Instant;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -18,22 +20,26 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService auth;
+    private final AccountRecoveryService recovery;
     private final SecurityProperties properties;
+    private final ClientIpResolver clientIps;
 
-    public AuthController(AuthService auth, SecurityProperties properties) {
+    public AuthController(AuthService auth, AccountRecoveryService recovery, SecurityProperties properties, ClientIpResolver clientIps) {
         this.auth = auth;
+        this.recovery = recovery;
         this.properties = properties;
+        this.clientIps = clientIps;
     }
 
     @PostMapping("/register")
     ResponseEntity<AuthDtos.SessionDto> register(@Valid @RequestBody AuthDtos.RegisterRequest body, HttpServletRequest request) {
-        var result = auth.register(body, request.getRemoteAddr(), request.getHeader(HttpHeaders.USER_AGENT));
+        var result = auth.register(body, clientIps.resolve(request), request.getHeader(HttpHeaders.USER_AGENT));
         return signedIn(result);
     }
 
     @PostMapping("/login")
     ResponseEntity<AuthDtos.SessionDto> login(@Valid @RequestBody AuthDtos.LoginRequest body, HttpServletRequest request) {
-        var result = auth.login(body, request.getRemoteAddr(), request.getHeader(HttpHeaders.USER_AGENT));
+        var result = auth.login(body, clientIps.resolve(request), request.getHeader(HttpHeaders.USER_AGENT));
         return signedIn(result);
     }
 
@@ -52,21 +58,48 @@ public class AuthController {
                 .build();
     }
 
-    // ---- Password reset: contract only (needs an email channel and single-use expiring tokens). ----
+    // ---- Password reset (public): answers are identical whether or not the account exists. ----
 
+    /** Always 204. Whether anything was sent is invisible, so this cannot be used to probe for accounts. */
     @PostMapping("/password-reset/request")
-    void requestReset() {
-        throw rw.oupay.common.ApiException.notImplemented("Password reset is not implemented yet (needs an email channel).");
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void requestReset(@Valid @RequestBody AuthDtos.PasswordResetRequest body, HttpServletRequest request) {
+        recovery.requestPasswordReset(body.email(), clientIps.resolve(request));
     }
 
-    @GetMapping("/password-reset/verify")
-    void verifyReset() {
-        throw rw.oupay.common.ApiException.notImplemented("Password reset is not implemented yet (needs an email channel).");
+    /** POST with a body, not GET: the token must not end up in a URL, an access log or a Referer header. */
+    @PostMapping("/password-reset/verify")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void verifyReset(@Valid @RequestBody AuthDtos.TokenRequest body) {
+        recovery.verifyPasswordResetToken(body.token());
     }
 
     @PostMapping("/password-reset/confirm")
-    void confirmReset() {
-        throw rw.oupay.common.ApiException.notImplemented("Password reset is not implemented yet (needs an email channel).");
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void confirmReset(@Valid @RequestBody AuthDtos.PasswordResetConfirm body) {
+        recovery.resetPassword(body.token(), body.newPassword());
+    }
+
+    // ---- Signed-in account security ----
+
+    @PostMapping("/password/change")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void changePassword(@Valid @RequestBody AuthDtos.ChangePasswordRequest body) {
+        recovery.changePassword(CurrentUser.require(), body.currentPassword(), body.newPassword());
+    }
+
+    /** Sends a fresh verification link (rate limited per account). 204 whether or not one was needed. */
+    @PostMapping("/email-verification/request")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void requestEmailVerification(HttpServletRequest request) {
+        recovery.sendEmailVerification(CurrentUser.require().userId(), clientIps.resolve(request));
+    }
+
+    /** Public: the link itself is the credential. */
+    @PostMapping("/email-verification/confirm")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void confirmEmailVerification(@Valid @RequestBody AuthDtos.TokenRequest body) {
+        recovery.confirmEmailVerification(body.token());
     }
 
     private ResponseEntity<AuthDtos.SessionDto> signedIn(AuthService.SignedIn result) {

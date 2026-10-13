@@ -11,6 +11,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import rw.oupay.common.ApiException;
+import rw.oupay.common.Pagination;
 import rw.oupay.invoice.Invoice;
 import rw.oupay.ledger.BankTransaction;
 import rw.oupay.membership.Actor;
@@ -60,10 +61,12 @@ public class NotificationService {
     // ---- reads (a person's own notifications only) ---------------------------------------------
 
     @Transactional(readOnly = true)
-    public List<NotificationDto> list(UUID merchantId) {
+    public Pagination.Page<NotificationDto> list(UUID merchantId, Integer limit, String cursor) {
         Actor actor = access.requireMember(merchantId);
-        return notifications.findByMerchantIdAndRecipientUserIdOrderByCreatedAtDesc(merchantId, actor.userId()).stream()
-                .map(NotificationDto::of).toList();
+        int size = Pagination.limit(limit);
+        var position = Pagination.decode(cursor);
+        var fetched = notifications.page(merchantId, actor.userId(), position.at(), position.id(), Pagination.fetch(size));
+        return Pagination.page(fetched, size, Notification::getCreatedAt, Notification::getId, null).map(NotificationDto::of);
     }
 
     @Transactional

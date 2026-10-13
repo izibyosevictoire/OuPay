@@ -31,10 +31,11 @@ public class SecurityConfig {
 
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http, SessionService sessions, SecurityProperties properties,
-                                    Clock clock,
+                                    Clock clock, ClientIpResolver clientIps, io.micrometer.core.instrument.MeterRegistry meters,
                                     @Value("${oupay.rate-limit.public-read-per-minute:120}") int publicRead,
                                     @Value("${oupay.rate-limit.public-write-per-minute:20}") int publicWrite,
                                     @Value("${oupay.rate-limit.auth-per-minute:20}") int auth,
+                                    @Value("${oupay.rate-limit.recovery-per-minute:10}") int recovery,
                                     @Value("${oupay.rate-limit.webhook-per-minute:600}") int webhook) throws Exception {
         CookieCsrfTokenRepository csrfRepository = CookieCsrfTokenRepository.withHttpOnlyFalse();
         csrfRepository.setCookieCustomizer(cookie -> cookie.secure(properties.session().secureCookie()).sameSite("Lax"));
@@ -52,10 +53,18 @@ public class SecurityConfig {
                 .headers(h -> h
                         .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'none'; frame-ancestors 'none'"))
                         .referrerPolicy(r -> r.policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER))
-                        .httpStrictTransportSecurity(Customizer.withDefaults()))
+                        .permissionsPolicyHeader(p -> p.policy("camera=(), microphone=(), geolocation=(), payment=()"))
+                        .httpStrictTransportSecurity(hsts -> {
+                            if (properties.session().secureCookie()) {
+                                // Production sits behind TLS termination, so the request may look like plain http to us.
+                                hsts.maxAgeInSeconds(31_536_000).includeSubDomains(true)
+                                        .requestMatcher(org.springframework.security.web.util.matcher.AnyRequestMatcher.INSTANCE);
+                            }
+                        }))
                 .authorizeHttpRequests(a -> a
                         .requestMatchers("/api/v1/public/**", "/api/v1/integrations/**",
                                 "/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/auth/session", "/api/v1/auth/password-reset/**",
+                                "/api/v1/auth/email-verification/confirm", "/api/v1/dev/mail",
                                 "/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated())
@@ -64,7 +73,9 @@ public class SecurityConfig {
                                 writeError(response, 401, "unauthenticated", "Please sign in to continue."))
                         .accessDeniedHandler((request, response, ex) ->
                                 writeError(response, 403, "forbidden", "The request could not be verified or is not allowed.")))
-                .addFilterBefore(new RateLimitFilter(new RateLimitFilter.Limits(publicRead, publicWrite, auth, webhook), clock),
+                .addFilterBefore(new RateLimitFilter(new RateLimitFilter.Limits(publicRead, publicWrite, auth, recovery, webhook), clientIps, meters, clock),
+                        UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(new OriginCheckFilter(java.util.Set.copyOf(properties.origins().allowed())),
                         UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(new SessionAuthenticationFilter(sessions, properties.session().cookieName()),
                         UsernamePasswordAuthenticationFilter.class)

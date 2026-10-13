@@ -3,6 +3,10 @@ oupay:
   security:
     session:
       secure-cookie: false
+  email:
+    provider: sink
+    # GET /api/v1/dev/mail lists what the sink captured (the links in password-reset and invitation mails).
+    sink-endpoint-enabled: true
   integrations:
     simulated:
       enabled: true

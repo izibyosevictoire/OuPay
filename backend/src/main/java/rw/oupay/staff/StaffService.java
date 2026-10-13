@@ -18,6 +18,7 @@ import rw.oupay.membership.Actor;
 import rw.oupay.membership.Membership;
 import rw.oupay.membership.MembershipRepository;
 import rw.oupay.membership.MembershipStatus;
+import rw.oupay.membership.MembershipLocks;
 import rw.oupay.membership.MerchantAccess;
 import rw.oupay.membership.Permission;
 import rw.oupay.membership.Role;
@@ -34,26 +35,23 @@ public class StaffService {
     private final BranchAssignmentRepository assignments;
     private final MerchantAccess access;
     private final AuditService audit;
+    private final StaffInvitationStore invitations;
+    private final InvitationService invitationService;
+    private final MembershipLocks locks;
     private final Clock clock;
 
     public StaffService(MembershipRepository memberships, UserRepository users, BranchAssignmentRepository assignments,
-                        MerchantAccess access, AuditService audit, Clock clock) {
+                        MerchantAccess access, AuditService audit, StaffInvitationStore invitations,
+                        InvitationService invitationService, MembershipLocks locks, Clock clock) {
         this.memberships = memberships;
         this.users = users;
         this.assignments = assignments;
         this.access = access;
         this.audit = audit;
+        this.invitations = invitations;
+        this.invitationService = invitationService;
+        this.locks = locks;
         this.clock = clock;
-    }
-
-    /**
-     * Invitations are not implemented (they need an email channel and single-use tokens). The caller is
-     * still authorised first, so even this stub reveals nothing to someone outside the business.
-     */
-    @Transactional(readOnly = true)
-    public void invitationsNotImplemented(UUID merchantId) {
-        access.require(merchantId, Permission.CASHIERS_MANAGE);
-        throw ApiException.notImplemented("Staff invitations are not implemented yet (needs an email channel).");
     }
 
     @Transactional(readOnly = true)
@@ -62,13 +60,22 @@ public class StaffService {
         Map<UUID, List<UUID>> branchesByMembership = assignments.findByMerchantIdAndStatus(merchantId, "ACTIVE").stream()
                 .collect(Collectors.groupingBy(BranchAssignment::getMembershipId,
                         Collectors.mapping(BranchAssignment::getBranchId, Collectors.toList())));
+        Map<UUID, List<UUID>> invitedBranches = invitations.pendingBranchesByMembership(merchantId);
+        Map<UUID, StaffInvitationStore.Row> pending = invitations.listForMerchant(merchantId).stream()
+                .filter(r -> "PENDING".equals(r.status()))
+                .collect(Collectors.toMap(StaffInvitationStore.Row::membershipId, r -> r, (a, b) -> a));
         return memberships.findByMerchantId(merchantId).stream()
                 .sorted(Comparator.comparing(Membership::getCreatedAt))
                 .map(m -> {
                     User u = users.findById(m.getUserId()).orElseThrow();
+                    boolean invited = m.getStatus() == MembershipStatus.INVITED;
+                    var invitation = invited ? pending.get(m.getId()) : null;
                     return new StaffDtos.StaffMemberDto(merchantId, m.getId(), u.getId(), u.getFullName(), u.getEmail(),
                             u.getPhoneNumber(), m.getRole(), m.getStatus(),
-                            branchesByMembership.getOrDefault(m.getId(), List.of()), m.getCreatedAt());
+                            invited ? invitedBranches.getOrDefault(m.getId(), List.of()) : branchesByMembership.getOrDefault(m.getId(), List.of()),
+                            m.getCreatedAt(),
+                            invitation == null ? null
+                                    : new StaffDtos.PendingInvitationDto(invitation.id(), invitation.note(), invitation.createdAt(), invitation.expiresAt()));
                 })
                 .toList();
     }
@@ -76,7 +83,8 @@ public class StaffService {
     @Transactional
     public rw.oupay.auth.AuthDtos.MembershipDto changeRole(UUID merchantId, UUID membershipId, Role newRole) {
         Actor actor = access.require(merchantId, Permission.CASHIERS_MANAGE);
-        List<Membership> all = memberships.lockAllOfMerchant(merchantId);
+        List<Membership> all = locks.lockAll(merchantId);
+        requireStillAuthorised(actor);
         Membership target = find(all, membershipId);
         if (!StaffPolicy.canPerform(actor, StaffPolicy.Action.CHANGE_ROLE, target.getRole())) {
             throw ApiException.forbidden("You cannot change this person's role.");
@@ -114,7 +122,8 @@ public class StaffService {
     private rw.oupay.auth.AuthDtos.MembershipDto transition(UUID merchantId, UUID membershipId, StaffPolicy.Action action,
                                                             MembershipStatus to, String auditKind) {
         Actor actor = access.require(merchantId, Permission.CASHIERS_MANAGE);
-        List<Membership> all = memberships.lockAllOfMerchant(merchantId);
+        List<Membership> all = locks.lockAll(merchantId);
+        requireStillAuthorised(actor);
         Membership target = find(all, membershipId);
         if (!StaffPolicy.canPerform(actor, action, target.getRole())) {
             throw ApiException.forbidden("You cannot do that to this person.");
@@ -139,9 +148,18 @@ public class StaffService {
         target.change(target.getRole(), to, now);
         if (to == MembershipStatus.REVOKED) {
             assignments.findByMembershipIdAndStatus(membershipId, "ACTIVE").forEach(a -> a.end(now));
+            // Revoking someone who is still only invited also kills the link that was e-mailed to them.
+            invitationService.withdrawFor(membershipId);
         }
         audit.record(merchantId, actor.userId(), auditKind, "membership", membershipId, "Membership " + to.name().toLowerCase() + ".");
         return rw.oupay.auth.AuthDtos.MembershipDto.of(target);
+    }
+
+    /** The actor was authorised before the lock was taken; a concurrent change may have suspended or demoted them since. */
+    private static void requireStillAuthorised(Actor actor) {
+        if (!actor.membership().isActive() || !actor.can(Permission.CASHIERS_MANAGE)) {
+            throw ApiException.forbidden("You do not have permission to do that.");
+        }
     }
 
     /** A business always keeps at least one ACTIVE owner. */
