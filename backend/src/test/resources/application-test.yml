@@ -1,0 +1,22 @@
+spring:
+  jpa:
+    show-sql: false
+oupay:
+  security:
+    session:
+      secure-cookie: false
+    login:
+      max-failed-attempts: 5
+  rate-limit:
+    public-read-per-minute: 100000
+    public-write-per-minute: 100000
+    auth-per-minute: 100000
+    webhook-per-minute: 100000
+  integrations:
+    simulated:
+      enabled: true
+      shared-secret: test-simulator-secret
+logging:
+  level:
+    root: WARN
+    rw.oupay: INFO

@@ -1,0 +1,9 @@
+# Local development only. Never use this profile in a deployed environment.
+oupay:
+  security:
+    session:
+      secure-cookie: false
+  integrations:
+    simulated:
+      enabled: true
+      shared-secret: dev-only-simulator-secret-change-me

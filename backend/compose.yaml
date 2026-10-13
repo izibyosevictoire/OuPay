@@ -1,0 +1,14 @@
+# Local development only: a single PostgreSQL. No other infrastructure is needed or wanted.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: oupay
+      POSTGRES_USER: oupay
+      POSTGRES_PASSWORD: oupay   # local development only
+    ports:
+      - "5432:5432"
+    volumes:
+      - oupay-pgdata:/var/lib/postgresql/data
+volumes:
+  oupay-pgdata:

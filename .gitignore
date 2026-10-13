@@ -1,0 +1,46 @@
+# Dependencies and build output
+node_modules
+dist
+build
+coverage
+backend/target
+*.tsbuildinfo
+
+# Environment and secrets (keep .env.example)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.jks
+*.keystore
+*.p12
+*.pfx
+credentials*.json
+secrets*
+application-local*.yml
+application-local*.properties
+
+# Database data directories and local databases
+backend/.test-pgdata
+backend/.test-pgdata.pw
+*.pgdata
+pgdata
+*.sqlite
+*.db
+
+# Logs and temporary files
+*.log
+npm-debug.log*
+*.tmp
+*.swp
+.cache
+.vite
+
+# IDE / OS / tooling local settings
+.idea
+.vscode
+*.iml
+.DS_Store
+Thumbs.db
+.claude

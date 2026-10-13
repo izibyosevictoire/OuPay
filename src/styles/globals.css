@@ -1,0 +1,92 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 20% 98%;
+    --foreground: 222 30% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 30% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 30% 12%;
+    --primary: 174 84% 25%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 20% 94%;
+    --secondary-foreground: 222 30% 18%;
+    --muted: 210 20% 95%;
+    --muted-foreground: 215 16% 40%;
+    --accent: 172 40% 94%;
+    --accent-foreground: 174 84% 20%;
+    --destructive: 0 72% 42%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 20% 89%;
+    --input: 215 14% 50%;
+    --ring: 174 84% 30%;
+    --radius: 0.625rem;
+
+    /* Status palette: every soft/strong pair meets 4.5:1 for text */
+    --success: 152 70% 20%;
+    --success-soft: 150 60% 94%;
+    --warning: 30 90% 25%;
+    --warning-soft: 42 95% 91%;
+    --danger: 0 70% 38%;
+    --danger-soft: 0 85% 95%;
+    --info: 217 75% 34%;
+    --info-soft: 214 90% 94%;
+    --neutral: 215 20% 30%;
+    --neutral-soft: 214 20% 92%;
+
+    --chart-1: 174 84% 25%;
+    --chart-2: 217 75% 45%;
+    --chart-3: 36 90% 42%;
+    --chart-4: 262 50% 50%;
+  }
+
+  * {
+    @apply border-border;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background font-sans text-sm text-foreground antialiased;
+    overflow-x: hidden;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Printable documents (invoices): A4, no screen chrome, black on white. */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 11pt;
+  }
+  /* Keep rows and totals together across page breaks. */
+  table,
+  tr,
+  dl {
+    break-inside: avoid;
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}

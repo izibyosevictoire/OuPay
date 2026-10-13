@@ -1,0 +1,67 @@
+package rw.oupay.branch;
+
+import jakarta.validation.Valid;
+import java.util.List;
+import java.util.UUID;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/v1/merchants/{merchantId}")
+public class BranchController {
+
+    private final BranchService service;
+
+    public BranchController(BranchService service) {
+        this.service = service;
+    }
+
+    @GetMapping("/branches")
+    List<BranchDtos.BranchSummaryDto> list(@PathVariable UUID merchantId) {
+        return service.list(merchantId);
+    }
+
+    @GetMapping("/branches/{branchId}")
+    BranchDtos.BranchDetailsDto get(@PathVariable UUID merchantId, @PathVariable UUID branchId) {
+        return service.get(merchantId, branchId);
+    }
+
+    @PostMapping("/branches")
+    @ResponseStatus(HttpStatus.CREATED)
+    BranchDtos.BranchDto create(@PathVariable UUID merchantId, @Valid @RequestBody BranchDtos.CreateRequest request) {
+        return service.create(merchantId, request);
+    }
+
+    @PutMapping("/branches/{branchId}")
+    BranchDtos.BranchDto update(@PathVariable UUID merchantId, @PathVariable UUID branchId,
+                                @Valid @RequestBody BranchDtos.UpdateRequest request) {
+        return service.update(merchantId, branchId, request);
+    }
+
+    @PutMapping("/branches/{branchId}/status")
+    BranchDtos.BranchDto changeStatus(@PathVariable UUID merchantId, @PathVariable UUID branchId,
+                                      @Valid @RequestBody BranchDtos.StatusRequest request) {
+        return service.changeStatus(merchantId, branchId, request.status());
+    }
+
+    @GetMapping("/branch-assignments")
+    List<BranchDtos.AssignmentDto> listAssignments(@PathVariable UUID merchantId,
+                                                   @RequestParam(required = false) UUID membershipId,
+                                                   @RequestParam(required = false) UUID branchId) {
+        return service.listAssignments(merchantId, membershipId, branchId);
+    }
+
+    @PutMapping("/memberships/{membershipId}/branch-assignments")
+    List<BranchDtos.AssignmentDto> updateAssignments(@PathVariable UUID merchantId, @PathVariable UUID membershipId,
+                                                     @Valid @RequestBody BranchDtos.AssignmentsRequest request) {
+        return service.updateAssignments(merchantId, membershipId, request.branchIds());
+    }
+}

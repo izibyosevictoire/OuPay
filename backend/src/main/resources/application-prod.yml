@@ -1,0 +1,13 @@
+# Production hardening. Required environment: OUPAY_DB_URL, OUPAY_DB_USER, OUPAY_DB_PASSWORD.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+oupay:
+  security:
+    session:
+      secure-cookie: true
+  integrations:
+    simulated:
+      enabled: false

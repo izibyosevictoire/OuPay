@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpotBugs filter. Only the two "exposes internal representation" patterns are excluded: they fire on
+  Spring-injected collaborators (a service holding a repository) and on DTO records that carry a List,
+  neither of which is a defect here. Every other pattern fails the build.
+-->
+<FindBugsFilter>
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+  </Match>
+</FindBugsFilter>
