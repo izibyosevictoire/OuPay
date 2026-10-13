@@ -18,6 +18,7 @@ import { registerSchema } from '@/features/auth/authSchemas'
 import { normalizeRwandanPhoneNumber } from '@/features/merchants/merchantSchemas'
 import { staffService } from '@/services'
 import { AuthServiceError } from '@/services/authService'
+import { API_MODE } from '@/services/http/apiConfig'
 import { OrganizationServiceError } from '@/services/organizationService'
 import type { InvitationPreview } from '@/types/staff'
 import { z } from 'zod'
@@ -88,7 +89,15 @@ export function AcceptInvitationPage() {
     setErrorMessage(null)
     try {
       await beforeAccept?.()
-      await accept(preview)
+      if (beforeAccept && API_MODE === 'http') {
+        // Server mode: registering through the link already activated the membership in the same step, and the
+        // link is single-use, so accepting again would be refused. Just load the new session and go in.
+        await refreshSession()
+        notify('success', `You joined ${preview.businessName}.`)
+        navigate('/', { replace: true })
+      } else {
+        await accept(preview)
+      }
     } catch (error) {
       setErrorMessage(
         error instanceof OrganizationServiceError || error instanceof AuthServiceError
@@ -131,13 +140,19 @@ export function AcceptInvitationPage() {
     return (
       <Notice
         title={
-          preview.status === 'ACCEPTED' ? 'Invitation already accepted' : 'Invitation cancelled'
+          preview.status === 'ACCEPTED'
+            ? 'Invitation already accepted'
+            : preview.status === 'EXPIRED'
+              ? 'Invitation expired'
+              : 'Invitation cancelled'
         }
       >
         <p className="text-sm text-muted-foreground">
           {preview.status === 'ACCEPTED'
             ? 'This invitation was already used. Sign in to open the business.'
-            : 'The business cancelled this invitation. Ask them to send a new one.'}
+            : preview.status === 'EXPIRED'
+              ? 'This invitation has expired. Ask the business to send a new one.'
+              : 'The business cancelled this invitation. Ask them to send a new one.'}
         </p>
         <Button asChild variant="outline" className="w-full">
           <Link to="/login">Go to sign in</Link>
@@ -160,11 +175,12 @@ export function AcceptInvitationPage() {
       {errorMessage}
     </p>
   )
-  const demoNote = (
-    <p className="mt-4 rounded-md bg-info-soft px-3 py-2 text-xs text-info">
-      Demo mode: invitations are simulated and demo links are not secure.
-    </p>
-  )
+  const demoNote =
+    API_MODE === 'http' ? null : (
+      <p className="mt-4 rounded-md bg-info-soft px-3 py-2 text-xs text-info">
+        Demo mode: invitations are simulated and demo links are not secure.
+      </p>
+    )
 
   // Signed in as the invited person: one click to accept.
   if (status === 'authenticated' && user?.email.toLowerCase() === preview.email) {

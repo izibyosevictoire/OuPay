@@ -1,7 +1,10 @@
 import { Info } from 'lucide-react'
+import { API_MODE } from '@/services/http/apiConfig'
 
 /** Makes it explicit that figures are mock data and not bank-verified. */
 export function SampleDataNotice() {
+  // Server mode shows real, bank-verified data: the mock-data warning would be false there.
+  if (API_MODE === 'http') return null
   return (
     <div
       role="note"

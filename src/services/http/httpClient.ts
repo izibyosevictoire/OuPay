@@ -26,6 +26,12 @@ export interface HttpClientOptions {
   fetchImpl?: typeof fetch
   /** Reads a cookie by name. Injectable so tests and non-browser callers can supply their own. */
   readCookie?: (name: string) => string | undefined
+  /**
+   * Called when a call to a business endpoint is answered 401: the server no longer recognises the session
+   * (expired, signed out elsewhere, password changed). Sign-in and registration are excluded, because for
+   * them a 401 just means wrong credentials.
+   */
+  onSessionLost?: () => void
 }
 
 export interface RequestOptions {
@@ -53,6 +59,7 @@ export function createHttpClient({
   baseUrl,
   fetchImpl,
   readCookie = browserCookie,
+  onSessionLost,
 }: HttpClientOptions): HttpClient {
   const doFetch: typeof fetch = (...args) => (fetchImpl ?? fetch)(...args)
 
@@ -116,6 +123,7 @@ export function createHttpClient({
         payload = undefined
       }
     }
+    if (response.status === 401 && !path.startsWith('/auth/')) onSessionLost?.()
     if (!response.ok) {
       const error = (payload ?? {}) as { code?: string; message?: string }
       throw new HttpApiError(

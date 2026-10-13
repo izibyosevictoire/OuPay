@@ -94,10 +94,10 @@ public class AuthService {
         }
         User user = found.get();
         if (user.isLocked(now)) {
-            // Locked accounts answer the same way whether or not the password is right.
+            // A locked account answers EXACTLY like an unknown address or a wrong password. A distinct "locked"
+            // answer would let anyone find out whether an address is registered by sending a few wrong passwords.
             passwords.burnTime(request.password());
-            throw new ApiException(HttpStatus.FORBIDDEN, "account_unavailable",
-                    "This account is temporarily locked. Try again later.");
+            throw invalidCredentials();
         }
         if (!passwords.matches(request.password(), user.getPasswordHash())) {
             var login = properties.login();
@@ -137,7 +137,7 @@ public class AuthService {
     }
 
     private static ApiException invalidCredentials() {
-        return new ApiException(HttpStatus.UNAUTHORIZED, "invalid_credentials", "The email or password is not correct.");
+        return new ApiException(HttpStatus.UNAUTHORIZED, "invalid_credentials", "The email or password is not correct. After several failed attempts, sign-in is paused for a while.");
     }
 
     public static String normaliseEmail(String email) {

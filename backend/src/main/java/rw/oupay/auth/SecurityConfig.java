@@ -45,6 +45,11 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(csrfRepository)
                         .csrfTokenRequestHandler(csrfHandler)
+                        // The default strategy clears the CSRF cookie whenever a request authenticates through our own
+                        // filter, i.e. on EVERY signed-in request (there is no security context repository), so the cookie
+                        // flipped between set and cleared and parallel browser requests could carry a stale token (403).
+                        // The token is rotated explicitly at sign-in instead (see AuthController).
+                        .sessionAuthenticationStrategy((authentication, request, response) -> { })
                         .ignoringRequestMatchers("/api/v1/public/**", "/api/v1/integrations/**"))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .httpBasic(AbstractHttpConfigurer::disable)

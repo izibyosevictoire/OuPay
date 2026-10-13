@@ -83,8 +83,12 @@ class AuthenticationIT extends IntegrationTest {
             assertThat(api.post("/api/v1/auth/login", Map.of("email", "lock@example.rw", "password", "Wrong-pass-1")).status()).isEqualTo(401);
         }
         var locked = api.post("/api/v1/auth/login", Map.of("email", "lock@example.rw", "password", "Correct-horse-9"));
-        assertThat(locked.status()).isEqualTo(403);
-        assertThat(locked.code()).isEqualTo("account_unavailable");
+        assertThat(locked.status()).isEqualTo(401);
+        assertThat(locked.code()).isEqualTo("invalid_credentials");
+        // Indistinguishable from an address that is not registered at all: lockout must not reveal that an account exists.
+        var unknown = new TestApi(mvc).post("/api/v1/auth/login", Map.of("email", "never-registered@example.rw", "password", "Correct-horse-9"));
+        assertThat(locked.status()).isEqualTo(unknown.status());
+        assertThat(locked.body()).isEqualTo(unknown.body());
     }
 
     @Test

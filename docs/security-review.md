@@ -18,6 +18,17 @@ Method: read the code paths, then write tests that fail if the property is lost.
 | 9 | The mail health contributor would mark the whole service DOWN on an SMTP outage. | A mail outage would take invoicing out of rotation. | Disabled; the outbox indicator reports DEGRADED (HTTP 200) and is not part of readiness. [`EmailOutboxIT`, `SecurityHardeningIT`] |
 | 10 | Dependencies with published advisories: Tomcat 11.0.24 (three critical), Jackson 3.1.5 / 2.21.5 (five high or moderate each), BouncyCastle 1.82 (five). | Known vulnerabilities in the request path. | Patch-level overrides in `pom.xml`; OSV scan of all 118 runtime artifacts now reports 0 advisories. |
 
+## Found during final acceptance (browser end-to-end and live probes)
+
+| # | Severity | Finding | Fix and proof |
+| --- | --- | --- | --- |
+| 11 | Medium | **The CSRF cookie flipped between set and cleared on every signed-in request** (Spring's default session strategy treats every request authenticated by our own filter as a new login). Parallel browser requests could carry a stale token and get 403. | The strategy is now a no-op and the token is rotated explicitly at sign-in. [`CsrfCookieStabilityIT`] |
+| 12 | Medium | **Account existence leaked through lockout:** a locked account answered `403 account_unavailable`, an unknown address `401`. Five wrong passwords revealed whether an address is registered. | A locked account now answers exactly like an unknown one. [`AuthenticationIT.repeatedFailuresLock…`] |
+| 13 | Low | Password-reset requests for registered addresses were measurably slower than for unknown ones. | Every answer is padded to a 200 ms floor (measured 205.9 ms vs 207.1 ms live). [`AccountRecoveryIT.knownAndUnknownAddresses…`] |
+| 14 | Medium (functional) | When the server ended a session mid-use (expiry, reset, revoke) the SPA kept showing a page whose requests all failed. | A 401 from a business endpoint now returns the user to sign-in with the session-expired notice. [`sessionLost.test.ts`, browser-verified] |
+| 15 | Medium (functional) | Registering through an invitation link then called accept again; the link is single-use, so a valid sign-up ended in an error message. | Server mode skips the second call. [browser-verified] |
+| 16 | Low | Server mode still showed demo-mode notices (sample-data banner, demo accounts and their password on the login page, demo invitation note) and called an expired invitation "cancelled". | Notices hidden in server mode; expired invitations say so. [browser-verified] |
+
 ## Properties verified and kept
 
 * **Sessions:** opaque 256-bit value, `HttpOnly`, `SameSite=Lax`, `Secure` and `__Host-` prefixed in production,
@@ -41,9 +52,11 @@ Method: read the code paths, then write tests that fail if the property is lost.
 
 ## Accepted residual risks
 
-* Registration still answers `email_taken`. The sign-up form needs it; login and reset do not reveal anything.
-* Password-reset requests for unknown addresses skip the database writes, so a very careful timing attack could
-  distinguish them. Rate limits make this impractical; a constant-time queue is the complete fix.
+* Registration still answers `email_taken` (Low, accepted). The sign-up form needs it; login, lockout and reset do
+  not reveal anything. Rate limits bound probing. The complete fix is an e-mail-first sign-up ("we sent you a link"),
+  a product decision.
+* `inviteeHasActiveAccount` in the invitation preview tells the holder of an invitation link whether the invited
+  address already has an account. Only the link holder can see it, and the link was sent to that address.
 * The rate limiter is per process (see [operations.md](operations.md)).
 * No MFA, no breached-password check, no bot challenge on public pages.
 * Unverified e-mail addresses can use the product; verification is a trust signal, not a gate.

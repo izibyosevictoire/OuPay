@@ -44,6 +44,19 @@ class AccountRecoveryIT extends IntegrationTest {
     }
 
     @Test
+    void knownAndUnknownAddressesTakeTheSameMinimumTime() {
+        fixtures.user("timing@shop.rw", "Timing");
+        for (int round = 0; round < 3; round++) {
+            for (String email : new String[] {"timing@shop.rw", "absent-" + round + "@shop.rw"}) {
+                long started = System.nanoTime();
+                assertThat(anonymous().post(RESET + "request", Map.of("email", email)).status()).isEqualTo(204);
+                // Both are padded to the same floor, so the extra database writes for a real account are not observable.
+                assertThat((System.nanoTime() - started) / 1_000_000).as(email).isGreaterThanOrEqualTo(190);
+            }
+        }
+    }
+
+    @Test
     void invalidAddressesAreValidationErrorsNotAccountProbes() {
         assertThat(anonymous().post(RESET + "request", Map.of("email", "not-an-email")).status()).isEqualTo(422);
         assertThat(anonymous().post(RESET + "request", Map.of()).status()).isEqualTo(422);
@@ -190,7 +203,7 @@ class AccountRecoveryIT extends IntegrationTest {
         for (int i = 0; i < 5; i++) {
             anonymous().post("/api/v1/auth/login", Map.of("email", "locked@shop.rw", "password", "wrong-password-1"));
         }
-        assertThat(anonymous().post("/api/v1/auth/login", Map.of("email", "locked@shop.rw", "password", Fixtures.PASSWORD)).status()).isEqualTo(403);
+        assertThat(anonymous().post("/api/v1/auth/login", Map.of("email", "locked@shop.rw", "password", Fixtures.PASSWORD)).status()).isEqualTo(401);
         requestReset("locked@shop.rw");
         String token = tokenFrom("locked@shop.rw", "/reset-password/");
         assertThat(anonymous().post(RESET + "confirm", Map.of("token", token, "newPassword", NEW_PASSWORD)).status()).isEqualTo(204);
@@ -223,7 +236,7 @@ class AccountRecoveryIT extends IntegrationTest {
         }
         var locked = api.post("/api/v1/auth/password/change", Map.of("currentPassword", Fixtures.PASSWORD, "newPassword", NEW_PASSWORD));
         assertThat(locked.status()).isEqualTo(403);
-        assertThat(anonymous().post("/api/v1/auth/login", Map.of("email", "guess@shop.rw", "password", Fixtures.PASSWORD)).status()).isEqualTo(403);
+        assertThat(anonymous().post("/api/v1/auth/login", Map.of("email", "guess@shop.rw", "password", Fixtures.PASSWORD)).status()).isEqualTo(401);
     }
 
     @Test

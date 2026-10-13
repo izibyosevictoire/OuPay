@@ -4,7 +4,7 @@ import type { BankSimulatorService } from './bankSimulatorService'
 import type { BankingConfigurationService } from './bankingService'
 import type { BranchService } from './branchService'
 import type { DashboardService } from './dashboardService'
-import { API_BASE_URL, API_MODE } from './http/apiConfig'
+import { API_BASE_URL, API_MODE, SESSION_LOST_EVENT } from './http/apiConfig'
 import { createHttpClient } from './http/httpClient'
 import {
   createHttpAuthService,
@@ -95,7 +95,10 @@ function createMockServices(): Services {
 }
 
 function createHttpServices(): Services {
-  const http = createHttpClient({ baseUrl: API_BASE_URL })
+  const http = createHttpClient({
+    baseUrl: API_BASE_URL,
+    onSessionLost: () => window.dispatchEvent(new Event(SESSION_LOST_EVENT)),
+  })
   return {
     authService: createHttpAuthService(http),
     merchantService: createHttpMerchantService(http),

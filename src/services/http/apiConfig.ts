@@ -18,3 +18,6 @@ export const API_BASE_URL: string = (import.meta.env.VITE_API_BASE_URL || '/api/
   /\/+$/,
   '',
 )
+
+/** Fired on `window` when the server stops recognising the session during normal use. */
+export const SESSION_LOST_EVENT = 'oupay:session-lost'

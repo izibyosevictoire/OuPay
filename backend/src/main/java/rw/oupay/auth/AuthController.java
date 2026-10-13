@@ -19,6 +19,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/auth")
 public class AuthController {
 
+    private static final Duration MIN_RESET_RESPONSE = Duration.ofMillis(200);
+
     private final AuthService auth;
     private final AccountRecoveryService recovery;
     private final SecurityProperties properties;
@@ -64,7 +66,27 @@ public class AuthController {
     @PostMapping("/password-reset/request")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void requestReset(@Valid @RequestBody AuthDtos.PasswordResetRequest body, HttpServletRequest request) {
-        recovery.requestPasswordReset(body.email(), clientIps.resolve(request));
+        long started = System.nanoTime();
+        try {
+            recovery.requestPasswordReset(body.email(), clientIps.resolve(request));
+        } finally {
+            padResponseTime(started);
+        }
+    }
+
+    /**
+     * A registered address costs a few database writes (token, outbox, audit); an unknown one costs one lookup.
+     * Padding every answer to the same minimum duration hides that difference from a timing attacker.
+     */
+    private static void padResponseTime(long startedNanos) {
+        long remaining = MIN_RESET_RESPONSE.toNanos() - (System.nanoTime() - startedNanos);
+        if (remaining > 0) {
+            try {
+                Thread.sleep(remaining / 1_000_000, (int) (remaining % 1_000_000));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     /** POST with a body, not GET: the token must not end up in a URL, an access log or a Referer header. */
@@ -110,7 +132,14 @@ public class AuthController {
                 : null;
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookie(result.issued().rawToken(), maxAge).toString())
+                // A new session gets a new CSRF token: drop the old one so the next response mints a fresh value.
+                .header(HttpHeaders.SET_COOKIE, expiredCsrfCookie().toString())
                 .body(result.session());
+    }
+
+    private ResponseCookie expiredCsrfCookie() {
+        return ResponseCookie.from("XSRF-TOKEN", "").path("/").secure(properties.session().secureCookie())
+                .sameSite("Lax").maxAge(Duration.ZERO).build();
     }
 
     private ResponseCookie cookie(String value, Duration maxAge) {

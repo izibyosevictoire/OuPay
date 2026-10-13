@@ -1,8 +1,17 @@
 /* eslint-disable react-refresh/only-export-components -- the hook belongs with its provider */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react'
 import { authService } from '@/services'
 import { AuthServiceError } from '@/services/authService'
+import { SESSION_LOST_EVENT } from '@/services/http/apiConfig'
 import type {
   AuthSession,
   BusinessMembership,
@@ -41,6 +50,7 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
   const [didSignOutOnPurpose, setDidSignOutOnPurpose] = useState(false)
+  const [sessionLost, setSessionLost] = useState(false)
   const sessionQuery = useQuery({
     queryKey: AUTH_SESSION_QUERY_KEY,
     queryFn: () => authService.getCurrentSession(),
@@ -58,9 +68,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         : 'error'
       : sessionQuery.data
         ? 'authenticated'
-        : 'unauthenticated'
+        : sessionLost
+          ? 'expired'
+          : 'unauthenticated'
 
   const session: AuthSession | null = sessionQuery.data ?? null
+
+  // Server mode: a business call answered 401 means the session is gone. Treat it like an expired session
+  // (back to sign-in with a notice) instead of leaving the page spinning on requests that can never succeed.
+  useEffect(() => {
+    const onLost = () => {
+      if (queryClient.getQueryData(AUTH_SESSION_QUERY_KEY) == null) return
+      queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== 'auth' })
+      queryClient.setQueryData(AUTH_SESSION_QUERY_KEY, null)
+      setSessionLost(true)
+    }
+    window.addEventListener(SESSION_LOST_EVENT, onLost)
+    return () => window.removeEventListener(SESSION_LOST_EVENT, onLost)
+  }, [queryClient])
 
   const storeSession = useCallback(
     (next: AuthSession) => queryClient.setQueryData(AUTH_SESSION_QUERY_KEY, next),
@@ -71,6 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (credentials, options) => {
       storeSession(await authService.login(credentials, options))
       setDidSignOutOnPurpose(false)
+      setSessionLost(false)
     },
     [storeSession],
   )
@@ -79,6 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (input) => {
       storeSession(await authService.register(input))
       setDidSignOutOnPurpose(false)
+      setSessionLost(false)
     },
     [storeSession],
   )
