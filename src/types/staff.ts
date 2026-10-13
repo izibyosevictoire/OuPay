@@ -4,7 +4,7 @@ import type { MerchantOwned } from './merchant'
 /** Roles an invitation can grant. Owners are created by registering a business or promotion. */
 export type InvitableRole = Extract<BusinessRole, 'MANAGER' | 'CASHIER'>
 
-export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'REVOKED'
+export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'REVOKED' | 'EXPIRED'
 
 /**
  * A pending offer to join a business. Creating one never creates an ACTIVE membership:
@@ -23,10 +23,12 @@ export interface StaffInvitation extends MerchantOwned {
   invitedByUserId: string
   status: InvitationStatus
   /**
-   * MOCK ONLY. A real backend would email a single-use, expiring, unguessable link and
-   * never return the token to the inviter's browser.
+   * MOCK ONLY. The real backend e-mails a single-use, expiring, unguessable link and never returns the
+   * token to the inviter's browser, so this is absent in server-backed mode.
    */
-  demoToken: string
+  demoToken?: string
+  /** Server-backed mode: when the link stops working. */
+  expiresAt?: string
   createdAt: string
   updatedAt: string
 }

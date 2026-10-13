@@ -9,6 +9,7 @@ import { ForgotPasswordPage } from '@/features/auth/pages/ForgotPasswordPage'
 import { LoginPage } from '@/features/auth/pages/LoginPage'
 import { RegisterPage } from '@/features/auth/pages/RegisterPage'
 import { ResetPasswordPage } from '@/features/auth/pages/ResetPasswordPage'
+import { VerifyEmailPage } from '@/features/auth/pages/VerifyEmailPage'
 import { BankingPage } from '@/features/banking/BankingPage'
 import { BranchDetailsPage } from '@/features/branches/BranchDetailsPage'
 import { BranchesPage } from '@/features/branches/BranchesPage'
@@ -80,6 +81,8 @@ export const appRoutes: RouteObject[] = [
       { path: '/forgot-password', element: <ForgotPasswordPage /> },
       { path: '/reset-password', element: <Navigate to="/forgot-password" replace /> },
       { path: '/reset-password/:token', element: <ResetPasswordPage /> },
+      // The link in the "confirm your email address" message; works in any sign-in state.
+      { path: '/verify-email/:token', element: <VerifyEmailPage /> },
       // Open to anyone holding the link; the page decides what to show for their sign-in state.
       { path: '/accept-invitation/:token', element: <AcceptInvitationPage /> },
     ],

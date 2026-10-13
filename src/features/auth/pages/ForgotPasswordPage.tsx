@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { authService } from '@/services'
+import { API_MODE } from '@/services/http/apiConfig'
 import { DEMO_VALID_RESET_TOKEN } from '@/services/mock/sampleAccounts'
 import { forgotPasswordSchema, type ForgotPasswordFormValues } from '../authSchemas'
 
@@ -47,16 +48,18 @@ export function ForgotPasswordPage() {
             If an account exists for that email address, we have sent instructions to reset the
             password.
           </p>
-          <p className="rounded-md bg-info-soft px-3 py-2 text-xs text-info">
-            Demo mode: no email is sent. To try the reset screen, open{' '}
-            <Link
-              to={`/reset-password/${DEMO_VALID_RESET_TOKEN}`}
-              className="font-medium underline"
-            >
-              the demo reset link
-            </Link>
-            . Demo links are not secure.
-          </p>
+          {API_MODE !== 'http' && (
+            <p className="rounded-md bg-info-soft px-3 py-2 text-xs text-info">
+              Demo mode: no email is sent. To try the reset screen, open{' '}
+              <Link
+                to={`/reset-password/${DEMO_VALID_RESET_TOKEN}`}
+                className="font-medium underline"
+              >
+                the demo reset link
+              </Link>
+              . Demo links are not secure.
+            </p>
+          )}
           <Button asChild variant="outline" className="w-full">
             <Link to="/login">Back to sign in</Link>
           </Button>

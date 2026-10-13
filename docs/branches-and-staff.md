@@ -80,3 +80,23 @@ email a single-use, expiring link and never return it to the inviter.
 
 - `demo-invite-existing`: invitation for `invitee@oupay.demo` (sign in, then accept).
 - `demo-invite-new`: invitation for `new.hire@example.rw` (create account from the link, then accept).
+
+## Server-backed invitations (Milestone 10)
+
+With `VITE_API_MODE=http` the backend does what the mock only pretended to do:
+
+- The invitation is written together with its e-mail in one transaction (the **outbox**); the single-use link
+  (`/accept-invitation/<token>`) is only ever e-mailed. The API never returns the token, so `demoToken` is absent.
+- **Who may invite whom** is `StaffPolicy`: owners invite managers and cashiers, managers cashiers only, nobody
+  invites an owner (promotion is a role change). The role and branches are fixed by the invitation, never by
+  the person accepting it. Branches must be ACTIVE branches of the same business.
+- **Existing users** accept while signed in; the address on the invitation must match their own
+  (`invitation_email_mismatch`). **New people** register through the link (`invitationToken`): the address is
+  fixed, the `PENDING` placeholder becomes a real account and the membership is activated, all or nothing.
+  Plain registration can never claim an invited address.
+- Links expire after 7 days (`oupay.security.recovery.invitation-ttl`), work once, and die when the
+  membership is revoked. Re-inviting after revocation or expiry reuses the same membership row (one row per
+  user and business), with a new link; the old link stays dead.
+- `last_owner`: membership changes take the business-wide membership lock and re-read committed state, so two
+  owners demoting each other at the same moment cannot leave a business without an owner (`InvitationIT`,
+  `MembershipLocksIT`).

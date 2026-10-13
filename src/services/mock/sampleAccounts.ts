@@ -27,6 +27,7 @@ export const DEMO_INVITE_NEW_USER_TOKEN = 'demo-invite-new'
 /** Mock-only triggers for deterministic outcomes. */
 export const DEMO_OUTAGE_EMAIL = 'outage@oupay.demo'
 export const DEMO_VALID_RESET_TOKEN = 'demo-valid-token'
+export const DEMO_VALID_VERIFICATION_TOKEN = 'demo-verify-token'
 export const DEMO_EXPIRED_RESET_TOKEN = 'demo-expired-token'
 /** The account whose demo password the valid reset token changes. */
 export const DEMO_RESET_TARGET_EMAIL = 'owner@oupay.demo'

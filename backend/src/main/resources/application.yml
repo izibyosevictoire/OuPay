@@ -55,11 +55,9 @@ spring:
     async:
       request-timeout: 30s
   mail:
-    # Only used when oupay.email.provider=smtp (production). Left empty otherwise, so no mail sender is created.
-    host: ${OUPAY_SMTP_HOST:}
+    # spring.mail.host is deliberately NOT set here: without it no mail sender exists (development uses the sink).
+    # The prod profile requires it.
     port: ${OUPAY_SMTP_PORT:587}
-    username: ${OUPAY_SMTP_USER:}
-    password: ${OUPAY_SMTP_PASSWORD:}
     properties:
       mail:
         smtp:
@@ -85,6 +83,10 @@ server:
     include-stacktrace: never
 
 management:
+  health:
+    mail:
+      # An SMTP outage must not mark the whole service DOWN; the e-mail outbox health indicator reports it instead.
+      enabled: false
   endpoints:
     web:
       exposure:

@@ -198,7 +198,11 @@ describe.skipIf(!BACKEND)('frontend HTTP services against the live backend', () 
       body: event,
     })
     expect(unsigned.status).toBe(401)
-    const signature = createHmac('sha256', SIMULATOR_SECRET).update(event).digest('hex')
+    // The stand-in signature binds a timestamp into the HMAC, so a captured request cannot be replayed later.
+    const signedAt = Math.floor(Date.now() / 1000)
+    const signature = `t=${signedAt},v1=${createHmac('sha256', SIMULATOR_SECRET)
+      .update(`${signedAt}.${event}`)
+      .digest('hex')}`
     const delivered = await customer.fetchImpl(`${base}/integrations/equity-mock/events`, {
       method: 'POST',
       body: event,
@@ -266,5 +270,187 @@ describe.skipIf(!BACKEND)('frontend HTTP services against the live backend', () 
       }),
     )
     expect(await replayAuth.getCurrentSession()).toBeNull()
+  }, 120_000)
+
+  it('runs account recovery, staff invitations and pagination through the real e-mail outbox', async () => {
+    const base = '/api/v1'
+    const connect = () => {
+      const browser = createBrowser()
+      const http = createHttpClient({
+        baseUrl: base,
+        fetchImpl: browser.fetchImpl,
+        readCookie: (n) => browser.jar.get(n),
+      })
+      return { browser, http, auth: createHttpAuthService(http) }
+    }
+    /** The development mail sink: waits for the dispatcher to deliver, then returns the token in the newest link. */
+    const tokenFrom = async (to: string, pathPrefix: string) => {
+      const sink = createBrowser()
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        const messages = (await (await sink.fetchImpl(`${base}/dev/mail`)).json()) as {
+          to: string
+          text: string
+        }[]
+        const found = [...messages]
+          .reverse()
+          .map((message) =>
+            message.to === to
+              ? new RegExp(`${pathPrefix}([A-Za-z0-9_-]+)`).exec(message.text)
+              : null,
+          )
+          .find(Boolean)
+        if (found) return found[1] as string
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      }
+      throw new Error(`no mail to ${to}`)
+    }
+
+    // Password reset: generic answer, single-use link, other sessions end, the new password works.
+    const email = `recover-${unique}@example.rw`
+    const first = connect()
+    await first.auth.register({
+      fullName: 'Recover Me',
+      email,
+      phoneNumber: '',
+      password: 'Correct-horse-9',
+    })
+    const verification = await tokenFrom(email, '/verify-email/')
+    const stranger = connect()
+    await stranger.auth.confirmEmailVerification(verification)
+    await expect(stranger.auth.confirmEmailVerification(verification)).rejects.toMatchObject({
+      code: 'invalid_token',
+    })
+    expect((await first.auth.getCurrentSession())?.user.emailVerified).toBe(true)
+
+    await expect(
+      connect().auth.requestPasswordReset(`nobody-${unique}@example.rw`),
+    ).resolves.toBeUndefined()
+    await connect().auth.requestPasswordReset(email)
+    const resetToken = await tokenFrom(email, '/reset-password/')
+    const reset = connect()
+    await reset.auth.verifyPasswordResetToken(resetToken)
+    await expect(
+      reset.auth.resetPassword({ token: resetToken, newPassword: 'short' }),
+    ).rejects.toMatchObject({ message: expect.stringContaining('at least 8') })
+    await reset.auth.resetPassword({ token: resetToken, newPassword: 'Brand-new-pass-42' })
+    await expect(
+      reset.auth.resetPassword({ token: resetToken, newPassword: 'Brand-new-pass-43' }),
+    ).rejects.toMatchObject({ code: 'invalid_token' })
+    expect(await first.auth.getCurrentSession()).toBeNull()
+    const again = connect()
+    await expect(
+      again.auth.login({ email, password: 'Correct-horse-9' }, { rememberMe: false }),
+    ).rejects.toMatchObject({ code: 'invalid_credentials' })
+    await again.auth.login({ email, password: 'Brand-new-pass-42' }, { rememberMe: false })
+    await again.auth.changePassword({
+      currentPassword: 'Brand-new-pass-42',
+      newPassword: 'Changed-again-77',
+    })
+    await expect(
+      again.auth.changePassword({ currentPassword: 'wrong', newPassword: 'Changed-again-88' }),
+    ).rejects.toMatchObject({ code: 'invalid_credentials' })
+
+    // Staff invitation for a brand-new person, accepted through the e-mailed link.
+    const boss = connect()
+    await boss.auth.register({
+      fullName: 'Boss',
+      email: `boss-${unique}@example.rw`,
+      phoneNumber: '',
+      password: 'Correct-horse-9',
+    })
+    const merchant = await createHttpMerchantService(boss.http).createMerchant({
+      legalName: `Invite Shop ${unique}`,
+      businessType: 'registered_company',
+      registration: { tin: nineDigits(), registrationNumber: `RC-I-${unique}` },
+      location: {
+        country: 'RW',
+        province: 'Kigali City',
+        district: 'Gasabo',
+        sector: 'Remera',
+        physicalAddress: 'KG 11 Ave',
+      },
+      contact: { fullName: 'Boss', email: 'contact@example.rw', phoneNumber: '+250788123456' },
+    })
+    const branch = await createHttpBranchService(boss.http).createBranch(merchant.id, {
+      name: 'Main',
+      code: 'MN01',
+      status: 'ACTIVE',
+      location: {
+        province: 'Kigali City',
+        district: 'Gasabo',
+        sector: 'Remera',
+        physicalAddress: 'KG 11 Ave',
+      },
+    })
+    const staffService = createHttpStaffService(boss.http)
+    const hireEmail = `hire-${unique}@example.rw`
+    const invitation = await staffService.inviteStaff(merchant.id, {
+      email: hireEmail,
+      role: 'CASHIER',
+      branchIds: [branch.id],
+      note: 'Welcome',
+    })
+    expect(invitation).toMatchObject({ status: 'PENDING', role: 'CASHIER', email: hireEmail })
+    expect(JSON.stringify(invitation)).not.toMatch(/token/i)
+    await expect(
+      staffService.inviteStaff(merchant.id, { email: hireEmail, role: 'CASHIER', branchIds: [] }),
+    ).rejects.toMatchObject({ code: 'duplicate_invitation' })
+    const inviteToken = await tokenFrom(hireEmail, '/accept-invitation/')
+    const preview = await createHttpStaffService(connect().http).getInvitationPreview(inviteToken)
+    expect(preview).toMatchObject({ email: hireEmail, role: 'CASHIER', status: 'PENDING' })
+    const hire = connect()
+    const joined = await hire.auth.register({
+      fullName: 'New Hire',
+      email: hireEmail,
+      phoneNumber: '',
+      password: 'Correct-horse-9',
+      invitationToken: inviteToken,
+    })
+    expect(joined.memberships[0]).toMatchObject({ role: 'CASHIER', status: 'ACTIVE' })
+    await expect(
+      createHttpStaffService(connect().http).getInvitationPreview(inviteToken),
+    ).resolves.toMatchObject({ status: 'ACCEPTED' })
+    const staff = await staffService.listStaff(merchant.id)
+    expect(staff.find((member) => member.email === hireEmail)).toMatchObject({
+      status: 'ACTIVE',
+      branchIds: [branch.id],
+    })
+
+    // Pagination: the explicit page is bounded and deterministic; the contract list still returns everything.
+    const invoiceService = createHttpInvoiceService(boss.http)
+    const options = await invoiceService.getInvoiceFormOptions(merchant.id)
+    const assignee = options.assignees[0]!
+    const dueAt = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10)
+    for (let i = 0; i < 5; i += 1) {
+      await invoiceService.createDraft(merchant.id, {
+        branchId: branch.id,
+        assignedToUserId: assignee.userId,
+        customer: { name: `Customer ${i}` },
+        items: [
+          {
+            description: 'Item',
+            quantity: 1,
+            unitPrice: 1_000 + i,
+            discount: 0,
+            taxRate: { category: 'NOT_APPLICABLE', rateBp: 0 },
+          },
+        ],
+        taxMode: 'EXCLUSIVE',
+        dueAt,
+      })
+    }
+    const seen: string[] = []
+    let cursor: string | undefined
+    for (let pages = 0; pages < 10; pages += 1) {
+      const page = await invoiceService.listInvoices(merchant.id, { limit: 2, cursor })
+      expect(page.items.length).toBeLessThanOrEqual(2)
+      expect(page.totalCount).toBe(5)
+      seen.push(...page.items.map((invoice) => invoice.id))
+      if (!page.nextCursor) break
+      cursor = page.nextCursor
+    }
+    expect(new Set(seen).size).toBe(5)
+    const everything = await invoiceService.listInvoices(merchant.id)
+    expect(everything.items.map((invoice) => invoice.id)).toEqual(seen)
   }, 120_000)
 })

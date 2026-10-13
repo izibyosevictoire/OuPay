@@ -7,6 +7,10 @@ export type AuthServiceErrorCode =
   | 'session_expired'
   | 'invalid_token'
   | 'expired_token'
+  | 'validation'
+  | 'rate_limited'
+  | 'invalid_invitation'
+  | 'invitation_email_mismatch'
   | 'service_unavailable'
 
 export class AuthServiceError extends Error {
@@ -36,4 +40,10 @@ export interface AuthService {
   /** Lets the reset page show an invalid or expired link before asking for a new password. */
   verifyPasswordResetToken(token: string): Promise<void>
   resetPassword(input: { token: string; newPassword: string }): Promise<void>
+  /** Signed in: needs the current password; every OTHER device is signed out. */
+  changePassword(input: { currentPassword: string; newPassword: string }): Promise<void>
+  /** Signed in: sends a fresh verification link (rate limited; resolves quietly when already verified). */
+  requestEmailVerification(): Promise<void>
+  /** The link in the verification e-mail; works once, signed in or not. */
+  confirmEmailVerification(token: string): Promise<void>
 }

@@ -13,6 +13,7 @@ export type OrganizationServiceErrorCode =
   | 'duplicate_invitation'
   | 'invalid_invitation'
   | 'invitation_email_mismatch'
+  | 'validation'
   | 'service_unavailable'
 
 /** Shared by the branch and staff services, which enforce one set of organisation rules. */

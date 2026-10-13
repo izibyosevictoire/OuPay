@@ -15,7 +15,7 @@ import rw.oupay.email.EmailProperties;
  * the rest apply when the {@code prod} profile is active.
  */
 @Component
-public class ProductionSafetyCheck {
+public final class ProductionSafetyCheck {
 
     public ProductionSafetyCheck(Environment environment, SecurityProperties security, EmailProperties email,
                                  SimulatedProviderProperties simulator, AppProperties app) {

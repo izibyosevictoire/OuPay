@@ -12,6 +12,8 @@ export interface User {
   /** Normalised international format, e.g. +250788123456. */
   phoneNumber: string
   status: UserStatus
+  /** Server-backed mode only: whether the e-mail address has been confirmed. Absent in demo mode. */
+  emailVerified?: boolean
   createdAt: string
   updatedAt: string
 }

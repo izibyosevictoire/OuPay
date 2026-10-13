@@ -23,9 +23,16 @@ public class TestApi {
 
     private final MockMvc mvc;
     private final Map<String, String> cookies = new java.util.concurrent.ConcurrentHashMap<>();
+    private volatile String remoteAddr;
 
     public TestApi(MockMvc mvc) {
         this.mvc = mvc;
+    }
+
+    /** Makes this "browser" connect from a specific address (rate limits are per address). */
+    public TestApi from(String address) {
+        this.remoteAddr = address;
+        return this;
     }
 
     public record Response(int status, String body, MockHttpServletResponse raw) {
@@ -66,6 +73,12 @@ public class TestApi {
             cookies.forEach((name, value) -> request.cookie(new Cookie(name, value)));
             if (cookies.containsKey("XSRF-TOKEN")) {
                 request.header("X-XSRF-TOKEN", cookies.get("XSRF-TOKEN"));
+            }
+            if (remoteAddr != null) {
+                request.with(r -> {
+                    r.setRemoteAddr(remoteAddr);
+                    return r;
+                });
             }
             headers.forEach(request::header);
             MvcResult result = mvc.perform(request).andReturn();

@@ -1,11 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  SpotBugs filter. Only the two "exposes internal representation" patterns are excluded: they fire on
-  Spring-injected collaborators (a service holding a repository) and on DTO records that carry a List,
-  neither of which is a defect here. Every other pattern fails the build.
+  SpotBugs filter. Only these patterns are excluded; every other pattern fails the build.
+
+  * EI_EXPOSE_REP, EI_EXPOSE_REP2: they fire on Spring-injected collaborators (a service holding a repository)
+    and on DTO records that carry a List, neither of which is a defect here.
+  * HRS_REQUEST_PARAMETER_TO_HTTP_HEADER, ONLY in CorrelationIdFilter: the incoming X-Request-Id is echoed in the
+    response header, but only after it matched ^[A-Za-z0-9._-]{8,64}$. That alphabet cannot contain CR or LF, so
+    header splitting is impossible; anything else is replaced by a generated UUID (see SecurityHardeningIT).
 -->
 <FindBugsFilter>
   <Match>
     <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+  </Match>
+  <Match>
+    <Class name="rw.oupay.auth.CorrelationIdFilter"/>
+    <Bug pattern="HRS_REQUEST_PARAMETER_TO_HTTP_HEADER"/>
   </Match>
 </FindBugsFilter>

@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
  * trusted proxies configured the header is ignored completely.
  */
 @Component
-public class ClientIpResolver {
+public final class ClientIpResolver {
 
     private static final Pattern IP_LITERAL = Pattern.compile("^[0-9a-fA-F:.]{2,45}$");
 

@@ -49,7 +49,7 @@ export function StaffRowActions({ member, actions, onAction }: StaffRowActionsPr
             <ShieldCheck aria-hidden="true" /> Change role
           </DropdownMenuItem>
         )}
-        {has('open_invitation') && member.pendingInvitation && (
+        {has('open_invitation') && member.pendingInvitation?.demoToken && (
           <DropdownMenuItem asChild>
             <Link to={`/accept-invitation/${member.pendingInvitation.demoToken}`}>
               <LinkIcon aria-hidden="true" /> Open demo invitation

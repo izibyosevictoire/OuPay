@@ -1,6 +1,5 @@
 import { AuthServiceError } from '@/services/authService'
 import { InvoiceServiceError } from '@/services/invoiceService'
-import { OrganizationServiceError } from '@/services/organizationService'
 import { PaymentServiceError } from '@/services/paymentServiceError'
 import { createHttpClient } from './httpClient'
 import {
@@ -93,14 +92,50 @@ describe('HTTP-backed services keep the frontend contracts', () => {
     ).rejects.toMatchObject({ code: 'service_unavailable' })
   })
 
-  it('auth: password reset is honestly unavailable (the server has no email channel yet)', async () => {
-    const { http, fetchImpl } = setup()
+  it('auth: recovery calls carry tokens in the BODY (never a URL) and keep the error codes', async () => {
+    const { http, calls } = setup(
+      {},
+      {},
+      {},
+      { status: 400, body: { code: 'expired_token', message: 'expired' } },
+      { status: 400, body: { code: 'invalid_token', message: 'bad' } },
+      { status: 422, body: { code: 'validation', message: 'The password is too short.' } },
+      {},
+      {},
+      {},
+    )
     const auth = createHttpAuthService(http)
-    await expect(auth.requestPasswordReset('a@b.rw')).rejects.toMatchObject({
-      code: 'service_unavailable',
+    await auth.requestPasswordReset('a@b.rw')
+    await auth.verifyPasswordResetToken('tok-1')
+    await auth.resetPassword({ token: 'tok-1', newPassword: 'New-pass-1' })
+    await expect(auth.verifyPasswordResetToken('tok-2')).rejects.toMatchObject({
+      name: 'AuthServiceError',
+      code: 'expired_token',
     })
-    await expect(auth.verifyPasswordResetToken('t')).rejects.toBeInstanceOf(AuthServiceError)
-    expect(fetchImpl).not.toHaveBeenCalled()
+    await expect(auth.confirmEmailVerification('tok-3')).rejects.toMatchObject({
+      code: 'invalid_token',
+    })
+    // The server's own message survives, so the UI can show why a password was refused.
+    await expect(
+      auth.changePassword({ currentPassword: 'old', newPassword: 'x' }),
+    ).rejects.toMatchObject({ message: 'The password is too short.' })
+    await auth.changePassword({ currentPassword: 'old-1', newPassword: 'New-pass-2' })
+    await auth.requestEmailVerification()
+    await auth.confirmEmailVerification('tok-4')
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      'POST /api/v1/auth/password-reset/request',
+      'POST /api/v1/auth/password-reset/verify',
+      'POST /api/v1/auth/password-reset/confirm',
+      'POST /api/v1/auth/password-reset/verify',
+      'POST /api/v1/auth/email-verification/confirm',
+      'POST /api/v1/auth/password/change',
+      'POST /api/v1/auth/password/change',
+      'POST /api/v1/auth/email-verification/request',
+      'POST /api/v1/auth/email-verification/confirm',
+    ])
+    expect(calls[0]?.body).toEqual({ email: 'a@b.rw' })
+    expect(calls[2]?.body).toEqual({ token: 'tok-1', newPassword: 'New-pass-1' })
+    expect(calls.every((call) => !call.url.includes('tok-'))).toBe(true)
   })
 
   it('merchants and branches use business-scoped paths and keep error codes', async () => {
@@ -132,11 +167,43 @@ describe('HTTP-backed services keep the frontend contracts', () => {
     expect(calls[4]!.body).toEqual({ branchIds: ['b1', 'b2'] })
   })
 
-  it('staff: role and status changes are real calls, invitations are honestly unavailable', async () => {
-    const { http, calls, fetchImpl } = setup({ body: {} }, { body: {} })
+  it('staff: role and status changes and invitations are real calls', async () => {
+    const { http, calls } = setup(
+      { body: {} },
+      { body: {} },
+      { body: { id: 'inv-1', status: 'PENDING' } },
+      { body: [] },
+      { body: { email: 'x@y.rw', status: 'PENDING' } },
+      { body: { id: 'mem-9', status: 'ACTIVE' } },
+      {
+        status: 400,
+        body: { code: 'invalid_invitation', message: 'This invitation is not valid.' },
+      },
+      { status: 403, body: { code: 'invitation_email_mismatch', message: 'wrong address' } },
+      { status: 409, body: { code: 'duplicate_invitation', message: 'already invited' } },
+    )
     const staff = createHttpStaffService(http)
     await staff.updateMembershipRole(M, 'mem-1', 'MANAGER')
     await staff.suspendMembership(M, 'mem-1')
+    await staff.inviteStaff(M, {
+      email: 'x@y.rw',
+      role: 'CASHIER',
+      branchIds: ['b1'],
+      note: 'Welcome',
+    })
+    await staff.listInvitations(M)
+    await staff.getInvitationPreview('tok/with space')
+    await staff.acceptInvitation('tok-1')
+    await expect(staff.acceptInvitation('bad')).rejects.toMatchObject({
+      name: 'OrganizationServiceError',
+      code: 'invalid_invitation',
+    })
+    await expect(staff.acceptInvitation('other')).rejects.toMatchObject({
+      code: 'invitation_email_mismatch',
+    })
+    await expect(
+      staff.inviteStaff(M, { email: 'x@y.rw', role: 'CASHIER', branchIds: [] }),
+    ).rejects.toMatchObject({ code: 'duplicate_invitation' })
     expect(calls[0]).toMatchObject({
       method: 'PUT',
       url: `/api/v1/merchants/${M}/memberships/mem-1/role`,
@@ -146,15 +213,56 @@ describe('HTTP-backed services keep the frontend contracts', () => {
       method: 'POST',
       url: `/api/v1/merchants/${M}/memberships/mem-1/suspend`,
     })
-    const before = fetchImpl as unknown as { mock: { calls: unknown[] } }
-    const count = before.mock.calls.length
-    await expect(
-      staff.inviteStaff(M, { email: 'x@y.rw', role: 'CASHIER', branchIds: [] }),
-    ).rejects.toBeInstanceOf(OrganizationServiceError)
-    await expect(staff.acceptInvitation('token')).rejects.toMatchObject({
-      code: 'service_unavailable',
+    expect(calls[2]).toMatchObject({
+      method: 'POST',
+      url: `/api/v1/merchants/${M}/invitations`,
+      body: { email: 'x@y.rw', role: 'CASHIER', branchIds: ['b1'], note: 'Welcome' },
     })
-    expect(before.mock.calls.length).toBe(count)
+    expect(calls[3]).toMatchObject({ method: 'GET', url: `/api/v1/merchants/${M}/invitations` })
+    // The link token is path-encoded: it can never break out of the path.
+    expect(calls[4]).toMatchObject({
+      method: 'GET',
+      url: '/api/v1/public/invitations/tok%2Fwith%20space',
+    })
+    expect(calls[5]).toMatchObject({ method: 'POST', url: '/api/v1/invitations/tok-1/accept' })
+  })
+
+  it('paginated lists follow the cursor so the UI still receives every item, in server order', async () => {
+    const { http, calls } = setup(
+      { body: { items: [{ id: 't3' }, { id: 't2' }], nextCursor: 'c1' } },
+      { body: { items: [{ id: 't1' }], nextCursor: null } },
+      { body: { items: [{ id: 'a1' }] } },
+      { body: { items: [{ id: 'n2' }], nextCursor: 'n-c' } },
+      { body: { items: [{ id: 'n1' }] } },
+    )
+    const reconciliation = createHttpReconciliationService(http)
+    const transactions = await reconciliation.listBankTransactions(M)
+    expect(transactions.map((t) => t.id)).toEqual(['t3', 't2', 't1'])
+    expect(calls[0]?.url).toBe(`/api/v1/merchants/${M}/bank-transactions?limit=200`)
+    expect(calls[1]?.url).toBe(`/api/v1/merchants/${M}/bank-transactions?limit=200&cursor=c1`)
+    expect((await reconciliation.listAllocations(M)).map((a) => a.id)).toEqual(['a1'])
+    const notifications = await createHttpNotificationService(http).listNotifications(M)
+    expect(notifications.map((n) => n.id)).toEqual(['n2', 'n1'])
+    expect(calls[4]?.url).toBe(`/api/v1/merchants/${M}/notifications?limit=200&cursor=n-c`)
+  })
+
+  it('invoices: an explicit limit is one page, no limit means everything', async () => {
+    const { http, calls } = setup(
+      { body: { items: [{ id: 'i1' }], totalCount: 5, nextCursor: 'next' } },
+      { body: { items: [{ id: 'i2' }], totalCount: 5, nextCursor: null } },
+      { body: { items: [{ id: 'i5' }, { id: 'i4' }], nextCursor: 'x' } },
+      { body: { items: [{ id: 'i3' }], nextCursor: null } },
+    )
+    const invoices = createHttpInvoiceService(http)
+    const first = await invoices.listInvoices(M, { limit: 1 })
+    expect(first).toMatchObject({ totalCount: 5, nextCursor: 'next' })
+    await invoices.listInvoices(M, { limit: 1, cursor: 'next' })
+    const all = await invoices.listInvoices(M)
+    expect(all.items.map((i) => i.id)).toEqual(['i5', 'i4', 'i3'])
+    expect(all).toMatchObject({ totalCount: 3, nextCursor: null })
+    expect(calls[0]?.url).toBe(`/api/v1/merchants/${M}/invoices?limit=1`)
+    expect(calls[1]?.url).toBe(`/api/v1/merchants/${M}/invoices?limit=1&cursor=next`)
+    expect(calls[2]?.url).toBe(`/api/v1/merchants/${M}/invoices?limit=200`)
   })
 
   it('invoices: optimistic-locking versions travel as query parameters, totals are never sent as authority', async () => {

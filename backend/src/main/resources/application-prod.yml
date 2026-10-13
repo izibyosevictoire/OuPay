@@ -10,6 +10,11 @@ logging:
     format:
       # One JSON object per line (ECS), including the correlation id from the logging context.
       console: ecs
+spring:
+  mail:
+    host: ${OUPAY_SMTP_HOST}
+    username: ${OUPAY_SMTP_USER:}
+    password: ${OUPAY_SMTP_PASSWORD:}
 oupay:
   security:
     session:

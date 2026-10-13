@@ -23,6 +23,7 @@ oupay:
     simulated:
       enabled: true
       shared-secret: test-simulator-secret
+oupay.housekeeping.enabled: false
 logging:
   level:
     root: WARN

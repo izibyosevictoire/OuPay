@@ -7,6 +7,7 @@ import {
   DEMO_PASSWORD,
   DEMO_USER_IDS,
   DEMO_VALID_RESET_TOKEN,
+  DEMO_VALID_VERIFICATION_TOKEN,
 } from './sampleAccounts'
 
 function createHarness() {
@@ -220,5 +221,36 @@ describe('mock auth service: password reset', () => {
     await expect(
       service.login({ email: 'owner@oupay.demo', password: 'Another2026' }, { rememberMe: false }),
     ).resolves.toBeTruthy()
+  })
+})
+
+describe('mock auth service: account security additions', () => {
+  it('changes the password only when the current one is right and a session exists', async () => {
+    const { service } = createHarness()
+    await expect(
+      service.changePassword({ currentPassword: DEMO_PASSWORD, newPassword: 'Another2026' }),
+    ).rejects.toMatchObject({ code: 'session_expired' })
+    await service.login(
+      { email: 'owner@oupay.demo', password: DEMO_PASSWORD },
+      { rememberMe: false },
+    )
+    await expect(
+      service.changePassword({ currentPassword: 'wrong', newPassword: 'Another2026' }),
+    ).rejects.toMatchObject({ code: 'invalid_credentials' })
+    await service.changePassword({ currentPassword: DEMO_PASSWORD, newPassword: 'Another2026' })
+    await expect(
+      service.login({ email: 'owner@oupay.demo', password: 'Another2026' }, { rememberMe: false }),
+    ).resolves.toBeTruthy()
+  })
+
+  it('accepts only the demo verification token, and sending a link never fails', async () => {
+    const { service } = createHarness()
+    await expect(service.requestEmailVerification()).resolves.toBeUndefined()
+    await expect(
+      service.confirmEmailVerification(DEMO_VALID_VERIFICATION_TOKEN),
+    ).resolves.toBeUndefined()
+    await expect(service.confirmEmailVerification('nope')).rejects.toMatchObject({
+      code: 'invalid_token',
+    })
   })
 })

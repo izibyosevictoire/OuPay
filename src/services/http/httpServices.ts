@@ -13,6 +13,7 @@ import type { PublicPaymentService } from '@/services/publicPaymentService'
 import type { ReconciliationService } from '@/services/reconciliationService'
 import type { StaffService } from '@/services/staffService'
 import type { AuthSession } from '@/types/auth'
+import type { InvoicePage } from '@/types/invoice'
 import { mapHttpError, translating } from './errorMapping'
 import type { HttpClient } from './httpClient'
 
@@ -23,6 +24,10 @@ const AUTH_CODES: AuthServiceErrorCode[] = [
   'session_expired',
   'invalid_token',
   'expired_token',
+  'validation',
+  'rate_limited',
+  'invalid_invitation',
+  'invitation_email_mismatch',
   'service_unavailable',
 ]
 const MERCHANT_CODES = [
@@ -48,6 +53,7 @@ const ORGANIZATION_CODES = [
   'duplicate_invitation',
   'invalid_invitation',
   'invitation_email_mismatch',
+  'validation',
   'service_unavailable',
 ]
 const INVOICE_CODES = [
@@ -98,13 +104,33 @@ const paymentError = (error: unknown) =>
 
 const m = (merchantId: string) => `/merchants/${merchantId}`
 
-export function createHttpAuthService(http: HttpClient): AuthService {
-  const notBuilt = async () => {
-    throw new AuthServiceError(
-      'service_unavailable',
-      'Password reset is not available on the server yet.',
-    )
+interface PageEnvelope<T> {
+  items: T[]
+  nextCursor?: string | null
+  totalCount?: number
+}
+
+const PAGE_SIZE = 200
+const MAX_PAGES = 500
+
+/**
+ * The server paginates every high-volume list with deterministic keyset pages (see docs/backend.md). The
+ * service contracts still return whole lists, so this follows the cursor until it runs out: the UI sees
+ * exactly what it saw before, while no single response is ever unbounded.
+ */
+async function fetchAllPages<T>(http: HttpClient, path: string): Promise<T[]> {
+  const items: T[] = []
+  let cursor: string | undefined
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const result = await http.get<PageEnvelope<T>>(path, { query: { limit: PAGE_SIZE, cursor } })
+    items.push(...result.items)
+    if (!result.nextCursor) return items
+    cursor = result.nextCursor
   }
+  throw new Error(`The list at ${path} has more than ${MAX_PAGES * PAGE_SIZE} items.`)
+}
+
+export function createHttpAuthService(http: HttpClient): AuthService {
   return {
     register: translating(
       (input) => http.post<AuthSession>('/auth/register', { body: input }),
@@ -123,9 +149,33 @@ export function createHttpAuthService(http: HttpClient): AuthService {
       async () => (await http.get<AuthSession | undefined>('/auth/session')) ?? null,
       authError,
     ),
-    requestPasswordReset: notBuilt,
-    verifyPasswordResetToken: notBuilt,
-    resetPassword: notBuilt,
+    // Always 204, whether or not the account exists. The link in the e-mail carries the token.
+    requestPasswordReset: translating(
+      (email) => http.post<void>('/auth/password-reset/request', { body: { email } }),
+      authError,
+    ),
+    // POST with a body, not GET: the token must not end up in a URL or an access log.
+    verifyPasswordResetToken: translating(
+      (token) => http.post<void>('/auth/password-reset/verify', { body: { token } }),
+      authError,
+    ),
+    resetPassword: translating(
+      ({ token, newPassword }) =>
+        http.post<void>('/auth/password-reset/confirm', { body: { token, newPassword } }),
+      authError,
+    ),
+    changePassword: translating(
+      (input) => http.post<void>('/auth/password/change', { body: input }),
+      authError,
+    ),
+    requestEmailVerification: translating(
+      () => http.post<void>('/auth/email-verification/request'),
+      authError,
+    ),
+    confirmEmailVerification: translating(
+      (token) => http.post<void>('/auth/email-verification/confirm', { body: { token } }),
+      authError,
+    ),
   }
 }
 
@@ -176,19 +226,22 @@ export function createHttpBranchService(http: HttpClient): BranchService {
 }
 
 export function createHttpStaffService(http: HttpClient): StaffService {
-  // Invitations need an email channel and single-use tokens; the server answers 501, and so do we.
-  const invitationsNotBuilt = async () => {
-    throw new OrganizationServiceError(
-      'service_unavailable',
-      'Staff invitations are not available on the server yet.',
-    )
-  }
   return {
     listStaff: translating((id) => http.get(`${m(id)}/staff`), organizationError),
-    inviteStaff: invitationsNotBuilt,
-    listInvitations: invitationsNotBuilt,
-    getInvitationPreview: invitationsNotBuilt,
-    acceptInvitation: invitationsNotBuilt,
+    // The server e-mails the single-use link; the response never contains a token.
+    inviteStaff: translating(
+      (id, input) => http.post(`${m(id)}/invitations`, { body: input }),
+      organizationError,
+    ),
+    listInvitations: translating((id) => http.get(`${m(id)}/invitations`), organizationError),
+    getInvitationPreview: translating(
+      (token) => http.get(`/public/invitations/${encodeURIComponent(token)}`),
+      organizationError,
+    ),
+    acceptInvitation: translating(
+      (token) => http.post(`/invitations/${encodeURIComponent(token)}/accept`),
+      organizationError,
+    ),
     updateMembershipRole: translating(
       (id, membershipId, role) =>
         http.put(`${m(id)}/memberships/${membershipId}/role`, { body: { role } }),
@@ -211,10 +264,16 @@ export function createHttpStaffService(http: HttpClient): StaffService {
 
 export function createHttpInvoiceService(http: HttpClient): InvoiceService {
   return {
-    listInvoices: translating(
-      (id, request) => http.get(`${m(id)}/invoices`, { query: { limit: request?.limit } }),
-      invoiceError,
-    ),
+    listInvoices: translating(async (id, request) => {
+      // An explicit limit asks for exactly one page. Without one the caller wants everything: follow the cursor.
+      if (request?.limit !== undefined || request?.cursor !== undefined) {
+        return http.get<InvoicePage>(`${m(id)}/invoices`, {
+          query: { limit: request.limit, cursor: request.cursor },
+        })
+      }
+      const items = await fetchAllPages<InvoicePage['items'][number]>(http, `${m(id)}/invoices`)
+      return { items, totalCount: items.length, nextCursor: null }
+    }, invoiceError),
     getInvoice: translating(
       (id, invoiceId) => http.get(`${m(id)}/invoices/${invoiceId}`),
       invoiceError,
@@ -278,12 +337,18 @@ export function createHttpDashboardService(http: HttpClient): DashboardService {
 
 export function createHttpReconciliationService(http: HttpClient): ReconciliationService {
   return {
-    listBankTransactions: translating((id) => http.get(`${m(id)}/bank-transactions`), paymentError),
+    listBankTransactions: translating(
+      (id) => fetchAllPages(http, `${m(id)}/bank-transactions`),
+      paymentError,
+    ),
     getBankTransaction: translating(
       (id, transactionId) => http.get(`${m(id)}/bank-transactions/${transactionId}`),
       paymentError,
     ),
-    listAllocations: translating((id) => http.get(`${m(id)}/payment-allocations`), paymentError),
+    listAllocations: translating(
+      (id) => fetchAllPages(http, `${m(id)}/payment-allocations`),
+      paymentError,
+    ),
     listPayableInvoices: translating((id) => http.get(`${m(id)}/payable-invoices`), paymentError),
     allocateManually: translating(
       (id, input) => http.post(`${m(id)}/reconciliation/allocations`, { body: input }),
@@ -304,7 +369,10 @@ export function createHttpReconciliationService(http: HttpClient): Reconciliatio
 
 export function createHttpNotificationService(http: HttpClient): NotificationService {
   return {
-    listNotifications: translating((id) => http.get(`${m(id)}/notifications`), paymentError),
+    listNotifications: translating(
+      (id) => fetchAllPages(http, `${m(id)}/notifications`),
+      paymentError,
+    ),
     markAsRead: translating(
       (id, notificationId) => http.post(`${m(id)}/notifications/${notificationId}/read`),
       paymentError,

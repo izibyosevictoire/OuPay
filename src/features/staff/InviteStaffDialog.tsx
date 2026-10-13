@@ -104,19 +104,31 @@ function InviteForm({ defaults, onDone }: { defaults?: InviteDefaults; onDone: (
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-3">
-          <p className="flex items-start gap-2 rounded-md bg-info-soft px-3 py-2 text-sm text-info">
-            <MailCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-            <span>
-              Demo mode: no email is sent. Open the demo invitation link to try accepting it. Demo
-              links are not secure.
-            </span>
-          </p>
-          <Link
-            to={`/accept-invitation/${createdInvitation.demoToken}`}
-            className="block break-all rounded-sm text-sm font-medium text-primary underline"
-          >
-            Open demo invitation for {createdInvitation.email}
-          </Link>
+          {createdInvitation.demoToken ? (
+            <>
+              <p className="flex items-start gap-2 rounded-md bg-info-soft px-3 py-2 text-sm text-info">
+                <MailCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <span>
+                  Demo mode: no email is sent. Open the demo invitation link to try accepting it.
+                  Demo links are not secure.
+                </span>
+              </p>
+              <Link
+                to={`/accept-invitation/${createdInvitation.demoToken}`}
+                className="block break-all rounded-sm text-sm font-medium text-primary underline"
+              >
+                Open demo invitation for {createdInvitation.email}
+              </Link>
+            </>
+          ) : (
+            <p className="flex items-start gap-2 rounded-md bg-info-soft px-3 py-2 text-sm text-info">
+              <MailCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span>
+                We emailed {createdInvitation.email} a single-use link. It expires in 7 days; you
+                can send a new invitation at any time.
+              </span>
+            </p>
+          )}
         </DialogBody>
         <DialogFooter>
           <Button onClick={onDone}>Done</Button>

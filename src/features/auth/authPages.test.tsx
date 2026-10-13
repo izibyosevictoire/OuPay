@@ -255,3 +255,22 @@ describe('reset password', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('could not reset'))
   })
 })
+
+describe('verify email', () => {
+  beforeEach(() => {
+    useFastBackend()
+  })
+
+  it('confirms the address once with a valid link, signed in or not', async () => {
+    await renderAppAt('/verify-email/demo-verify-token', { signedInAs: null })
+    expect(await heading('Email address confirmed')).toBeInTheDocument()
+    expect(authService.confirmEmailVerification).toHaveBeenCalledTimes(1)
+    expect(authService.confirmEmailVerification).toHaveBeenCalledWith('demo-verify-token')
+  })
+
+  it('explains a link that is not valid and offers sign-in', async () => {
+    await renderAppAt('/verify-email/garbage', { signedInAs: null })
+    expect(await heading('This link is not valid')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Go to sign in' })).toHaveAttribute('href', '/login')
+  })
+})

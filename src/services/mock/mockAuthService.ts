@@ -8,6 +8,7 @@ import {
   DEMO_USERS,
   DEMO_RESET_TARGET_EMAIL,
   DEMO_VALID_RESET_TOKEN,
+  DEMO_VALID_VERIFICATION_TOKEN,
 } from './sampleAccounts'
 import { simulateNetworkDelay } from './simulateNetwork'
 
@@ -170,6 +171,30 @@ export function createMockAuthService(options: MockAuthServiceOptions = {}): Aut
       const problem = checkResetToken(token)
       if (problem) return reject(problem.code, problem.message)
       demoPasswordsByEmail.set(DEMO_RESET_TARGET_EMAIL, newPassword)
+      return respond(undefined)
+    },
+
+    async changePassword({ currentPassword, newPassword }) {
+      const stored = store.readSession()
+      const user = stored && store.loadUsers().find((candidate) => candidate.id === stored.userId)
+      if (!user) return reject('session_expired', 'Please sign in again.')
+      const email = normalizeEmail(user.email)
+      if (demoPasswordsByEmail.get(email) !== currentPassword) {
+        return reject('invalid_credentials', 'The current password is not correct.')
+      }
+      demoPasswordsByEmail.set(email, newPassword)
+      return respond(undefined)
+    },
+
+    async requestEmailVerification() {
+      // Demo mode sends no e-mail.
+      return respond(undefined)
+    },
+
+    async confirmEmailVerification(token) {
+      if (token !== DEMO_VALID_VERIFICATION_TOKEN) {
+        return reject('invalid_token', 'This link is not valid or was already used.')
+      }
       return respond(undefined)
     },
   }

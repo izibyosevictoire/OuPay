@@ -15,15 +15,18 @@ backend/
   pom.xml                       Maven; -Xlint:all -Werror; SpotBugs on `verify`
   compose.yaml                  PostgreSQL only, for local development
   scripts/start-test-postgres.sh  throwaway PostgreSQL for tests when Docker is unavailable
-  src/main/resources/db/migration/   V1..V4 Flyway migrations (the schema's only owner)
+  scripts/backup-db.sh, restore-verify.sh   backup and PROVEN restore (see operations.md)
+  src/main/resources/db/migration/   V1..V5 Flyway migrations (the schema's only owner)
   src/main/java/rw/oupay/
-    common/        ApiException, one error shape, secure tokens, clock, OpenAPI
+    common/        ApiException, one error shape, secure tokens, keyset pagination, startup safety check, housekeeping
     user/          User entity (no role: roles live on memberships)
-    auth/          sessions, Argon2id passwords, login lockout, CSRF, rate limiting, security config
+    auth/          sessions, Argon2id passwords, lockout, CSRF/Origin checks, rate limiting, trusted-proxy client IP,
+                   password reset/change, e-mail verification, correlation ids, security config
     membership/    roles, the permission matrix, MerchantAccess (THE authorisation gate), StaffPolicy
     merchant/      merchants and onboarding
     branch/        branches and branch assignments
-    staff/         staff list, role changes, suspend/reactivate/revoke (invitations: contract only)
+    staff/         staff list, role changes, suspend/reactivate/revoke, e-mailed invitations
+    email/         provider-independent sender (SMTP, dev sink), transactional outbox, dispatcher, templates
     invoice/       invoices, server-side arithmetic, lifecycle
     banking/       provider adapter SPI, simulated provider, connections, destinations, webhook boundary
     ledger/        bank transactions, allocations, balance derivation, event processor, reconciliation
@@ -79,7 +82,17 @@ Conventions:
   (public API, provider webhooks) are exempt and never receive a cookie.
 * **Nothing long-lived is ever given to JavaScript or localStorage.**
 * Headers: CSP `default-src 'none'`, `nosniff`, no-referrer, frame denial, HSTS.
-* Not built: password reset, email verification, MFA (contracts return 501).
+* **Password reset** (Milestone 10): `POST /auth/password-reset/request|verify|confirm`. The request answers 204 for any
+  address (no enumeration); the link is single-use, expires in 1 hour, is stored hashed, and a new request retires
+  the old link. At most 3 links per account and purpose per hour (mail-bombing bound). A weak password does not
+  burn the link. Completing a reset signs out **every** device, lifts a lockout, marks the address verified
+  (the mailbox received the link) and e-mails the owner. The token travels in a POST body, never in a URL.
+* **Password change** (`POST /auth/password/change`): needs the current password (wrong guesses count toward
+  the lockout, answered 422 so the SPA does not mistake it for a lost session), signs out every OTHER device.
+* **E-mail verification:** a link is queued at registration (`POST /auth/email-verification/request|confirm`);
+  it verifies only the address it was sent to. Unverified accounts can sign in (verification is a recovery
+  and trust signal, not a gate). Accepting an invitation or completing a reset also verifies the address.
+* Not built: MFA, breached-password checks, session listing in the API.
 
 ## 4. Authorisation
 
@@ -100,19 +113,27 @@ Errors are always `{ "code", "message", "fields" }` with the stable codes the fr
 
 | Area | Endpoints |
 | --- | --- |
-| Auth | `POST /auth/register`, `POST /auth/login`, `GET /auth/session` (204 when signed out), `POST /auth/logout`; `…/password-reset/*` → **501** |
+| Auth | `POST /auth/register`, `POST /auth/login`, `GET /auth/session` (204 when signed out), `POST /auth/logout`, `POST /auth/password-reset/request|verify|confirm`, `POST /auth/password/change`, `POST /auth/email-verification/request|confirm` |
 | Merchants | `POST /merchants`, `GET /merchants`, `GET/PUT /merchants/{id}` |
 | Branches | `GET/POST /merchants/{m}/branches`, `GET/PUT …/{id}`, `PUT …/{id}/status`, `GET …/branch-assignments`, `PUT /merchants/{m}/memberships/{id}/branch-assignments` |
-| Staff | `GET …/staff`, `PUT …/memberships/{id}/role`, `POST …/memberships/{id}/suspend|reactivate|revoke`; invitations → **501** |
+| Staff | `GET …/staff`, `PUT …/memberships/{id}/role`, `POST …/memberships/{id}/suspend|reactivate|revoke`, `GET/POST …/invitations`, `POST /invitations/{token}/accept` |
 | Invoices | `GET/POST …/invoices`, `GET …/invoices/{id}`, `GET …/invoices/form-options`, `PUT …/{id}?expectedVersion`, `POST …/{id}/issue|cancel|void?expectedVersion` |
 | Banking | `GET /banking/providers`, `GET/POST …/bank-connections`, `POST …/bank-connections/{id}/complete|disable`, `GET …/payment-destinations` |
-| Ledger | `GET …/bank-transactions`, `GET …/bank-transactions/{id}`, `GET …/payment-allocations`, `GET …/payable-invoices`, `POST …/reconciliation/allocations`, `POST …/reconciliation/allocations/{id}/reverse`, `POST …/bank-transactions/{id}/review` |
+| Ledger | `GET …/bank-transactions` (paged), `GET …/bank-transactions/{id}`, `GET …/payment-allocations` (paged), `GET …/payable-invoices`, `POST …/reconciliation/allocations`, `POST …/reconciliation/allocations/{id}/reverse`, `POST …/bank-transactions/{id}/review` |
 | Payment links | `GET/POST …/payment-profiles`, `GET …/{id}`, `GET …/form-options`, `PUT …/{id}/active`, `POST …/{id}/reissue`, `POST/GET …/invoices/{id}/payment-requests`, `POST …/payment-requests/{id}/cancel` |
-| Notifications | `GET …/notifications`, `POST …/notifications/{id}/read`, `POST …/notifications/read-all` |
+| Notifications | `GET …/notifications` (paged), `POST …/notifications/{id}/read`, `POST …/notifications/read-all` |
 | Dashboard | `GET …/dashboard/summary|recent-transactions|daily-payment-activity|provider-breakdown` |
-| Audit | `GET …/audit-log` (owners, managers) |
-| **Public (anonymous)** | `GET /public/payment-profiles/{token}`, `POST …/{token}/requests`, `GET …/{token}/requests/{reference}`, `POST …/instructions-opened`, `POST …/claim` |
+| Audit | `GET …/audit-log` (owners, managers; paged) |
+| **Public (anonymous)** | `GET /public/invitations/{token}`, `GET /public/payment-profiles/{token}`, `POST …/{token}/requests`, `GET …/{token}/requests/{reference}`, `POST …/instructions-opened`, `POST …/claim` |
 | **Provider boundary** | `POST /integrations/{provider}/events` (signature required) |
+| Operations | `GET /actuator/health`, `/actuator/health/liveness`, `/actuator/health/readiness` (status only); `GET /dev/mail` (development sink only) |
+
+**Pagination.** Invoices, bank transactions, payment allocations, notifications and the audit log are
+server-paged: `?limit=` (default 50, max 200) and `?cursor=`, answered as `{ items, nextCursor, totalCount? }`.
+Paging is keyset ("seek") over a **total order** (sort column plus id), so no row is skipped or repeated
+even when many rows share a timestamp or new rows arrive while someone is paging; cursors are opaque and a
+malformed one is a 400. Cashier scoping is applied in the query, so pages and totals never leak other
+people's records. The frontend HTTP services follow the cursor, so UI behaviour is unchanged.
 
 There is **no** endpoint that creates a bank transaction, confirms a payment or marks an invoice paid,
 for any role, public or authenticated. `LedgerIT.thereIsNoMerchantApiThatCreatesOrConfirmsATransaction`
@@ -150,6 +171,14 @@ All inside **one database transaction per operation**, with row locks in a fixed
   (real Equity, MTN, Airtel) **501**, an adapter that cannot authenticate events is never exposed, the event
   must verify **before** it is parsed (constant-time HMAC for the simulator), bad payloads are 400, and
   oversized payloads 413. Not covered by CSRF (no cookies), rate limited.
+* **Replay handling (Milestone 10).** The simulator's stand-in signature is `t=<epoch>,v1=<hmac(t.body)>`:
+  the timestamp is inside the MAC and must be within 5 minutes, so a captured request cannot be replayed later.
+  Inside the window, repeats are absorbed by the idempotency keys (`(provider, event id)` and
+  `(provider, transaction id)`) and reported as DUPLICATE. A repeated event id with **different content**
+  is ignored, audited (`REPLAY_PAYLOAD_MISMATCH`) and counted (`oupay.bank.events.payload_mismatch`).
+* **Sensitive event data.** The copy kept in `bank_events` is **redacted** before it is written (names reduced
+  to an initial, account/phone numbers to the last four digits); the SHA-256 of the original is stored for
+  integrity. The ledger needs only the normalised fields, which live in typed columns. Payloads are never logged.
 * The **simulated** provider uses an *invented* format marked `"simulated": true`, a shared secret that has
   **no default** and is configured only in the `dev`/`test` profiles. In any other environment it answers 404.
 * Open questions for the real bank are in [bank-integration.md](bank-integration.md); every real-provider
@@ -169,8 +198,8 @@ one claim endpoint that is explicitly **only a claim**. There is no list, search
 
 | Module | State |
 | --- | --- |
-| Authentication, sessions, authorisation | **Implemented** (password reset, email verification, MFA: pending) |
-| Users and memberships | **Implemented** (staff invitations: contract only, 501) |
+| Authentication, sessions, authorisation | **Implemented** (password reset, change, e-mail verification; MFA: pending) |
+| Users and memberships | **Implemented** (staff invitations, last-owner protection) |
 | Merchants and onboarding | **Implemented** (back-office verification: not built) |
 | Branches and assignments | **Implemented** |
 | Invoicing | **Implemented** (PDF/fiscal documents, credit notes: pending) |
@@ -178,7 +207,8 @@ one claim endpoint that is explicitly **only a claim**. There is no list, search
 | Bank transaction ingestion | **Implemented** (simulated provider) |
 | Reconciliation and allocations | **Implemented** (refunds: model only, no endpoint) |
 | Payment links and requests | **Implemented** (server side; QR/NFC rendering stays in the frontend) |
-| Notifications | **Implemented** (in-app only; email/SMS/push: pending) |
+| Notifications | **Implemented** (in-app; SMS/push: pending) |
+| E-mail | **Implemented** (provider-independent, SMTP + dev sink, outbox with retries; account and invitation mail only) |
 | Audit logging | **Implemented** (read endpoint for owners/managers) |
 | Reports, settings, back office | Not started |
 
@@ -194,6 +224,9 @@ PG_BIN="/c/Program Files/PostgreSQL/18/bin" backend/scripts/start-test-postgres.
 cd backend
 OUPAY_DB_URL=jdbc:postgresql://localhost:5432/oupay OUPAY_DB_USER=oupay OUPAY_DB_PASSWORD=oupay \
   mvn spring-boot:run -Dspring-boot.run.profiles=dev
+
+# Read the e-mails the dev sink captured (password-reset and invitation links):
+curl http://localhost:8080/api/v1/dev/mail
 
 # 3. Tests: unit + database integration + concurrency + security + SpotBugs
 mvn verify                                    # starts a PostgreSQL Testcontainer (needs Docker), or:
@@ -214,7 +247,8 @@ implementations of every contract, selected in **one place** (`src/services/inde
 | Session | mock session in browser storage | server HttpOnly cookie; **nothing in storage** |
 | Mock graph | constructed | **never constructed** (no mock data read, written or shown) |
 | Demo tools | bank simulator page and buttons (dev builds) | removed (`DEMO_TOOLS_BUILD` is false) |
-| Unbuilt server features | n/a | staff invitations and password reset report "not available on the server yet" |
+| Account recovery and invitations | simulated links (no e-mail) | real: e-mailed single-use links; the server never returns a token to a browser |
+| Lists | whole lists | the HTTP services follow server pagination cursors |
 
 Existing mock data and mock services were not deleted or changed. Run the dev server proxied to the API:
 
@@ -231,26 +265,36 @@ OUPAY_BACKEND_URL=http://localhost:8080 npx vitest run src/services/http/backend
 
 ## 12. Security limitations (read before deploying)
 
-* The rate limiter is **per process** and keys on the connection address. Behind a proxy it needs trusted
-  forwarded headers (`server.forward-headers-strategy=native`) and should be repeated at the edge or moved to a
-  shared store.
-* No MFA, email verification, password reset, or breached-password check yet. Session listing/"sign out
-  everywhere" is not exposed in the API (the service supports it).
+See [operations.md](operations.md) for the production checklist and [security-review.md](security-review.md) for the
+Milestone 10 review. Known limitations:
+
+* The rate limiter is **per process** (so the effective limit is multiplied by the instance count). The client
+  address comes from `ClientIpResolver`: `X-Forwarded-For` is believed ONLY from proxies listed in
+  `oupay.security.proxy.trusted`, read from the right. Repeat limits at the edge, or move to a shared store.
+  Per-account protections (lockout, reset-link budget) live in the database and are exact across instances.
+* Registration answers `email_taken` for a registered address (the sign-up form needs it). Everything else that
+  takes an address (login, password reset) is enumeration-resistant. Rate limits bound probing.
+* No MFA or breached-password check yet. Session listing/"sign out everywhere" is not exposed in the API
+  (the service supports it; a reset or change uses it).
 * Public pages have no bot challenge. Tokens are unguessable but are public identifiers; enumeration attempts are
   limited by rate limits, not detected.
 * The `dev` profile has a development-only simulator secret and non-Secure cookies: never deploy it.
-* No encryption at rest, field-level encryption or key management beyond what the database provides. Raw bank
-  events (which may contain payer names) are stored as received; plan retention and access rules.
-* Lists are not paginated yet (invoices, transactions); the ledger read models are assembled in memory.
+* No encryption at rest, field-level encryption or key management beyond what the database provides. Provider
+  events are stored redacted; backups contain personal data and must be encrypted and access controlled.
+* The dashboard aggregates are still computed in memory over a business's transactions (the lists are paged,
+  the dashboard is not); move them to SQL aggregates before businesses reach very large volumes.
 * Timestamps in the payment APIs are UTC instants; Kigali-day bucketing is done only for the dashboard.
-* No observability stack, backups, or migration rollback plan is provided.
+* Metrics are collected (Micrometer) but not exported: no Prometheus/OTLP registry and no alerting rules ship
+  with the application. There is no Docker image, CI pipeline or migration rollback plan (Flyway is forward-only;
+  restore from backup).
 
 ## 13. Next steps
 
 1. Obtain the bank's integration documentation, sandbox and approval; build the real adapter behind the same SPI.
-2. Email channel: invitations, password reset, verification, notifications.
-3. Pagination, filtering and indexes tuned on real volumes; read models for the ledger.
+2. Notification e-mail and SMS (the outbox and templates are ready for it).
+3. Filtering and indexes tuned on real volumes; SQL read models for the dashboard.
 4. Refund and credit-note flows; fiscal (EBM) documents.
 5. Edge rate limiting, bot protection for public pages, structured audit export, retention policy.
-6. Operations: Docker image, CI pipeline running `mvn verify` with Testcontainers, backups, monitoring.
+6. Operations: Docker image, CI pipeline running `mvn verify` with Testcontainers, metrics export and alerts,
+   scheduled backups wired to real storage.
 7. Back office for merchant verification; reports.

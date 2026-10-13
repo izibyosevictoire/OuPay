@@ -208,6 +208,15 @@ export function useFastBackend() {
     resetPassword: vi
       .spyOn(authService, 'resetPassword')
       .mockImplementation(fastAuth.resetPassword),
+    changePassword: vi
+      .spyOn(authService, 'changePassword')
+      .mockImplementation(fastAuth.changePassword),
+    requestEmailVerification: vi
+      .spyOn(authService, 'requestEmailVerification')
+      .mockImplementation(fastAuth.requestEmailVerification),
+    confirmEmailVerification: vi
+      .spyOn(authService, 'confirmEmailVerification')
+      .mockImplementation(fastAuth.confirmEmailVerification),
     listBranches: vi
       .spyOn(branchService, 'listBranches')
       .mockImplementation(fastBranches.listBranches),
