@@ -1,0 +1,24 @@
+# Keep the build context small and free of anything local: build output, test databases, scripts, secrets.
+target/
+.test-pgdata/
+.test-pgdata.pw
+backups/
+*.dump
+scripts/
+compose.yaml
+Dockerfile
+.dockerignore
+.git/
+.gitignore
+.idea/
+.vscode/
+*.iml
+.env
+.env.*
+*.pem
+*.key
+*.jks
+*.p12
+*.log
+# Tests and the dev profile are not part of the image (the Dockerfile also removes application-dev.yml).
+src/test/

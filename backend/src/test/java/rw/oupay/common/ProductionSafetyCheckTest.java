@@ -60,4 +60,35 @@ class ProductionSafetyCheckTest {
         assertThat(check(false, security(true, "c", "Lax", List.of()), email("sink", false),
                 new SimulatedProviderProperties(true, ""), "http://x", "")).anyMatch(p -> p.contains("shared secret"));
     }
+
+    @Test
+    void productionRequiresAnEncryptedDatabaseConnectionUnlessItIsLocal() {
+        String neon = "jdbc:postgresql://ep-example-123.eu-central-1.aws.neon.tech/oupay";
+        assertThat(ProductionSafetyCheck.databaseViolations(neon + "?sslmode=require", "")).isEmpty();
+        assertThat(ProductionSafetyCheck.databaseViolations(neon + "?channel_binding=require&sslmode=verify-full", "")).isEmpty();
+        assertThat(ProductionSafetyCheck.databaseViolations(neon, "")).hasSize(1);
+        for (String weak : new String[] {"?sslmode=disable", "?sslmode=allow", "?sslmode=prefer", "?foo=sslmode=require", "?sslmode=requirex"}) {
+            assertThat(ProductionSafetyCheck.databaseViolations(neon + weak, "")).as(weak).hasSize(1);
+        }
+        // The Flyway URL is held to the same rule when it is set separately.
+        assertThat(ProductionSafetyCheck.databaseViolations(neon + "?sslmode=require", neon)).hasSize(1);
+        assertThat(ProductionSafetyCheck.databaseViolations(neon + "?sslmode=require", neon + "?sslmode=require")).isEmpty();
+        // A database on this machine needs no TLS; a look-alike host does.
+        assertThat(ProductionSafetyCheck.databaseViolations("jdbc:postgresql://localhost:5432/oupay", "")).isEmpty();
+        assertThat(ProductionSafetyCheck.databaseViolations("jdbc:postgresql://127.0.0.1/oupay", "")).isEmpty();
+        assertThat(ProductionSafetyCheck.databaseViolations("jdbc:postgresql://localhost.evil.example/oupay", "")).hasSize(1);
+        assertThat(ProductionSafetyCheck.databaseViolations("", "")).hasSize(1);
+        // The message never contains the URL (it can carry credentials).
+        assertThat(String.join(" ", ProductionSafetyCheck.databaseViolations("jdbc:postgresql://user:secretpw@db.example/x", ""))).doesNotContain("secretpw");
+    }
+
+    @Test
+    void theDevProfileCanNeverRunTogetherWithProd() {
+        var env = new org.springframework.mock.env.MockEnvironment().withProperty("spring.datasource.url", "jdbc:postgresql://localhost/x");
+        env.setActiveProfiles("prod", "dev");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new ProductionSafetyCheck(env,
+                security(true, "__Host-oupay_session", "Lax", List.of()), email("smtp", false), new SimulatedProviderProperties(false, ""),
+                new AppProperties("https://app.example.rw")))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("dev profile");
+    }
 }
