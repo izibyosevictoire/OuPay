@@ -22,10 +22,9 @@ spring:
       keepalive-time: 300000
       leak-detection-threshold: ${OUPAY_DB_LEAK_DETECTION_MS:0}
       # Server-side guards for every connection: no runaway query, no endless lock wait, no forgotten transaction.
-      connection-init-sql: >-
-        SET statement_timeout = '${OUPAY_DB_STATEMENT_TIMEOUT:30s}';
-        SET lock_timeout = '${OUPAY_DB_LOCK_TIMEOUT:10s}';
-        SET idle_in_transaction_session_timeout = '${OUPAY_DB_IDLE_TX_TIMEOUT:60s}'
+      # Replace the whole statement with OUPAY_DB_CONNECTION_INIT_SQL (for example "SELECT 1") behind a transaction
+      # pooler, where session-level SET is not reliable; then rely on the socket and query timeouts below.
+      connection-init-sql: ${OUPAY_DB_CONNECTION_INIT_SQL:SET statement_timeout = '${OUPAY_DB_STATEMENT_TIMEOUT:30s}'; SET lock_timeout = '${OUPAY_DB_LOCK_TIMEOUT:10s}'; SET idle_in_transaction_session_timeout = '${OUPAY_DB_IDLE_TX_TIMEOUT:60s}'}
       data-source-properties:
         connectTimeout: 10
         socketTimeout: 60
@@ -47,6 +46,13 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+    # Migrations should run over a DIRECT database connection (no pooler: DDL, advisory locks and session settings
+    # are not reliable through a transaction pooler). Set OUPAY_FLYWAY_DB_URL (and user/password if they differ)
+    # when the application itself uses a pooled URL.
+    # Unset means: the same connection as the application (these placeholders resolve to the datasource settings).
+    url: ${OUPAY_FLYWAY_DB_URL:${spring.datasource.url}}
+    user: ${OUPAY_FLYWAY_DB_USER:${spring.datasource.username}}
+    password: ${OUPAY_FLYWAY_DB_PASSWORD:${spring.datasource.password}}
   jackson:
     default-property-inclusion: non_null
   lifecycle:
@@ -69,6 +75,9 @@ spring:
           writetimeout: 15000
 
 server:
+  # Platforms such as Render hand the port over in PORT and need the process reachable from outside the container.
+  port: ${PORT:8080}
+  address: ${OUPAY_BIND_ADDRESS:0.0.0.0}
   shutdown: graceful
   # Set to "native" when running behind a TRUSTED reverse proxy so the real client IP is used.
   forward-headers-strategy: none
@@ -130,11 +139,11 @@ oupay:
       # Extra origins allowed for state-changing browser requests (same-host is always allowed).
       allowed: ${OUPAY_ALLOWED_ORIGINS:}
   rate-limit:
-    public-read-per-minute: 120
-    public-write-per-minute: 20
-    auth-per-minute: 20
-    recovery-per-minute: 10
-    webhook-per-minute: 600
+    public-read-per-minute: ${OUPAY_RATE_LIMIT_PUBLIC_READ:120}
+    public-write-per-minute: ${OUPAY_RATE_LIMIT_PUBLIC_WRITE:20}
+    auth-per-minute: ${OUPAY_RATE_LIMIT_AUTH:20}
+    recovery-per-minute: ${OUPAY_RATE_LIMIT_RECOVERY:10}
+    webhook-per-minute: ${OUPAY_RATE_LIMIT_WEBHOOK:600}
   email:
     provider: ${OUPAY_EMAIL_PROVIDER:sink}
     from: ${OUPAY_EMAIL_FROM:OuPay <no-reply@oupay.rw>}

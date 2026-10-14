@@ -2,6 +2,7 @@ package rw.oupay.common;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Component;
@@ -20,10 +21,39 @@ public final class ProductionSafetyCheck {
     public ProductionSafetyCheck(Environment environment, SecurityProperties security, EmailProperties email,
                                  SimulatedProviderProperties simulator, AppProperties app) {
         boolean prod = environment.acceptsProfiles(Profiles.of("prod"));
-        List<String> problems = violations(prod, security, email, simulator, app, environment.getProperty("spring.mail.host", ""));
+        List<String> problems = new ArrayList<>(violations(prod, security, email, simulator, app, environment.getProperty("spring.mail.host", "")));
+        if (prod) {
+            problems.addAll(databaseViolations(environment.getProperty("spring.datasource.url", ""), environment.getProperty("spring.flyway.url", "")));
+            if (environment.acceptsProfiles(Profiles.of("dev"))) {
+                problems.add("the dev profile (public simulator secret, plain cookies) must never be combined with prod");
+            }
+        }
         if (!problems.isEmpty()) {
             throw new IllegalStateException("Unsafe configuration, refusing to start: " + String.join("; ", problems));
         }
+    }
+
+    private static final Pattern SSL_MODE = Pattern.compile("[?&]sslmode=(require|verify-ca|verify-full)(&|$)");
+    private static final Pattern LOOPBACK_HOST = Pattern.compile("^jdbc:postgresql://(localhost|127\\.0\\.0\\.1|\\[::1\\])([:/?]|$)");
+
+    /**
+     * In production the database connection must be encrypted: the URL must say {@code sslmode=require} (or stricter),
+     * unless the database is on this machine. An empty Flyway URL means "same as the application". Never echoes the URL,
+     * which may carry credentials.
+     */
+    public static List<String> databaseViolations(String jdbcUrl, String flywayUrl) {
+        List<String> problems = new ArrayList<>();
+        if (!encrypted(jdbcUrl)) {
+            problems.add("the database URL must enable TLS (add sslmode=require or stricter) unless the database is local");
+        }
+        if (flywayUrl != null && !flywayUrl.isBlank() && !encrypted(flywayUrl)) {
+            problems.add("the Flyway database URL must enable TLS (add sslmode=require or stricter) unless the database is local");
+        }
+        return problems;
+    }
+
+    private static boolean encrypted(String url) {
+        return url != null && (SSL_MODE.matcher(url).find() || LOOPBACK_HOST.matcher(url).find());
     }
 
     public static List<String> violations(boolean prod, SecurityProperties security, EmailProperties email,
