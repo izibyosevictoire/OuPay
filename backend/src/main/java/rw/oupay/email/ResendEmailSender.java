@@ -24,7 +24,7 @@ import tools.jackson.databind.ObjectMapper;
     name = "provider",
     havingValue = "resend"
 )
-public class ResendEmailSender implements EmailSender {
+public final class ResendEmailSender implements EmailSender {
 
     private static final URI ENDPOINT =
         URI.create("https://api.resend.com/emails");
