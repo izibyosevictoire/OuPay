@@ -32,7 +32,7 @@ class ResendEmailSenderTest {
         HttpResponse<String> response = mock(HttpResponse.class);
 
         when(response.statusCode()).thenReturn(status);
-        when(client.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+        when(client.send(any(HttpRequest.class), org.mockito.ArgumentMatchers.<HttpResponse.BodyHandler<String>>any()))
             .thenReturn(response);
 
         return client;
@@ -79,7 +79,7 @@ class ResendEmailSenderTest {
             ArgumentCaptor.forClass(HttpRequest.class);
 
         verify(client, times(2))
-            .send(requests.capture(), any(HttpResponse.BodyHandler.class));
+            .send(requests.capture(), org.mockito.ArgumentMatchers.<HttpResponse.BodyHandler<String>>any());
 
         for (HttpRequest request : requests.getAllValues()) {
             assertThat(request.uri().toString())
