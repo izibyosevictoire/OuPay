@@ -46,7 +46,7 @@ class ProductionSafetyCheckTest {
                 new SimulatedProviderProperties(true, "s"), "http://app.oupay.rw", "");
         assertThat(problems).hasSize(5)
                 .anyMatch(p -> p.contains("Secure")).anyMatch(p -> p.contains("simulated"))
-                .anyMatch(p -> p.contains("smtp")).anyMatch(p -> p.contains("dev mail endpoint")).anyMatch(p -> p.contains("https"));
+                .anyMatch(p -> p.contains("email provider")).anyMatch(p -> p.contains("dev mail endpoint")).anyMatch(p -> p.contains("https"));
     }
 
     @Test
@@ -91,4 +91,56 @@ class ProductionSafetyCheckTest {
                 new AppProperties("https://app.example.rw")))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("dev profile");
     }
+
+    @Test
+    void resendProviderIsAllowedInProduction() {
+        var problems = check(
+                true,
+                security(true, "__Host-oupay_session", "Lax", List.of()),
+                email("resend", false),
+                new SimulatedProviderProperties(false, ""),
+                "https://oupay-chi.vercel.app",
+                ""
+        );
+
+        assertThat(problems).isEmpty();
+    }
+
+    @Test
+    void smtpStillRequiresHostInProduction() {
+        var problems = check(
+                true,
+                security(true, "__Host-oupay_session", "Lax", List.of()),
+                email("smtp", false),
+                new SimulatedProviderProperties(false, ""),
+                "https://oupay-chi.vercel.app",
+                ""
+        );
+
+        assertThat(problems)
+                .anyMatch(problem -> problem.contains("SMTP requires"));
+    }
+
+    @Test
+    void productionRejectsMissingResendApiKey() {
+        var environment = new org.springframework.mock.env.MockEnvironment()
+                .withProperty(
+                        "spring.datasource.url",
+                        "jdbc:postgresql://localhost/oupay"
+                );
+
+        environment.setActiveProfiles("prod");
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> new ProductionSafetyCheck(
+                        environment,
+                        security(true, "__Host-oupay_session", "Lax", List.of()),
+                        email("resend", false),
+                        new SimulatedProviderProperties(false, ""),
+                        new AppProperties("https://oupay-chi.vercel.app")
+                )
+        ).isInstanceOf(IllegalStateException.class)
+         .hasMessageContaining("OUPAY_RESEND_API_KEY");
+    }
+
 }

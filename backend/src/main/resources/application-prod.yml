@@ -12,7 +12,7 @@ logging:
       console: ecs
 spring:
   mail:
-    host: ${OUPAY_SMTP_HOST}
+    host: ${OUPAY_SMTP_HOST:}
     username: ${OUPAY_SMTP_USER:}
     password: ${OUPAY_SMTP_PASSWORD:}
 oupay:
@@ -22,7 +22,7 @@ oupay:
       # The __Host- prefix makes the browser refuse the cookie unless it is Secure, Path=/ and has no Domain.
       cookie-name: __Host-oupay_session
   email:
-    provider: smtp
+    provider: ${OUPAY_EMAIL_PROVIDER:smtp}
     sink-endpoint-enabled: false
   integrations:
     simulated:

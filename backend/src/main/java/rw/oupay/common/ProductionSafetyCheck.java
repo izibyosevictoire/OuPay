@@ -23,6 +23,11 @@ public final class ProductionSafetyCheck {
         boolean prod = environment.acceptsProfiles(Profiles.of("prod"));
         List<String> problems = new ArrayList<>(violations(prod, security, email, simulator, app, environment.getProperty("spring.mail.host", "")));
         if (prod) {
+            if ("resend".equalsIgnoreCase(email.provider())
+                    && environment.getProperty("OUPAY_RESEND_API_KEY", "").isBlank()) {
+                problems.add("Resend requires OUPAY_RESEND_API_KEY");
+            }
+
             problems.addAll(databaseViolations(environment.getProperty("spring.datasource.url", ""), environment.getProperty("spring.flyway.url", "")));
             if (environment.acceptsProfiles(Profiles.of("dev"))) {
                 problems.add("the dev profile (public simulator secret, plain cookies) must never be combined with prod");
@@ -79,8 +84,14 @@ public final class ProductionSafetyCheck {
             if (simulator.enabled()) {
                 problems.add("the simulated bank provider must be disabled in production");
             }
-            if (!"smtp".equalsIgnoreCase(email.provider()) || smtpHost == null || smtpHost.isBlank()) {
-                problems.add("production needs oupay.email.provider=smtp and spring.mail.host (the dev mail sink drops real mail)");
+            String provider = email.provider().toLowerCase(java.util.Locale.ROOT);
+
+            if ("smtp".equals(provider)) {
+                if (smtpHost == null || smtpHost.isBlank()) {
+                    problems.add("SMTP requires spring.mail.host");
+                }
+            } else if (!"resend".equals(provider)) {
+                problems.add("Production requires smtp or resend email provider");
             }
             if (email.sinkEndpointEnabled()) {
                 problems.add("the dev mail endpoint must be disabled in production");

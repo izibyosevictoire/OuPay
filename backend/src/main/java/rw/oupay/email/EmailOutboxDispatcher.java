@@ -94,7 +94,7 @@ public class EmailOutboxDispatcher {
 
     private boolean deliver(Claimed m) {
         try {
-            sender.send(new EmailMessage(m.recipient(), properties.from(), m.subject(), m.text(), m.html()));
+            sender.send(new EmailMessage(m.id(), m.recipient(), properties.from(), m.subject(), m.text(), m.html()));
         } catch (EmailDeliveryException | RuntimeException e) {
             recordFailure(m, e);
             return false;
