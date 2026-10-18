@@ -1,6 +1,7 @@
 package rw.oupay.reports;
 
-import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.UUID;
@@ -49,8 +50,10 @@ public class ReportsService {
             );
         }
 
-        Instant startAt = start.atStartOfDay(KIGALI).toInstant();
-        Instant endExclusive = end.plusDays(1).atStartOfDay(KIGALI).toInstant();
+        OffsetDateTime startAt = start.atStartOfDay(KIGALI)
+                .toInstant().atOffset(ZoneOffset.UTC);
+        OffsetDateTime endExclusive = end.plusDays(1).atStartOfDay(KIGALI)
+                .toInstant().atOffset(ZoneOffset.UTC);
 
         var invoices = jdbc.sql("""
                 SELECT count(*) AS invoice_count,
