@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -23,7 +24,7 @@ import tools.jackson.databind.ObjectMapper;
     name = "provider",
     havingValue = "resend"
 )
-public class ResendEmailSender implements EmailSender {
+public final class ResendEmailSender implements EmailSender {
 
     private static final URI ENDPOINT =
         URI.create("https://api.resend.com/emails");
@@ -32,6 +33,7 @@ public class ResendEmailSender implements EmailSender {
     private final ObjectMapper mapper;
     private final String apiKey;
 
+    @Autowired
     public ResendEmailSender(
         @Value("${OUPAY_RESEND_API_KEY:}") String apiKey,
         ObjectMapper mapper
