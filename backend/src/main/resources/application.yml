@@ -155,4 +155,4 @@ oupay:
       enabled: false
       shared-secret: ""
   public-payments:
-    base-url: https://pay.oupay.rw
+    base-url: ${OUPAY_PUBLIC_PAYMENT_BASE_URL:https://pay.oupay.rw}
