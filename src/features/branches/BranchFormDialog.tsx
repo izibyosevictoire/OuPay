@@ -94,7 +94,7 @@ function BranchForm({ branch, onDone }: { branch?: Branch; onDone: () => void })
   })
 
   return (
-    <form noValidate onSubmit={submit} aria-label={isEditing ? 'Edit branch' : 'Add branch'}>
+    <form noValidate onSubmit={submit} aria-label={isEditing ? 'Edit branch' : 'Add branch'} className="flex max-h-[90dvh] min-h-0 flex-col overflow-hidden">
       <DialogHeader>
         <DialogTitle>{isEditing ? 'Edit branch' : 'Add a branch'}</DialogTitle>
         <DialogDescription>
@@ -103,7 +103,7 @@ function BranchForm({ branch, onDone }: { branch?: Branch; onDone: () => void })
             : 'Add a location where your business operates.'}
         </DialogDescription>
       </DialogHeader>
-      <DialogBody className="space-y-4">
+      <DialogBody className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain">
         <FormField label="Branch name" required error={errors.name?.message}>
           {(field) => <Input {...field} {...register('name')} />}
         </FormField>
@@ -152,7 +152,7 @@ function BranchForm({ branch, onDone }: { branch?: Branch; onDone: () => void })
           </p>
         )}
       </DialogBody>
-      <DialogFooter>
+      <DialogFooter className="shrink-0">
         <Button type="button" variant="outline" onClick={onDone} disabled={isSubmitting}>
           Cancel
         </Button>

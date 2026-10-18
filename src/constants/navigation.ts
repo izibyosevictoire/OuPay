@@ -6,7 +6,6 @@ import {
   Landmark,
   LayoutDashboard,
   QrCode,
-  Receipt,
   Settings,
   Users,
   type LucideIcon,
@@ -39,14 +38,6 @@ export const PRIMARY_NAVIGATION: NavigationItem[] = [
     icon: FileText,
     description: 'Create and track invoices',
     permission: 'invoices:view',
-  },
-  {
-    label: 'Transactions',
-    limitedLabel: 'My transactions',
-    path: '/transactions',
-    icon: Receipt,
-    description: 'Review transactions',
-    permission: 'transactions:view',
   },
   {
     label: 'Payments',

@@ -4,6 +4,7 @@ import type { BankSimulatorService } from './bankSimulatorService'
 import type { BankingConfigurationService } from './bankingService'
 import type { BranchService } from './branchService'
 import type { DashboardService } from './dashboardService'
+import type { ReportsService } from './reportsService'
 import { API_BASE_URL, API_MODE, SESSION_LOST_EVENT } from './http/apiConfig'
 import { createHttpClient } from './http/httpClient'
 import {
@@ -11,6 +12,7 @@ import {
   createHttpBankingService,
   createHttpBranchService,
   createHttpDashboardService,
+  createHttpReportsService,
   createHttpInvoiceService,
   createHttpMerchantService,
   createHttpNotificationService,
@@ -58,6 +60,7 @@ interface Services {
   branchService: BranchService
   staffService: StaffService
   dashboardService: DashboardService
+  reportsService: ReportsService | null
   invoiceService: InvoiceService
   reconciliationService: ReconciliationService
   notificationService: NotificationService
@@ -80,6 +83,7 @@ function createMockServices(): Services {
     branchService: createMockBranchService({ authStore: mockAuthStore }),
     staffService: createMockStaffService({ authStore: mockAuthStore }),
     dashboardService: createMockDashboardService(shared),
+    reportsService: null,
     invoiceService: createMockInvoiceService(shared),
     reconciliationService: createMockReconciliationService(shared),
     notificationService: createMockNotificationService(shared),
@@ -105,6 +109,7 @@ function createHttpServices(): Services {
     branchService: createHttpBranchService(http),
     staffService: createHttpStaffService(http),
     dashboardService: createHttpDashboardService(http),
+    reportsService: createHttpReportsService(http),
     invoiceService: createHttpInvoiceService(http),
     reconciliationService: createHttpReconciliationService(http),
     notificationService: createHttpNotificationService(http),
@@ -125,6 +130,7 @@ export const {
   branchService,
   staffService,
   dashboardService,
+  reportsService,
   invoiceService,
   reconciliationService,
   notificationService,
