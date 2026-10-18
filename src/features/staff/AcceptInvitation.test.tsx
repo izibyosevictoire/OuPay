@@ -80,7 +80,6 @@ describe('invitation acceptance', () => {
     expect(navLabels()).toEqual([
       'Dashboard',
       'Assigned invoices',
-      'My transactions',
       'Payment confirmations',
       'My payment links',
       'Settings',

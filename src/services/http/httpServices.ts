@@ -15,6 +15,7 @@ import type { StaffService } from '@/services/staffService'
 import type { AuthSession } from '@/types/auth'
 import type { InvoicePage } from '@/types/invoice'
 import { mapHttpError, translating } from './errorMapping'
+import type { ReportsService } from '@/services/reportsService'
 import type { HttpClient } from './httpClient'
 
 const AUTH_CODES: AuthServiceErrorCode[] = [
@@ -465,5 +466,15 @@ export function createHttpPublicPaymentService(http: HttpClient): PublicPaymentS
       (token, reference) => http.post(`${base}/${token}/requests/${reference}/claim`),
       paymentError,
     ),
+  }
+}
+
+
+export function createHttpReportsService(http: HttpClient): ReportsService {
+  return {
+    getSummary: (merchantId, range) =>
+      http.get(`/merchants/${merchantId}/reports/summary`, {
+        query: { from: range.from, to: range.to },
+      }),
   }
 }

@@ -34,6 +34,7 @@ import { DEMO_TOOLS_BUILD } from '@/lib/demoTools'
 import { ModulePlaceholderPage } from '@/features/placeholders/ModulePlaceholderPage'
 import { AcceptInvitationPage } from '@/features/staff/AcceptInvitationPage'
 import { StaffPage } from '@/features/staff/StaffPage'
+import { ReportsPage } from '@/features/reports/ReportsPage'
 import { NotFoundPage } from '@/features/placeholders/NotFoundPage'
 import { BusinessRoute, PermissionRoute, ProtectedRoute, PublicOnlyRoute } from './guards'
 
@@ -47,6 +48,7 @@ const BUILT_MODULE_PATHS = [
   '/payments',
   '/payment-links',
   '/banking',
+  '/reports',
 ]
 const moduleRoutes: RouteObject[] = PRIMARY_NAVIGATION.filter(
   ({ path }) => !BUILT_MODULE_PATHS.includes(path),
@@ -183,6 +185,10 @@ export const appRoutes: RouteObject[] = [
               {
                 element: <PermissionRoute permission="banking:manage" />,
                 children: [{ path: '/banking', element: <BankingPage /> }],
+              },
+              {
+                element: <PermissionRoute permission="reports:view" />,
+                children: [{ path: '/reports', element: <ReportsPage /> }],
               },
               // Demo tooling exists only when demo tools are enabled.
               ...(DEMO_TOOLS_BUILD

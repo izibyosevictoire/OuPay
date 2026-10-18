@@ -175,7 +175,6 @@ describe('role-based navigation', () => {
     expect(navLabels()).toEqual([
       'Dashboard',
       'Invoices',
-      'Transactions',
       'Payments',
       'Payment links',
       'Banking',
@@ -192,7 +191,6 @@ describe('role-based navigation', () => {
     expect(navLabels()).toEqual([
       'Dashboard',
       'Invoices',
-      'Transactions',
       'Payments',
       'Payment links',
       'Cashiers',
@@ -208,7 +206,6 @@ describe('role-based navigation', () => {
     expect(navLabels()).toEqual([
       'Dashboard',
       'Assigned invoices',
-      'My transactions',
       'Payment confirmations',
       'My payment links',
       'Settings',
@@ -337,8 +334,7 @@ describe('account menu and switching businesses', () => {
       expect(navLabels()).toEqual([
         'Dashboard',
         'Assigned invoices',
-        'My transactions',
-        'Payment confirmations',
+          'Payment confirmations',
         'My payment links',
         'Settings',
       ]),

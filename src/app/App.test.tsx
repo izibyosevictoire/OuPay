@@ -16,10 +16,11 @@ describe('application shell', () => {
     }
   })
 
-  it('shows a placeholder page for modules that are not built yet', async () => {
+  it('shows the Reports page without presenting mock financial figures', async () => {
     await renderAppAt('/reports')
     expect(screen.getByRole('heading', { level: 1, name: 'Reports' })).toBeInTheDocument()
-    expect(screen.getByText('Reports is coming soon')).toBeInTheDocument()
+    expect(screen.getByText(/Demo mode does not display financial reports/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled()
   })
 
   it('shows a not-found page for unknown addresses', async () => {
