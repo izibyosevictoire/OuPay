@@ -29,17 +29,25 @@ public class MerchantService {
     private final MerchantAccess access;
     private final AuditService audit;
     private final Clock clock;
+    private final MerchantSettingsRepository settings;
+    private final MerchantSettingsService settingsService;
 
     public MerchantService(MerchantRepository merchants, MembershipRepository memberships, MerchantAccess access,
-                           AuditService audit, Clock clock) {
+                           AuditService audit, Clock clock, MerchantSettingsRepository settings,
+                           MerchantSettingsService settingsService) {
         this.merchants = merchants;
         this.memberships = memberships;
         this.access = access;
         this.audit = audit;
         this.clock = clock;
+        this.settings = settings;
+        this.settingsService = settingsService;
     }
 
-    /** Registers a business. The result is ALWAYS pending verification, and the caller becomes its OWNER. */
+    /**
+     * Registers a business. The result is ALWAYS pending verification, and the caller becomes its OWNER.
+     * Its settings (operating mode, BUSINESS unless the request says otherwise) are created in the same transaction.
+     */
     @Transactional
     public MerchantDtos.MerchantDto create(MerchantDtos.CreateRequest request) {
         UUID userId = CurrentUser.require().userId();
@@ -68,8 +76,10 @@ public class MerchantService {
             throw new ApiException(HttpStatus.CONFLICT, "duplicate_tin", "A business with these details is already registered.");
         }
         memberships.save(new Membership(UUID.randomUUID(), userId, merchant.getId(), Role.OWNER, MembershipStatus.ACTIVE, now));
+        OperatingMode mode = request.operatingMode() == null ? OperatingMode.DEFAULT : request.operatingMode();
+        settings.saveAndFlush(new MerchantSettings(merchant.getId(), mode, now));
         audit.record(merchant.getId(), userId, "MERCHANT_REGISTERED", "merchant", merchant.getId(), "Business registered; pending verification.");
-        return toDto(merchant, true);
+        return toDto(merchant, mode, true);
     }
 
     @Transactional(readOnly = true)
@@ -82,9 +92,11 @@ public class MerchantService {
         }
         var roles = new java.util.HashMap<UUID, Role>();
         active.forEach(m -> roles.put(m.getMerchantId(), m.getRole()));
+        var modes = settingsService.operatingModesOf(ids);
         return merchants.findByIdIn(ids).stream()
                 .sorted(java.util.Comparator.comparing(Merchant::getCreatedAt))
-                .map(m -> toDto(m, Permission.PROFILE_VIEW.scopeFor(roles.get(m.getId())).orElse(null) == Permission.Scope.ALL))
+                .map(m -> toDto(m, modes.get(m.getId()),
+                        Permission.PROFILE_VIEW.scopeFor(roles.get(m.getId())).orElse(null) == Permission.Scope.ALL))
                 .toList();
     }
 
@@ -92,7 +104,7 @@ public class MerchantService {
     public MerchantDtos.MerchantDto get(UUID merchantId) {
         Actor actor = access.require(merchantId, Permission.PROFILE_VIEW);
         Merchant merchant = merchants.findById(merchantId).orElseThrow(() -> ApiException.notFound("This business could not be found."));
-        return toDto(merchant, actor.hasFullScope(Permission.PROFILE_VIEW));
+        return toDto(merchant, settingsService.operatingModeOf(merchantId), actor.hasFullScope(Permission.PROFILE_VIEW));
     }
 
     @Transactional
@@ -106,11 +118,11 @@ public class MerchantService {
         merchant.updateProfile(blankToNull(request.tradingName()), request.physicalAddress().trim(), contact.fullName().trim(),
                 contact.email().trim().toLowerCase(java.util.Locale.ROOT), contact.phoneNumber(), clock.instant());
         audit.record(merchantId, actor.userId(), "MERCHANT_UPDATED", "merchant", merchantId, "Business profile updated.");
-        return toDto(merchant, true);
+        return toDto(merchant, settingsService.operatingModeOf(merchantId), true);
     }
 
     /** Cashiers receive the limited view: no registration data and no contact details. */
-    private MerchantDtos.MerchantDto toDto(Merchant m, boolean full) {
+    private MerchantDtos.MerchantDto toDto(Merchant m, OperatingMode mode, boolean full) {
         var registration = full
                 ? new MerchantDtos.Registration(m.getRegistrationNumber(), m.getTin())
                 : new MerchantDtos.Registration(null, null);
@@ -118,7 +130,7 @@ public class MerchantService {
                 ? new MerchantDtos.Contact(m.getContactFullName(), m.getContactEmail(), m.getContactPhone())
                 : new MerchantDtos.Contact(m.getContactFullName(), "", "");
         return new MerchantDtos.MerchantDto(m.getId(), m.getOwnerUserId(), m.getLegalName(), m.getTradingName(),
-                m.getBusinessType(), m.getStatus(), registration,
+                m.getBusinessType(), m.getStatus(), mode, registration,
                 new MerchantDtos.Location(m.getProvince(), m.getDistrict(), m.getSector(), m.getPhysicalAddress(), m.getCountry()),
                 contact, new MerchantDtos.BankingConfiguration("not_configured"), m.getCreatedAt(), m.getUpdatedAt());
     }

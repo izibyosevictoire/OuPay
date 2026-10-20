@@ -1,12 +1,16 @@
 import { MerchantServiceError, type MerchantService } from '@/services/merchantService'
 import type { BusinessMembership } from '@/types/auth'
-import type { Merchant } from '@/types/merchant'
+import type { Merchant, MerchantSettings } from '@/types/merchant'
 import { createMockAuthStore, type MockAuthStore } from './mockAuthStore'
 import { MOCK_STORAGE_KEYS } from './mockStorageKeys'
 import { SAMPLE_MERCHANTS } from './sampleMerchants'
 import { simulateNetworkDelay } from './simulateNetwork'
 
 const STORAGE_KEY = MOCK_STORAGE_KEYS.merchants
+const SETTINGS_STORAGE_KEY = MOCK_STORAGE_KEYS.merchantSettings
+
+/** Mock counterpart of the merchant_settings row: only what is not already on the merchant record. */
+type StoredSettingsMeta = Record<string, { version: number; updatedAt: string }>
 
 /**
  * Mock-only trigger so the failure path can be exercised by hand and in tests:
@@ -39,17 +43,24 @@ export function resolveDefaultStorage(): MerchantStorage {
   }
 }
 
+/** Records saved before operating modes existed have none: they are BUSINESS, as on the backend. */
+const withOperatingMode = (merchants: Merchant[]): Merchant[] =>
+  merchants.map((merchant) => ({
+    ...merchant,
+    operatingMode: merchant.operatingMode ?? 'BUSINESS',
+  }))
+
 /** Reads the mock merchant records (shared with other mock services that need business names). */
 export function loadStoredMerchants(storage: MerchantStorage): Merchant[] {
   const stored = storage.getItem(STORAGE_KEY)
   if (stored) {
     try {
-      return JSON.parse(stored) as Merchant[]
+      return withOperatingMode(JSON.parse(stored) as Merchant[])
     } catch {
       // Corrupt data: start again from the sample records.
     }
   }
-  return structuredClone(SAMPLE_MERCHANTS)
+  return withOperatingMode(structuredClone(SAMPLE_MERCHANTS))
 }
 
 export function createMockMerchantService(
@@ -62,6 +73,23 @@ export function createMockMerchantService(
   const loadMerchants = () => loadStoredMerchants(storage)
   const saveMerchants = (merchants: Merchant[]) =>
     storage.setItem(STORAGE_KEY, JSON.stringify(merchants))
+
+  const loadSettingsMeta = (): StoredSettingsMeta => {
+    try {
+      return JSON.parse(storage.getItem(SETTINGS_STORAGE_KEY) ?? '{}') as StoredSettingsMeta
+    } catch {
+      return {}
+    }
+  }
+  const settingsOf = (merchant: Merchant): MerchantSettings => {
+    const meta = loadSettingsMeta()[merchant.id]
+    return {
+      merchantId: merchant.id,
+      operatingMode: merchant.operatingMode,
+      updatedAt: meta?.updatedAt,
+      version: meta?.version ?? 0,
+    }
+  }
 
   const respond = <T>(value: T) => simulateNetworkDelay(value, delay)
   const reject = (error: MerchantServiceError) =>
@@ -121,6 +149,7 @@ export function createMockMerchantService(
         ownerUserId: userId,
         // Never approved here: verification is a future back-office decision.
         status: 'pending_verification',
+        operatingMode: input.operatingMode ?? 'BUSINESS',
         bankingConfiguration: { status: 'not_configured' },
         createdAt: now,
         updatedAt: now,
@@ -179,6 +208,68 @@ export function createMockMerchantService(
       }
       saveMerchants(merchants.map((merchant) => (merchant.id === merchantId ? updated : merchant)))
       return respond(updated)
+    },
+
+    async getMerchantSettings(merchantId) {
+      const userId = currentUserId()
+      if (!userId) return unauthenticated()
+      const isMember = activeMembershipsOf(userId).some((m) => m.merchantId === merchantId)
+      const merchant = loadMerchants().find((candidate) => candidate.id === merchantId)
+      // Non-members get the same answer as a missing business.
+      if (!merchant || !isMember) return notFound()
+      return respond(settingsOf(merchant))
+    },
+
+    async updateMerchantSettings(merchantId, changes) {
+      const userId = currentUserId()
+      if (!userId) return unauthenticated()
+      const merchants = loadMerchants()
+      const existing = merchants.find((candidate) => candidate.id === merchantId)
+      const membership = activeMembershipsOf(userId).find((m) => m.merchantId === merchantId)
+      if (!existing || !membership) return notFound()
+      // Mirrors what the real backend enforces independently of the UI.
+      if (membership.role !== 'OWNER') {
+        return reject(
+          new MerchantServiceError('forbidden', 'Only an owner can change how the business works.'),
+        )
+      }
+      if (existing.status === 'suspended' || existing.status === 'rejected') {
+        return reject(
+          new MerchantServiceError('profile_locked', 'This business can no longer be configured.'),
+        )
+      }
+      const current = settingsOf(existing)
+      if (current.version !== changes.expectedVersion) {
+        return reject(
+          new MerchantServiceError(
+            'version_conflict',
+            'The settings were changed by someone else. Reload them and try again.',
+          ),
+        )
+      }
+      if (current.operatingMode === changes.operatingMode) return respond(current)
+      const now = new Date().toISOString()
+      // Only the mode changes: invoices, payments, memberships and sessions are never touched.
+      saveMerchants(
+        merchants.map((merchant) =>
+          merchant.id === merchantId
+            ? { ...merchant, operatingMode: changes.operatingMode }
+            : merchant,
+        ),
+      )
+      storage.setItem(
+        SETTINGS_STORAGE_KEY,
+        JSON.stringify({
+          ...loadSettingsMeta(),
+          [merchantId]: { version: current.version + 1, updatedAt: now },
+        }),
+      )
+      return respond({
+        merchantId,
+        operatingMode: changes.operatingMode,
+        updatedAt: now,
+        version: current.version + 1,
+      })
     },
 
     async listMerchantsForCurrentUser() {

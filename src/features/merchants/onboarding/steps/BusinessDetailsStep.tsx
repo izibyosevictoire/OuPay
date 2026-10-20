@@ -6,15 +6,18 @@ import {
   BUSINESS_TYPES,
   BUSINESS_TYPES_REQUIRING_REGISTRATION,
 } from '@/constants/merchant'
+import { OperatingModeOptions } from '../../OperatingModeOptions'
 import type { OnboardingFormValues } from '../../merchantSchemas'
 
 export function BusinessDetailsStep() {
   const {
     register,
     control,
+    setValue,
     formState: { errors },
   } = useFormContext<OnboardingFormValues>()
   const businessType = useWatch({ control, name: 'businessType' })
+  const operatingMode = useWatch({ control, name: 'operatingMode' })
   const registrationExpected = BUSINESS_TYPES_REQUIRING_REGISTRATION.includes(businessType)
 
   return (
@@ -64,6 +67,14 @@ export function BusinessDetailsStep() {
       >
         {(field) => <Input inputMode="numeric" maxLength={9} {...field} {...register('tin')} />}
       </FormField>
+      <OperatingModeOptions
+        legend="How will you use OuPay?"
+        value={operatingMode}
+        onChange={(mode) =>
+          setValue('operatingMode', mode, { shouldDirty: true, shouldValidate: true })
+        }
+        error={errors.operatingMode?.message}
+      />
     </div>
   )
 }

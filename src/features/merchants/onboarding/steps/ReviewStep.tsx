@@ -2,7 +2,7 @@ import { Pencil } from 'lucide-react'
 import { useFormContext } from 'react-hook-form'
 import { DescriptionList, type DescriptionRow } from '@/components/common/DescriptionList'
 import { Button } from '@/components/ui/button'
-import { BUSINESS_TYPE_LABELS } from '@/constants/merchant'
+import { BUSINESS_TYPE_LABELS, OPERATING_MODE_DETAILS } from '@/constants/merchant'
 import { normalizeRwandanPhoneNumber, type OnboardingFormValues } from '../../merchantSchemas'
 
 interface ReviewSectionProps {
@@ -41,6 +41,10 @@ export function ReviewStep({ onEdit }: { onEdit: (stepIndex: number) => void }) 
           { label: 'Legal business name', value: values.legalName },
           { label: 'Trading name', value: values.tradingName },
           { label: 'Business type', value: BUSINESS_TYPE_LABELS[values.businessType] },
+          {
+            label: 'How you will use OuPay',
+            value: OPERATING_MODE_DETAILS[values.operatingMode].label,
+          },
           { label: 'Registration number', value: values.registrationNumber },
           { label: 'TIN', value: values.tin },
         ]}

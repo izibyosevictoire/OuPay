@@ -1,4 +1,4 @@
-import type { BusinessType, MerchantStatus } from '@/types/merchant'
+import type { BusinessType, MerchantStatus, OperatingMode } from '@/types/merchant'
 
 export const BUSINESS_TYPE_LABELS: Record<BusinessType, string> = {
   registered_company: 'Registered company',
@@ -32,6 +32,34 @@ export const MERCHANT_STATUS_DESCRIPTIONS: Record<MerchantStatus, string> = {
   active: 'This business has been verified and approved.',
   suspended: 'This business is suspended. Profile changes are disabled until it is reinstated.',
   rejected: 'The registration was not approved. Review the details and contact support.',
+}
+
+export const OPERATING_MODES: OperatingMode[] = ['BUSINESS', 'SIMPLIFIED']
+
+export const DEFAULT_OPERATING_MODE: OperatingMode = 'BUSINESS'
+
+export const OPERATING_MODE_DETAILS: Record<
+  OperatingMode,
+  { label: string; summary: string; points: string[] }
+> = {
+  BUSINESS: {
+    label: 'Business',
+    summary: 'For shops and businesses that keep full records of what they sell.',
+    points: [
+      'Create and track invoices, payments and reports.',
+      'Manage branches and staff with their own permissions.',
+      'Tools for selling goods and services are planned for this mode.',
+    ],
+  },
+  SIMPLIFIED: {
+    label: 'Simplified',
+    summary: 'For sellers who mainly want to collect payments quickly.',
+    points: [
+      'Built around collecting an amount and getting paid.',
+      'Quick amount-only collection is coming in a later release.',
+      'Your invoices, payments and reports stay available.',
+    ],
+  },
 }
 
 export const ONBOARDING_STEP_TITLES = ['Business', 'Location', 'Contact', 'Review'] as const

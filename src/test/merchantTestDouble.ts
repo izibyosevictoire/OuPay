@@ -193,6 +193,12 @@ export function useFastBackend() {
     listMerchants: vi
       .spyOn(merchantService, 'listMerchantsForCurrentUser')
       .mockImplementation(fastMerchants.listMerchantsForCurrentUser),
+    getMerchantSettings: vi
+      .spyOn(merchantService, 'getMerchantSettings')
+      .mockImplementation(fastMerchants.getMerchantSettings),
+    updateMerchantSettings: vi
+      .spyOn(merchantService, 'updateMerchantSettings')
+      .mockImplementation(fastMerchants.updateMerchantSettings),
     register: vi.spyOn(authService, 'register').mockImplementation(fastAuth.register),
     login: vi.spyOn(authService, 'login').mockImplementation(fastAuth.login),
     logout: vi.spyOn(authService, 'logout').mockImplementation(fastAuth.logout),

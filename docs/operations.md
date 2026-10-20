@@ -125,7 +125,7 @@ repository; a logical backup alone has an RPO equal to the backup interval.
 
 ## 8. Migrations
 
-Flyway applies `V1..V5` on startup and is the only owner of the schema (Hibernate only validates it). Migrations
+Flyway applies `V1..V6` on startup and is the only owner of the schema (Hibernate only validates it). Migrations
 are forward-only: never edit an applied one (its checksum is verified, and `.gitattributes` pins LF endings for
 that reason). To undo a bad release, restore a backup taken before it. Take a backup before every deployment that
 contains a migration.

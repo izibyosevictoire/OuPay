@@ -34,7 +34,9 @@ public final class MerchantDtos {
             @NotNull @Pattern(regexp = "registered_company|cooperative|non_profit|sole_proprietor|informal_vendor") String businessType,
             @NotNull @Valid Registration registration,
             @NotNull @Valid Location location,
-            @NotNull @Valid Contact contact) {}
+            @NotNull @Valid Contact contact,
+            /** Optional for compatibility with older clients: absent means BUSINESS. */
+            OperatingMode operatingMode) {}
 
     public record UpdateRequest(
             @Size(max = 200) String tradingName,
@@ -45,6 +47,10 @@ public final class MerchantDtos {
 
     public record MerchantDto(
             UUID id, UUID ownerUserId, String legalName, String tradingName, String businessType, String status,
-            Registration registration, Location location, Contact contact, BankingConfiguration bankingConfiguration,
+            OperatingMode operatingMode, Registration registration, Location location, Contact contact, BankingConfiguration bankingConfiguration,
             Instant createdAt, Instant updatedAt) {}
+
+    public record SettingsDto(UUID merchantId, OperatingMode operatingMode, Instant updatedAt, long version) {}
+
+    public record UpdateSettingsRequest(@NotNull OperatingMode operatingMode, @NotNull Long expectedVersion) {}
 }
