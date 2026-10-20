@@ -35,7 +35,7 @@ with a host, and `oupay.app.base-url` must be `https://`. Beyond that, you must 
 | `oupay.security.session.*` | 30m idle, 12h absolute (7d/30d remembered) | sessions |
 | `oupay.security.proxy.trusted` (`OUPAY_TRUSTED_PROXIES`) | empty | proxies whose `X-Forwarded-For` is believed |
 | `oupay.rate-limit.*` | public read 120, write 20, auth 20, recovery 10, webhook 600 per minute per client | per-process limits |
-| `oupay.housekeeping.*` | daily 03:17 | removes dead sessions/tokens and delivered mail records |
+| `oupay.housekeeping.*` | daily 03:17 | removes dead sessions/tokens, delivered mail records and HTTP idempotency records older than 30 days |
 | `OUPAY_DB_POOL_MAX` / `_MIN_IDLE` | 10 / 2 | Hikari pool |
 | `OUPAY_DB_CONNECTION_TIMEOUT_MS` | 5000 | wait for a connection before failing the request |
 | `OUPAY_DB_STATEMENT_TIMEOUT` / `_LOCK_TIMEOUT` / `_IDLE_TX_TIMEOUT` | 30s / 10s / 60s | server-side guards set on every connection |
@@ -125,7 +125,7 @@ repository; a logical backup alone has an RPO equal to the backup interval.
 
 ## 8. Migrations
 
-Flyway applies `V1..V6` on startup and is the only owner of the schema (Hibernate only validates it). Migrations
+Flyway applies `V1..V7` on startup and is the only owner of the schema (Hibernate only validates it). Migrations
 are forward-only: never edit an applied one (its checksum is verified, and `.gitattributes` pins LF endings for
 that reason). To undo a bad release, restore a backup taken before it. Take a backup before every deployment that
 contains a migration.

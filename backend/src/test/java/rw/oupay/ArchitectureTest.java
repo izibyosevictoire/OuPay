@@ -65,11 +65,21 @@ class ArchitectureTest {
     void everyMerchantScopedServiceAuthorisesAtTheServiceBoundary() throws IOException {
         // Each service that reads or writes business data must call MerchantAccess itself (not rely on controllers).
         for (String file : new String[] {"invoice/InvoiceService.java", "branch/BranchService.java", "staff/StaffService.java",
-                "merchant/MerchantService.java", "merchant/MerchantSettingsService.java", "banking/BankingService.java", "ledger/ReconciliationService.java",
+                "merchant/MerchantService.java", "merchant/MerchantSettingsService.java", "idempotency/IdempotencyService.java", "banking/BankingService.java", "ledger/ReconciliationService.java",
                 "payment/PaymentProfileService.java", "notification/NotificationService.java", "dashboard/DashboardService.java", "audit/AuditService.java"}) {
             String source = read(MAIN.resolve(file));
             assertThat(source).as(file).contains("MerchantAccess").containsPattern("access\\.require(Member)?\\(");
         }
+    }
+
+    @Test
+    void onlyTheIdempotencyServiceAndHousekeepingTouchTheIdempotencyTable() throws IOException {
+        // The HTTP replay cache has one writer and one pruner. Nothing else may read it, rely on it, or decide anything from it.
+        List<String> offenders = sources().stream()
+                .filter(p -> read(p).toLowerCase().contains("idempotency_keys"))
+                .map(p -> MAIN.relativize(p).toString().replace('\\', '/'))
+                .collect(Collectors.toList());
+        assertThat(offenders).containsExactlyInAnyOrder("idempotency/IdempotencyService.java", "common/Housekeeping.java");
     }
 
     @Test
