@@ -12,7 +12,12 @@ const firstMessage = (result: { success: boolean; error?: { issues: { message: s
   result.error?.issues[0]?.message
 
 describe('business details validation', () => {
-  const company = { legalName: 'Kivu Ltd', tradingName: '', businessType: 'registered_company' }
+  const company = {
+    legalName: 'Kivu Ltd',
+    tradingName: '',
+    businessType: 'registered_company',
+    operatingMode: 'BUSINESS',
+  }
 
   it('requires a registration number for registered companies', () => {
     const result = businessDetailsSchema.safeParse({ ...company, registrationNumber: '', tin: '' })
@@ -24,10 +29,22 @@ describe('business details validation', () => {
       legalName: 'Mama Jane Fruits',
       tradingName: '',
       businessType: 'informal_vendor',
+      operatingMode: 'SIMPLIFIED',
       registrationNumber: '',
       tin: '',
     })
     expect(result.success).toBe(true)
+  })
+
+  it('accepts only the two supported operating modes', () => {
+    const base = { ...company, registrationNumber: 'RDB-1', tin: '' }
+    expect(businessDetailsSchema.safeParse({ ...base, operatingMode: 'SIMPLIFIED' }).success).toBe(
+      true,
+    )
+    const unknown = businessDetailsSchema.safeParse({ ...base, operatingMode: 'HYBRID' })
+    expect(firstMessage(unknown)).toBe('Choose how the business will use OuPay.')
+    const missing = businessDetailsSchema.safeParse({ ...base, operatingMode: undefined })
+    expect(missing.success).toBe(false)
   })
 
   it('rejects a TIN that is not 9 digits', () => {
@@ -44,6 +61,7 @@ describe('business details validation', () => {
       legalName: '  ',
       tradingName: '',
       businessType: undefined,
+      operatingMode: 'BUSINESS',
       registrationNumber: '',
       tin: '',
     })
@@ -131,6 +149,7 @@ describe('mapping to domain input', () => {
       phoneNumber: '0788 123 456',
     })
     expect(input.tradingName).toBeUndefined()
+    expect(input.operatingMode).toBe('BUSINESS')
     expect(input.registration).toEqual({ registrationNumber: undefined, tin: undefined })
     expect(input.contact.phoneNumber).toBe('+250788123456')
   })

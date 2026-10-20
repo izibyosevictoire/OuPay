@@ -1,5 +1,10 @@
 import { z } from 'zod'
-import { BUSINESS_TYPES, BUSINESS_TYPES_REQUIRING_REGISTRATION } from '@/constants/merchant'
+import {
+  BUSINESS_TYPES,
+  BUSINESS_TYPES_REQUIRING_REGISTRATION,
+  DEFAULT_OPERATING_MODE,
+  OPERATING_MODES,
+} from '@/constants/merchant'
 import {
   getDistrictsForProvince,
   getSectorsForDistrict,
@@ -49,6 +54,7 @@ const businessDetailsShape = {
   businessType: z.enum(BUSINESS_TYPES, {
     error: 'Choose the type that best describes the business.',
   }),
+  operatingMode: z.enum(OPERATING_MODES, { error: 'Choose how the business will use OuPay.' }),
   registrationNumber: optionalText(40),
   tin: optionalText(9),
 }
@@ -135,7 +141,7 @@ export const onboardingSchema = z
 export type OnboardingFormValues = z.infer<typeof onboardingSchema>
 
 export const ONBOARDING_STEP_FIELDS = [
-  ['legalName', 'tradingName', 'businessType', 'registrationNumber', 'tin'],
+  ['legalName', 'tradingName', 'businessType', 'operatingMode', 'registrationNumber', 'tin'],
   ['country', 'province', 'district', 'sector', 'physicalAddress'],
   ['contactName', 'email', 'phoneNumber'],
 ] as const satisfies readonly (readonly (keyof OnboardingFormValues)[])[]
@@ -144,6 +150,7 @@ export const ONBOARDING_DEFAULT_VALUES: OnboardingFormValues = {
   legalName: '',
   tradingName: '',
   businessType: undefined as unknown as OnboardingFormValues['businessType'],
+  operatingMode: DEFAULT_OPERATING_MODE,
   registrationNumber: '',
   tin: '',
   country: 'RW',
@@ -163,6 +170,7 @@ export function toCreateMerchantInput(values: OnboardingFormValues): CreateMerch
     legalName: values.legalName,
     tradingName: emptyToUndefined(values.tradingName),
     businessType: values.businessType,
+    operatingMode: values.operatingMode,
     registration: {
       registrationNumber: emptyToUndefined(values.registrationNumber),
       tin: emptyToUndefined(values.tin),

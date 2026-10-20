@@ -22,6 +22,7 @@ import { InvoicesPage } from '@/features/invoices/InvoicesPage'
 import { NewInvoicePage } from '@/features/invoices/NewInvoicePage'
 import { OnboardingPage } from '@/features/merchants/onboarding/OnboardingPage'
 import { MerchantProfilePage } from '@/features/merchants/profile/MerchantProfilePage'
+import { MerchantSettingsPage } from '@/features/merchants/settings/MerchantSettingsPage'
 import { PaymentLinkDetailsPage } from '@/features/paymentLinks/PaymentLinkDetailsPage'
 import { PaymentLinkPrintPage } from '@/features/paymentLinks/PaymentLinkPrintPage'
 import { PaymentLinksPage } from '@/features/paymentLinks/PaymentLinksPage'
@@ -49,6 +50,7 @@ const BUILT_MODULE_PATHS = [
   '/payment-links',
   '/banking',
   '/reports',
+  '/settings',
 ]
 const moduleRoutes: RouteObject[] = PRIMARY_NAVIGATION.filter(
   ({ path }) => !BUILT_MODULE_PATHS.includes(path),
@@ -139,7 +141,10 @@ export const appRoutes: RouteObject[] = [
               },
               {
                 element: <PermissionRoute permission="profile:view" />,
-                children: [{ path: '/profile', element: <MerchantProfilePage /> }],
+                children: [
+                  { path: '/profile', element: <MerchantProfilePage /> },
+                  { path: '/settings', element: <MerchantSettingsPage /> },
+                ],
               },
               {
                 element: <PermissionRoute permission="invoices:view" />,

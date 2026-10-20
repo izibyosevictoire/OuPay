@@ -36,6 +36,7 @@ const MERCHANT_CODES = [
   'duplicate_tin',
   'duplicate_registration_number',
   'profile_locked',
+  'version_conflict',
   'unauthenticated',
   'forbidden',
   'service_unavailable',
@@ -189,6 +190,11 @@ export function createHttpMerchantService(http: HttpClient): MerchantService {
       merchantError,
     ),
     listMerchantsForCurrentUser: translating(() => http.get('/merchants'), merchantError),
+    getMerchantSettings: translating((id) => http.get(`${m(id)}/settings`), merchantError),
+    updateMerchantSettings: translating(
+      (id, changes) => http.put(`${m(id)}/settings`, { body: changes }),
+      merchantError,
+    ),
   }
 }
 

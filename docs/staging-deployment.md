@@ -10,7 +10,7 @@ Browser ──https──▶ Vercel  https://<vercel-domain>      static React a
                    Render  https://<render-service>.onrender.com    Docker, Spring Boot, profile "prod"
                      │  TLS (sslmode=require)
                      ▼
-                   Neon    PostgreSQL, Flyway migrations V1–V5
+                   Neon    PostgreSQL, Flyway migrations V1–V6
 ```
 
 The browser only ever talks to the Vercel domain. `/api/*` is proxied to Render server-side, so the session cookie
@@ -79,7 +79,7 @@ Neon **scale to zero** suspends an idle compute; the next connection can take a 
 pool's keep-alive pings every 5 minutes while the app is running, which also keeps a free compute awake: that
 consumes compute hours.)
 
-Flyway runs **automatically on application start** (`V1`–`V5`), on the same connection unless you set the
+Flyway runs **automatically on application start** (`V1`–`V6`), on the same connection unless you set the
 `OUPAY_FLYWAY_*` variables. The application never drops, cleans or recreates the schema (`ddl-auto=validate`,
 Flyway `clean` is disabled by default).
 
@@ -312,7 +312,7 @@ The in-memory development mail sink and its `/api/v1/dev/mail` endpoint are **no
   (70%); watch Render's memory graph and adjust `JAVA_OPTS` or the instance size. This was not measured on Render.
 * **Docker was not built locally** (not installed). The image build steps were replicated by hand: package without
   the dev profile, extract the layers, run the launcher with the production profile and the platform `PORT`
-  (binds `0.0.0.0`, applies V1–V5 to an empty database, passes the proxy script). The first Render build is the first
+  (binds `0.0.0.0`, applies V1–V6 to an empty database, passes the proxy script). The first Render build is the first
   real `docker build`.
 * **SIGTERM/graceful shutdown** is configured (`server.shutdown=graceful`, 30 s, JVM is PID 1) but could not be
   exercised on the Windows development machine.

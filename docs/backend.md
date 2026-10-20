@@ -16,7 +16,7 @@ backend/
   compose.yaml                  PostgreSQL only, for local development
   scripts/start-test-postgres.sh  throwaway PostgreSQL for tests when Docker is unavailable
   scripts/backup-db.sh, restore-verify.sh   backup and PROVEN restore (see operations.md)
-  src/main/resources/db/migration/   V1..V5 Flyway migrations (the schema's only owner)
+  src/main/resources/db/migration/   V1..V6 Flyway migrations (the schema's only owner)
   src/main/java/rw/oupay/
     common/        ApiException, one error shape, secure tokens, keyset pagination, startup safety check, housekeeping
     user/          User entity (no role: roles live on memberships)
@@ -115,6 +115,7 @@ Errors are always `{ "code", "message", "fields" }` with the stable codes the fr
 | --- | --- |
 | Auth | `POST /auth/register`, `POST /auth/login`, `GET /auth/session` (204 when signed out), `POST /auth/logout`, `POST /auth/password-reset/request|verify|confirm`, `POST /auth/password/change`, `POST /auth/email-verification/request|confirm` |
 | Merchants | `POST /merchants`, `GET /merchants`, `GET/PUT /merchants/{id}` |
+| Settings (operating mode) | `GET/PUT /merchants/{m}/settings` (read: any member; change: owner, with `expectedVersion`) |
 | Branches | `GET/POST /merchants/{m}/branches`, `GET/PUT …/{id}`, `PUT …/{id}/status`, `GET …/branch-assignments`, `PUT /merchants/{m}/memberships/{id}/branch-assignments` |
 | Staff | `GET …/staff`, `PUT …/memberships/{id}/role`, `POST …/memberships/{id}/suspend|reactivate|revoke`, `GET/POST …/invitations`, `POST /invitations/{token}/accept` |
 | Invoices | `GET/POST …/invoices`, `GET …/invoices/{id}`, `GET …/invoices/form-options`, `PUT …/{id}?expectedVersion`, `POST …/{id}/issue|cancel|void?expectedVersion` |

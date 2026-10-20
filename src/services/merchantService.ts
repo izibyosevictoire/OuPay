@@ -1,10 +1,17 @@
-import type { CreateMerchantInput, Merchant, UpdateMerchantInput } from '@/types/merchant'
+import type {
+  CreateMerchantInput,
+  Merchant,
+  MerchantSettings,
+  UpdateMerchantInput,
+  UpdateMerchantSettingsInput,
+} from '@/types/merchant'
 
 export type MerchantServiceErrorCode =
   | 'not_found'
   | 'duplicate_tin'
   | 'duplicate_registration_number'
   | 'profile_locked'
+  | 'version_conflict'
   | 'unauthenticated'
   | 'forbidden'
   | 'service_unavailable'
@@ -29,4 +36,14 @@ export interface MerchantService {
   getMerchantById(merchantId: string): Promise<Merchant>
   updateMerchant(merchantId: string, changes: UpdateMerchantInput): Promise<Merchant>
   listMerchantsForCurrentUser(): Promise<Merchant[]>
+  /** Any member may read the settings of their business. */
+  getMerchantSettings(merchantId: string): Promise<MerchantSettings>
+  /**
+   * Owners only. Rejects with `version_conflict` when the settings changed since they were read.
+   * Never deletes or alters historical records.
+   */
+  updateMerchantSettings(
+    merchantId: string,
+    changes: UpdateMerchantSettingsInput,
+  ): Promise<MerchantSettings>
 }

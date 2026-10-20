@@ -13,6 +13,7 @@ export const SAMPLE_MERCHANTS: Merchant[] = [
     tradingName: 'Sample Shop',
     businessType: 'registered_company',
     status: 'pending_verification',
+    operatingMode: 'BUSINESS',
     registration: { registrationNumber: 'SMP-RDB-000123', tin: '100000001' },
     location: {
       country: 'RW',
@@ -36,6 +37,7 @@ export const SAMPLE_MERCHANTS: Merchant[] = [
     legalName: 'Sample Corner Cafe',
     businessType: 'sole_proprietor',
     status: 'pending_verification',
+    operatingMode: 'BUSINESS',
     registration: {},
     location: {
       country: 'RW',

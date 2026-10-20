@@ -138,6 +138,48 @@ describe('HTTP-backed services keep the frontend contracts', () => {
     expect(calls.every((call) => !call.url.includes('tok-'))).toBe(true)
   })
 
+  it('merchant settings use the business-scoped settings path and keep error codes', async () => {
+    const settings = { merchantId: M, operatingMode: 'SIMPLIFIED', version: 1 }
+    const { http, calls } = setup(
+      { body: { merchantId: M, operatingMode: 'BUSINESS', version: 0 } },
+      { body: settings },
+      { status: 409, body: { code: 'version_conflict', message: 'Changed elsewhere.' } },
+      { status: 403, body: { code: 'forbidden', message: 'No.' } },
+    )
+    const merchants = createHttpMerchantService(http)
+    expect(await merchants.getMerchantSettings(M)).toMatchObject({ operatingMode: 'BUSINESS' })
+    expect(
+      await merchants.updateMerchantSettings(M, {
+        operatingMode: 'SIMPLIFIED',
+        expectedVersion: 0,
+      }),
+    ).toEqual(settings)
+    await expect(
+      merchants.updateMerchantSettings(M, { operatingMode: 'BUSINESS', expectedVersion: 0 }),
+    ).rejects.toMatchObject({ name: 'MerchantServiceError', code: 'version_conflict' })
+    await expect(
+      merchants.updateMerchantSettings(M, { operatingMode: 'BUSINESS', expectedVersion: 1 }),
+    ).rejects.toMatchObject({ code: 'forbidden' })
+    expect(calls[0]).toMatchObject({ method: 'GET', url: `/api/v1/merchants/${M}/settings` })
+    expect(calls[1]).toMatchObject({
+      method: 'PUT',
+      url: `/api/v1/merchants/${M}/settings`,
+      body: { operatingMode: 'SIMPLIFIED', expectedVersion: 0 },
+    })
+  })
+
+  it('registering a business sends the chosen operating mode', async () => {
+    const { http, calls } = setup({ body: { id: M } })
+    await createHttpMerchantService(http).createMerchant({
+      operatingMode: 'SIMPLIFIED',
+    } as never)
+    expect(calls[0]).toMatchObject({
+      method: 'POST',
+      url: '/api/v1/merchants',
+      body: { operatingMode: 'SIMPLIFIED' },
+    })
+  })
+
   it('merchants and branches use business-scoped paths and keep error codes', async () => {
     const { http, calls } = setup(
       { body: [] },

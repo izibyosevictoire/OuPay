@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { merchantService } from '@/services'
 import { SIMULATED_OUTAGE_TIN } from '@/services/mock/mockMerchantService'
@@ -51,6 +51,54 @@ describe('business onboarding', () => {
   })
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('explains both operating modes and starts on Business', async () => {
+    await renderAppAt('/onboarding')
+    const group = await screen.findByRole('group', { name: 'How will you use OuPay?' })
+    expect(within(group).getByRole('radio', { name: /^Business/ })).toBeChecked()
+    expect(within(group).getByRole('radio', { name: /^Simplified/ })).not.toBeChecked()
+    expect(within(group).getByText(/keep full records of what they sell/)).toBeInTheDocument()
+    expect(within(group).getByText(/mainly want to collect payments quickly/)).toBeInTheDocument()
+  })
+
+  it('registers the business as BUSINESS when the default is kept', async () => {
+    const user = userEvent.setup()
+    await reachReviewStep(user)
+    expect(screen.getByText('How you will use OuPay')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Submit registration/ }))
+    await heading('Registration submitted')
+    expect(merchantService.createMerchant).toHaveBeenCalledWith(
+      expect.objectContaining({ operatingMode: 'BUSINESS' }),
+    )
+  })
+
+  it('registers the business as SIMPLIFIED when that is chosen, and persists it', async () => {
+    const user = userEvent.setup()
+    await renderAppAt('/onboarding')
+    await user.click(await screen.findByRole('radio', { name: /^Simplified/ }))
+    await fillBusinessDetails(user)
+    await fillLocation(user)
+    await fillContact(user)
+    expect(screen.getByText('Simplified')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Submit registration/ }))
+    await heading('Registration submitted')
+
+    expect(merchantService.createMerchant).toHaveBeenCalledWith(
+      expect.objectContaining({ operatingMode: 'SIMPLIFIED' }),
+    )
+    const created = await vi.mocked(merchantService.createMerchant).mock.results[0]!.value
+    expect((await merchantService.getMerchantSettings(created.id)).operatingMode).toBe('SIMPLIFIED')
+  })
+
+  it('keeps the chosen mode when moving back and forward between steps', async () => {
+    const user = userEvent.setup()
+    await renderAppAt('/onboarding')
+    await user.click(await screen.findByRole('radio', { name: /^Simplified/ }))
+    await fillBusinessDetails(user)
+    await user.click(screen.getByRole('button', { name: /Back/ }))
+    await heading('Business details')
+    expect(screen.getByRole('radio', { name: /^Simplified/ })).toBeChecked()
   })
 
   it('blocks each step until its required fields are valid, with clear messages', async () => {

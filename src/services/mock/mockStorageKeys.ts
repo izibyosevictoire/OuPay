@@ -3,6 +3,7 @@ export const MOCK_STORAGE_KEYS = {
   users: 'oupay.mock.users',
   memberships: 'oupay.mock.memberships',
   merchants: 'oupay.mock.merchants',
+  merchantSettings: 'oupay.mock.merchantSettings',
   branches: 'oupay.mock.branches',
   branchAssignments: 'oupay.mock.branchAssignments',
   invitations: 'oupay.mock.invitations',
@@ -25,4 +26,4 @@ export const MOCK_STORAGE_KEYS = {
  * Bump whenever the shape or seed data of the mock records changes. Browsers holding data
  * from an older version are reset to the new seed data instead of showing stale records.
  */
-export const MOCK_SCHEMA_VERSION = '6'
+export const MOCK_SCHEMA_VERSION = '7'

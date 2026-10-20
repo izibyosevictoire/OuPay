@@ -2,9 +2,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/app/providers/AuthProvider'
 import { useBusinessContext } from '@/app/providers/BusinessContextProvider'
 import { merchantService } from '@/services'
-import type { CreateMerchantInput, UpdateMerchantInput } from '@/types/merchant'
+import type {
+  CreateMerchantInput,
+  UpdateMerchantInput,
+  UpdateMerchantSettingsInput,
+} from '@/types/merchant'
 
 const merchantsQueryKey = (userId: string | undefined) => ['merchants', userId] as const
+const merchantSettingsQueryKey = (merchantId: string | undefined) =>
+  ['merchant-settings', merchantId] as const
 
 /** Businesses the signed-in user has an active membership in (the service enforces this). */
 export function useMerchantsForCurrentUser() {
@@ -49,5 +55,29 @@ export function useUpdateMerchant(merchantId: string) {
     mutationFn: (changes: UpdateMerchantInput) =>
       merchantService.updateMerchant(merchantId, changes),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: merchantsQueryKey(user?.id) }),
+  })
+}
+
+/** The settings (operating mode) of a business. Any member may read them. */
+export function useMerchantSettings(merchantId: string | undefined) {
+  return useQuery({
+    queryKey: merchantSettingsQueryKey(merchantId),
+    queryFn: () => merchantService.getMerchantSettings(merchantId as string),
+    enabled: Boolean(merchantId),
+  })
+}
+
+/** Owners only (the service enforces it). Refreshes the settings and the business list, which carries the mode. */
+export function useUpdateMerchantSettings(merchantId: string) {
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+  return useMutation({
+    mutationFn: (changes: UpdateMerchantSettingsInput) =>
+      merchantService.updateMerchantSettings(merchantId, changes),
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: merchantSettingsQueryKey(merchantId) }),
+        queryClient.invalidateQueries({ queryKey: merchantsQueryKey(user?.id) }),
+      ]),
   })
 }

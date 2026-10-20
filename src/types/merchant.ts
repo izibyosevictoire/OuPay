@@ -9,6 +9,14 @@ export type MerchantStatus = 'draft' | 'pending_verification' | 'active' | 'susp
 export type BusinessType =
   'registered_company' | 'cooperative' | 'non_profit' | 'sole_proprietor' | 'informal_vendor'
 
+/**
+ * How a business works in OuPay. Unrelated to `BusinessType`, which is the legal form.
+ * - `BUSINESS`: full business capabilities.
+ * - `SIMPLIFIED`: streamlined, amount-only payment collection.
+ * Businesses that existed before modes were introduced are `BUSINESS`.
+ */
+export type OperatingMode = 'BUSINESS' | 'SIMPLIFIED'
+
 export type CountryCode = 'RW'
 
 /** Official registration details. Kept apart from banking/payment configuration. */
@@ -50,6 +58,7 @@ export interface Merchant {
   tradingName?: string
   businessType: BusinessType
   status: MerchantStatus
+  operatingMode: OperatingMode
   registration: BusinessRegistration
   location: BusinessLocation
   contact: PrimaryContact
@@ -62,7 +71,25 @@ export interface Merchant {
 export type CreateMerchantInput = Pick<
   Merchant,
   'legalName' | 'tradingName' | 'businessType' | 'registration' | 'location' | 'contact'
->
+> & {
+  /** Optional for compatibility: absent means BUSINESS. */
+  operatingMode?: OperatingMode
+}
+
+/** A business's settings. Reading follows profile visibility; changing is for owners. */
+export interface MerchantSettings {
+  merchantId: string
+  operatingMode: OperatingMode
+  /** Absent until the settings are first changed. */
+  updatedAt?: string
+  /** Send back as `expectedVersion` so a change made elsewhere is never silently overwritten. */
+  version: number
+}
+
+export interface UpdateMerchantSettingsInput {
+  operatingMode: OperatingMode
+  expectedVersion: number
+}
 
 /** Fields a merchant may change after registering; identity and registration data are locked. */
 export interface UpdateMerchantInput {
