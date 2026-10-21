@@ -7,6 +7,10 @@
   * HRS_REQUEST_PARAMETER_TO_HTTP_HEADER, ONLY in CorrelationIdFilter: the incoming X-Request-Id is echoed in the
     response header, but only after it matched ^[A-Za-z0-9._-]{8,64}$. That alphabet cannot contain CR or LF, so
     header splitting is impossible; anything else is replaced by a generated UUID (see SecurityHardeningIT).
+
+  * CT_CONSTRUCTOR_THROW, ONLY in the Invoice and PaymentRequest entities: their trusted constructors deliberately reject
+    inconsistent provenance (an IllegalArgumentException) before an object exists. These are persistence entities, not
+    security-sensitive classes, so a finalizer attack on a half-built instance is not a concern.
 -->
 <FindBugsFilter>
   <Match>
@@ -15,5 +19,12 @@
   <Match>
     <Class name="rw.oupay.auth.CorrelationIdFilter"/>
     <Bug pattern="HRS_REQUEST_PARAMETER_TO_HTTP_HEADER"/>
+  </Match>
+  <Match>
+    <Or>
+      <Class name="rw.oupay.invoice.Invoice"/>
+      <Class name="rw.oupay.payment.PaymentRequest"/>
+    </Or>
+    <Bug pattern="CT_CONSTRUCTOR_THROW"/>
   </Match>
 </FindBugsFilter>

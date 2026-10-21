@@ -15,6 +15,9 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID> {
 
     Optional<Invoice> findByMerchantIdAndInvoiceNumber(UUID merchantId, String invoiceNumber);
 
+    /** The sale created by a durable client request, if any. Unique per business (a database index). */
+    Optional<Invoice> findByMerchantIdAndClientRequestId(UUID merchantId, UUID clientRequestId);
+
     @Query("select i from Invoice i where i.merchantId = :merchantId order by i.createdAt desc")
     List<Invoice> findAllForMerchant(UUID merchantId);
 

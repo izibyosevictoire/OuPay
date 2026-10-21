@@ -12,7 +12,7 @@ class MigrationIT extends IntegrationTest {
     @Test
     void everyMigrationAppliedSuccessfullyInOrder() {
         List<String> versions = jdbc.queryForList("select version from flyway_schema_history where success order by installed_rank", String.class);
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
     }
 
     @Test
@@ -37,6 +37,23 @@ class MigrationIT extends IntegrationTest {
         assertThat(indexes).contains("ux_bank_transactions_provider_tx", "ux_bank_events_provider_event", "ix_payment_allocations_invoice",
                 "ix_bank_transactions_merchant_time", "ux_payment_profiles_token", "ux_payment_requests_reference", "ux_invoices_number",
                 "ux_notifications_dedupe", "ix_audit_log_transaction", "ux_users_email_lower", "ux_auth_sessions_token",
-                "ix_idempotency_keys_created");
+                "ix_idempotency_keys_created", "ux_invoices_client_request");
+    }
+
+    @Test
+    void theProvenanceMigrationOnlyAddsAndNeverRewritesOrRemovesExistingData() throws java.io.IOException {
+        String sql = new org.springframework.core.io.ClassPathResource("db/migration/V8__invoice_provenance.sql")
+                .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        // No row is rewritten, deleted or backfilled, and nothing existing is dropped or renamed.
+        assertThat(sql).doesNotContainPattern("(?i)\\bupdate\\s+(invoices|payment_requests)\\b")
+                .doesNotContainPattern("(?i)\\bdelete\\s+from\\b")
+                .doesNotContainPattern("(?i)\\bdrop\\s+(table|column|constraint|index|trigger|function)\\b")
+                .doesNotContainPattern("(?i)\\brename\\b")
+                .doesNotContainPattern("(?i)\\bset\\s+not\\s+null\\b");
+        // Every new column is nullable, so the previous application version keeps working against the new schema.
+        assertThat(jdbc.queryForList("select is_nullable from information_schema.columns where table_schema = 'public' and "
+                + "((table_name = 'invoices' and column_name in ('sale_channel', 'client_request_id', 'client_request_sha256')) or "
+                + "(table_name = 'payment_requests' and column_name in ('source', 'branch_id', 'created_by_user_id')))", String.class))
+                .hasSize(6).containsOnly("YES");
     }
 }

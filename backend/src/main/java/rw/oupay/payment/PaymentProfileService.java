@@ -2,6 +2,7 @@ package rw.oupay.payment;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -44,7 +45,6 @@ import rw.oupay.user.UserStatus;
 @Service
 public class PaymentProfileService {
 
-    static final Duration INVOICE_REQUEST_LIFETIME = Duration.ofDays(7);
     private static final int TOKEN_LENGTH = 12;
 
     private final PaymentProfileRepository profiles;
@@ -180,9 +180,35 @@ public class PaymentProfileService {
 
     // ---- invoice payment requests --------------------------------------------------------------
 
-    /** A request for an issued invoice, for exactly its outstanding balance. */
+    /** A request for an issued invoice, for exactly its outstanding balance, open for the traditional seven days. */
     @Transactional
     public PaymentDtos.RequestDto createInvoiceRequest(UUID merchantId, UUID invoiceId) {
+        return createInvoiceRequest(merchantId, invoiceId, PaymentRequestOptions.traditionalInvoice(), false);
+    }
+
+    /**
+     * The same request with a lifetime chosen by TRUSTED server code (a checkout flow wanting a shorter one). The expiry is
+     * {@code now + lifetime} on this server's clock, the lifetime is validated by {@link PaymentRequestOptions}, and no
+     * controller or public page reaches this method. The request records where it came from: the source is its
+     * invoice's sale channel, the branch is the invoice's branch, and the creator is the signed-in member. The database
+     * enforces that these agree with the invoice and the business.
+     *
+     * <p>Lifetime policy. A live request for the invoice is never overwritten, shortened, lengthened or replaced here. If one
+     * already exists with exactly the requested lifetime it is returned (so a retry is harmless); if it was created with a
+     * different lifetime the call fails with 409 {@code payment_request_lifetime_conflict} and nothing changes. To get a
+     * request with another lifetime the caller must first cancel the existing one explicitly (a deliberate act) and then
+     * create the new one. The existing two-argument method, used by the merchant API, keeps its behaviour: it returns whatever
+     * live request exists, so the customer keeps one reference per invoice.
+     *
+     * <p>Bank confirmation and reconciliation are not touched.
+     */
+    @Transactional
+    public PaymentDtos.RequestDto createInvoiceRequest(UUID merchantId, UUID invoiceId, PaymentRequestOptions options) {
+        return createInvoiceRequest(merchantId, invoiceId, options, true);
+    }
+
+    private PaymentDtos.RequestDto createInvoiceRequest(UUID merchantId, UUID invoiceId, PaymentRequestOptions options,
+                                                        boolean lifetimeMustMatchAnExistingRequest) {
         Actor actor = access.require(merchantId, Permission.INVOICES_VIEW);
         Invoice invoice = visibleInvoice(actor, merchantId, invoiceId);
         // Serialise with other creators and with allocations for this invoice.
@@ -202,14 +228,21 @@ public class PaymentProfileService {
                     return status != PaymentRequestState.Status.CANCELLED && status != PaymentRequestState.Status.EXPIRED;
                 }).findFirst();
         if (live.isPresent()) {
+            if (lifetimeMustMatchAnExistingRequest && !lifetimeOf(live.get()).equals(options.lifetime())) {
+                throw ApiException.conflict("payment_request_lifetime_conflict",
+                        "This invoice already has an open payment request with a different lifetime. "
+                                + "Cancel it first if you need one with the requested lifetime.");
+            }
             return toDto(live.get());
         }
         Invoice target = invoice;
         PaymentProfile profile = chooseProfile(merchantId, target)
                 .orElseThrow(() -> new ApiException(HttpStatus.CONFLICT, "no_active_profile",
                         "There is no active payment link for this invoice. Create or switch one on in Payment links."));
+        Instant now = clock.instant();
         PaymentRequest request = new PaymentRequest(UUID.randomUUID(), merchantId, profile.getId(), invoiceId, remaining,
-                newReference(), clock.instant().plus(INVOICE_REQUEST_LIFETIME), clock.instant());
+                newReference(), now.plus(options.lifetime()), now,
+                PaymentRequestSource.forInvoice(target.getSaleChannel()), target.getBranchId(), actor.userId());
         requests.saveAndFlush(request);
         audit.record(merchantId, actor.userId(), "PAYMENT_REQUEST_CREATED", "payment_request", request.getId(),
                 "Payment request created for invoice " + target.getInvoiceNumber() + ".");
@@ -251,6 +284,11 @@ public class PaymentProfileService {
                         && invoice.getBranchId().equals(p.getBranchId())).findFirst()
                 .or(() -> candidates.stream().filter(p -> p.getAssignedCashierUserId() == null && invoice.getBranchId().equals(p.getBranchId())).findFirst())
                 .or(() -> candidates.stream().filter(p -> p.getAssignedCashierUserId() == null && p.getBranchId() == null).findFirst());
+    }
+
+    /** How long the request was originally opened for. */
+    private static Duration lifetimeOf(PaymentRequest request) {
+        return Duration.between(request.getCreatedAt(), request.getExpiresAt());
     }
 
     private String newReference() {

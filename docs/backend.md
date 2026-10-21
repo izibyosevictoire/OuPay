@@ -16,7 +16,7 @@ backend/
   compose.yaml                  PostgreSQL only, for local development
   scripts/start-test-postgres.sh  throwaway PostgreSQL for tests when Docker is unavailable
   scripts/backup-db.sh, restore-verify.sh   backup and PROVEN restore (see operations.md)
-  src/main/resources/db/migration/   V1..V7 Flyway migrations (the schema's only owner)
+  src/main/resources/db/migration/   V1..V8 Flyway migrations (the schema's only owner)
   src/main/java/rw/oupay/
     common/        ApiException, one error shape, secure tokens, keyset pagination, startup safety check, housekeeping
     user/          User entity (no role: roles live on memberships)

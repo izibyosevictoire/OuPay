@@ -110,6 +110,19 @@ public class Invoice {
 
     private String notes;
 
+    /** Where the invoice came from. Empty on invoices created before provenance existed: read it through {@link #getSaleChannel()}. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "sale_channel", updatable = false)
+    private SaleChannel saleChannel;
+
+    /** The durable identity of the original sale-creation request, when there was one. Fixed at creation. */
+    @Column(name = "client_request_id", updatable = false)
+    private UUID clientRequestId;
+
+    /** SHA-256 of that original request, computed by the server (never supplied by a client). Exists exactly when the id does. */
+    @Column(name = "client_request_sha256", updatable = false)
+    private String clientRequestSha256;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -125,12 +138,23 @@ public class Invoice {
 
     protected Invoice() {}
 
-    public Invoice(UUID id, UUID merchantId, String invoiceNumber, UUID createdByUserId, String createdByName, Instant now) {
+    /**
+     * @param clientRequestSha256 the server-computed fingerprint of the creating request: required when {@code creation} has a
+     *                            client request id, and absent otherwise (the database enforces the same pairing)
+     */
+    public Invoice(UUID id, UUID merchantId, String invoiceNumber, UUID createdByUserId, String createdByName,
+                   InvoiceCreation creation, String clientRequestSha256, Instant now) {
+        if ((creation.clientRequestId() == null) != (clientRequestSha256 == null)) {
+            throw new IllegalArgumentException("A client request id and its fingerprint go together.");
+        }
         this.id = id;
         this.merchantId = merchantId;
         this.invoiceNumber = invoiceNumber;
         this.createdByUserId = createdByUserId;
         this.createdByName = createdByName;
+        this.saleChannel = creation.channel();
+        this.clientRequestId = creation.clientRequestId();
+        this.clientRequestSha256 = clientRequestSha256;
         this.status = InvoiceStatus.DRAFT;
         this.createdAt = now;
         this.updatedAt = now;
@@ -168,6 +192,12 @@ public class Invoice {
     public Instant getUpdatedAt() { return updatedAt; }
     public long getVersion() { return version; }
     public List<InvoiceItem> getItems() { return items; }
+
+    /** The channel the invoice was created through. An invoice with no stored value predates provenance: a traditional INVOICE. */
+    public SaleChannel getSaleChannel() { return saleChannel == null ? SaleChannel.INVOICE : saleChannel; }
+
+    public UUID getClientRequestId() { return clientRequestId; }
+    public String getClientRequestSha256() { return clientRequestSha256; }
 
     public void applyContent(UUID branchId, UUID assignedToUserId, String assignedToName, String customerName,
                              String customerEmail, String customerPhone, String customerAddress, String customerTin,
