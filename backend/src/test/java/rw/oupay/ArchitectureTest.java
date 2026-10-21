@@ -66,7 +66,7 @@ class ArchitectureTest {
         // Each service that reads or writes business data must call MerchantAccess itself (not rely on controllers).
         for (String file : new String[] {"invoice/InvoiceService.java", "branch/BranchService.java", "staff/StaffService.java",
                 "merchant/MerchantService.java", "merchant/MerchantSettingsService.java", "idempotency/IdempotencyService.java", "banking/BankingService.java", "ledger/ReconciliationService.java",
-                "payment/PaymentProfileService.java", "notification/NotificationService.java", "dashboard/DashboardService.java", "audit/AuditService.java"}) {
+                "payment/PaymentProfileService.java", "checkout/SimplifiedCheckoutService.java", "notification/NotificationService.java", "dashboard/DashboardService.java", "audit/AuditService.java"}) {
             String source = read(MAIN.resolve(file));
             assertThat(source).as(file).contains("MerchantAccess").containsPattern("access\\.require(Member)?\\(");
         }
@@ -99,6 +99,48 @@ class ArchitectureTest {
     }
 
     @Test
+    void onlyTheCheckoutServiceUsesTheTrustedInvoiceAndPaymentRequestEntryPoints() throws IOException {
+        // The trusted entry points belong to the module that defines them and to the checkout orchestrators.
+        List<String> offenders = sources().stream()
+                .filter(p -> {
+                    String relative = MAIN.relativize(p).toString().replace('\\', '/');
+                    return !relative.startsWith("invoice/") && !relative.startsWith("payment/") && !relative.startsWith("checkout/");
+                })
+                .filter(p -> {
+                    String source = code(p);
+                    return source.contains("createDraftFor") || source.contains("PaymentRequestOptions");
+                })
+                .map(p -> MAIN.relativize(p).toString().replace('\\', '/'))
+                .collect(Collectors.toList());
+        assertThat(offenders).isEmpty();
+    }
+
+    @Test
+    void theCheckoutIsOneTransactionOwnedByTheIdempotencyService() throws IOException {
+        // No code commits independently of its caller...
+        List<String> independent = sources().stream()
+                .filter(p -> code(p).contains("REQUIRES_NEW") || code(p).contains("Propagation.NOT_SUPPORTED") || code(p).contains("Propagation.NEVER"))
+                .map(p -> MAIN.relativize(p).toString().replace('\\', '/'))
+                .collect(Collectors.toList());
+        assertThat(independent).isEmpty();
+        // ...programmatic transactions exist only where they are the point (the idempotency wrapper, the e-mail dispatcher)...
+        List<String> templates = sources().stream()
+                .filter(p -> code(p).contains("TransactionTemplate"))
+                .map(p -> MAIN.relativize(p).toString().replace('\\', '/'))
+                .collect(Collectors.toList());
+        assertThat(templates).containsExactlyInAnyOrder("idempotency/IdempotencyService.java", "email/EmailOutboxDispatcher.java");
+        // ...and the orchestrator itself is not transactional (executeOnce refuses to run inside a transaction), has no external
+        // side effect, and creates its rows only through the invoice and payment services.
+        String checkout = code(MAIN.resolve("checkout/SimplifiedCheckoutService.java"));
+        assertThat(checkout.split("@Transactional", -1).length - 1).isEqualTo(1); // options() only, read-only
+        assertThat(checkout).containsPattern("@Transactional\\(readOnly = true\\)\\s+public CheckoutDtos.SimpleCheckoutOptions options");
+        for (String forbidden : new String[] {"Email", "HttpClient", "RestClient", "WebClient", "JdbcClient", "ProviderRegistry", "BankingService"}) {
+            assertThat(checkout).as("the checkout must not use " + forbidden).doesNotContain(forbidden);
+        }
+        assertThat(checkout).contains("idempotency.executeOnce(");
+    }
+
+    @Test
     void noRequestBodyCanCarryProvenance() throws IOException {
         // Wire records that ARE request bodies (named ...Request, ...Body or ...Input) never declare provenance fields.
         java.util.regex.Pattern record = java.util.regex.Pattern.compile("record\\s+(\\w+(?:Request|Body|Input))\\s*\\((.*?)\\)\\s*\\{\\}", java.util.regex.Pattern.DOTALL);
@@ -110,7 +152,11 @@ class ArchitectureTest {
             var matcher = record.matcher(code(file));
             while (matcher.find()) {
                 String components = matcher.group(2);
-                if (components.contains("SaleChannel") || components.contains("clientRequestId") || components.contains("PaymentRequestSource")
+                // The simplified checkout's body carries the client's stable sale identifier (that is its contract), and nothing
+                // else of the provenance: never a channel, a source or a creator.
+                boolean mayCarryClientRequestId = file.getFileName().toString().equals("CheckoutDtos.java");
+                if (components.contains("SaleChannel") || (components.contains("clientRequestId") && !mayCarryClientRequestId)
+                        || components.contains("PaymentRequestSource")
                         || components.contains("createdByUserId") || components.contains("saleChannel")) {
                     offenders.add(file.getFileName() + ":" + matcher.group(1));
                 }

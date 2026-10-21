@@ -13,6 +13,7 @@ import { VerifyEmailPage } from '@/features/auth/pages/VerifyEmailPage'
 import { BankingPage } from '@/features/banking/BankingPage'
 import { BranchDetailsPage } from '@/features/branches/BranchDetailsPage'
 import { BranchesPage } from '@/features/branches/BranchesPage'
+import { SimplifiedCheckoutPage } from '@/features/checkout/SimplifiedCheckoutPage'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { BankSimulatorPage } from '@/features/demo/BankSimulatorPage'
 import { EditInvoicePage } from '@/features/invoices/EditInvoicePage'
@@ -45,6 +46,7 @@ const BUILT_MODULE_PATHS = [
   '/branches',
   '/cashiers',
   '/invoices',
+  '/collect',
   '/transactions',
   '/payments',
   '/payment-links',
@@ -156,7 +158,11 @@ export const appRoutes: RouteObject[] = [
               },
               {
                 element: <PermissionRoute permission="invoices:create" />,
-                children: [{ path: '/invoices/new', element: <NewInvoicePage /> }],
+                children: [
+                  { path: '/invoices/new', element: <NewInvoicePage /> },
+                  // The page itself explains when the business is not in simplified mode (and what to do instead).
+                  { path: '/collect', element: <SimplifiedCheckoutPage /> },
+                ],
               },
               {
                 element: <PermissionRoute permission="branches:manage" />,

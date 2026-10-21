@@ -590,6 +590,13 @@ class InvoiceProvenanceIT extends IntegrationTest {
         assertThat(respelled.json().path("created").asBoolean()).isFalse();
         assertThat(respelled.json().path("id").asString()).isEqualTo(first.json().path("id").asString());
 
+        // A checkout sale is due the day it is made (derived by the server): the due date is not part of its identity,
+        // so a retry on another day still finds its sale.
+        var otherDay = trustedCreate(w.owner, w.merchantId, "POS", clientRequestId,
+                with(original, "dueAt", java.time.LocalDate.now().plusDays(15).toString()));
+        assertThat(otherDay.status()).isEqualTo(200);
+        assertThat(otherDay.json().path("id").asString()).isEqualTo(first.json().path("id").asString());
+
         // Anything that changes what the sale means or whose it is, is a conflict, never a silent reuse.
         Map<String, Map<String, Object>> conflicting = new java.util.LinkedHashMap<>();
         conflicting.put("price", w.draft(w.cashierPerson.userId(), 20_001));
@@ -597,7 +604,6 @@ class InvoiceProvenanceIT extends IntegrationTest {
         conflicting.put("customer", with(original, "customer", Map.of("name", "Another customer")));
         conflicting.put("notes", with(original, "notes", "extra"));
         conflicting.put("tax mode", with(original, "taxMode", "INCLUSIVE"));
-        conflicting.put("due date", with(original, "dueAt", java.time.LocalDate.now().plusDays(15).toString()));
         conflicting.put("quantity", withLines(original, List.of(line(2, 20_000, 0, "NOT_APPLICABLE", 0))));
         conflicting.put("discount", withLines(original, List.of(line(1, 20_000, 100, "NOT_APPLICABLE", 0))));
         conflicting.put("tax rate", withLines(original, List.of(line(1, 20_000, 0, "STANDARD", 1800))));
@@ -613,6 +619,20 @@ class InvoiceProvenanceIT extends IntegrationTest {
         assertThat(invoiceCount()).isEqualTo(1);
         assertThat(numbersTaken()).isEqualTo(1);
         assertThat(jdbc.queryForObject("select grand_total_rwf from invoices", Long.class)).isEqualTo(20_000L);
+    }
+
+    @Test
+    void aManualInvoiceKeepsItsDueDateInTheFingerprintWhileACheckoutSaleDoesNot() {
+        UUID clientRequestId = UUID.randomUUID();
+        Map<String, Object> original = draftForCashier();
+        assertThat(trustedCreate(w.owner, w.merchantId, "INVOICE", clientRequestId, original).status()).isEqualTo(201);
+        var otherDate = trustedCreate(w.owner, w.merchantId, "INVOICE", clientRequestId,
+                with(original, "dueAt", java.time.LocalDate.now().plusDays(15).toString()));
+        assertThat(otherDate.status()).isEqualTo(409);
+        assertThat(otherDate.code()).isEqualTo("client_request_id_reuse");
+        // The plain manual endpoint never had an identity at all: nothing changed there.
+        assertThat(w.owner.post(inv(""), original).status()).isEqualTo(201);
+        assertThat(jdbc.queryForObject("select count(*) from invoices where client_request_sha256 is null", Integer.class)).isEqualTo(1);
     }
 
     @Test

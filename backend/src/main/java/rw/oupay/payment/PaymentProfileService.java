@@ -236,7 +236,7 @@ public class PaymentProfileService {
             return toDto(live.get());
         }
         Invoice target = invoice;
-        PaymentProfile profile = chooseProfile(merchantId, target)
+        PaymentProfile profile = chooseProfile(merchantId, target.getBranchId(), target.getAssignedToUserId())
                 .orElseThrow(() -> new ApiException(HttpStatus.CONFLICT, "no_active_profile",
                         "There is no active payment link for this invoice. Create or switch one on in Payment links."));
         Instant now = clock.instant();
@@ -247,6 +247,16 @@ public class PaymentProfileService {
         audit.record(merchantId, actor.userId(), "PAYMENT_REQUEST_CREATED", "payment_request", request.getId(),
                 "Payment request created for invoice " + target.getInvoiceNumber() + ".");
         return toDto(request);
+    }
+
+    /**
+     * Whether an invoice for this branch and assignee could be collected right now: an active payment link (the assignee's, the
+     * branch's or the business-wide one) that points at a connected payment destination. Lets a checkout say so BEFORE billing.
+     */
+    @Transactional(readOnly = true)
+    public boolean canCollectFor(UUID merchantId, UUID branchId, UUID assigneeUserId) {
+        access.require(merchantId, Permission.INVOICES_CREATE);
+        return chooseProfile(merchantId, branchId, assigneeUserId).isPresent();
     }
 
     @Transactional(readOnly = true)
@@ -273,16 +283,16 @@ public class PaymentProfileService {
     // ---- internals -----------------------------------------------------------------------------
 
     /** Best-matching active link: cashier+branch, then branch, then business-wide. */
-    private Optional<PaymentProfile> chooseProfile(UUID merchantId, Invoice invoice) {
+    private Optional<PaymentProfile> chooseProfile(UUID merchantId, UUID branchId, UUID assigneeUserId) {
         List<PaymentProfile> candidates = profiles.findByMerchantIdOrderByCreatedAtDesc(merchantId).stream()
                 .filter(p -> p.getStatus() == PaymentProfile.Status.ACTIVE)
                 .filter(p -> destinations.findByIdAndMerchantId(p.getPaymentDestinationId(), merchantId)
                         .flatMap(d -> connections.findById(d.getBankConnectionId()))
                         .filter(c -> c.getStatus() == BankConnection.Status.CONNECTED).isPresent())
                 .toList();
-        return candidates.stream().filter(p -> invoice.getAssignedToUserId().equals(p.getAssignedCashierUserId())
-                        && invoice.getBranchId().equals(p.getBranchId())).findFirst()
-                .or(() -> candidates.stream().filter(p -> p.getAssignedCashierUserId() == null && invoice.getBranchId().equals(p.getBranchId())).findFirst())
+        return candidates.stream().filter(p -> assigneeUserId.equals(p.getAssignedCashierUserId())
+                        && branchId.equals(p.getBranchId())).findFirst()
+                .or(() -> candidates.stream().filter(p -> p.getAssignedCashierUserId() == null && branchId.equals(p.getBranchId())).findFirst())
                 .or(() -> candidates.stream().filter(p -> p.getAssignedCashierUserId() == null && p.getBranchId() == null).findFirst());
     }
 

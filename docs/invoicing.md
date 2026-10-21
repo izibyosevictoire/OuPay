@@ -93,8 +93,9 @@ request that created it (`invoices.client_request_id`). Added in V8; nothing exi
   committed invoice and gets it back (`created = false`) instead of failing on the index.
 * **Permanent request fingerprint.** The server computes `invoices.client_request_sha256` with R2's canonical fingerprint
   (`IdempotencyService.fingerprintOf`: key order and number formatting such as `1` vs `1.0` do not matter, line order does) over the
-  business, the channel, the creating member and the whole draft (branch, assignee, customer, every line, tax mode, due date, notes),
-  and stores it with the request id. It is never read from a request: any such field is ignored. A repeat whose fingerprint is
+  business, the channel, the creating member and the whole draft (branch, assignee, customer, every line, tax mode, notes, and for manual invoices the
+  due date; a checkout sale is due the day it is made and that server-derived date is left out, see
+  [simplified-checkout.md](simplified-checkout.md)), and stores it with the request id. It is never read from a request: any such field is ignored. A repeat whose fingerprint is
   identical returns the existing invoice (`created = false`); any other payload, member or channel under the same id is
   `409 client_request_id_reuse`. This holds whether or not an R2 idempotency record still exists (those are pruned after 30 days).
   The id and its fingerprint exist together (`ck_invoices_request_identity`), the fingerprint is a 64-character hex digest

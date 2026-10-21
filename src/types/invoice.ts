@@ -133,7 +133,15 @@ export interface Invoice extends MerchantOwned {
   notes?: string
   /** Increments on every change; writes must quote the version they read (optimistic locking). */
   version: number
+  /**
+   * Where the invoice came from, set by the server and never by a form. Absent on older records, which are
+   * traditional invoices (read as `INVOICE`).
+   */
+  saleChannel?: SaleChannel
 }
+
+/** `INVOICE`: a traditional manual invoice. `POS` and `SIMPLIFIED`: checkout flows. */
+export type SaleChannel = 'INVOICE' | 'POS' | 'SIMPLIFIED'
 
 export interface InvoiceDraftInput {
   branchId: string
