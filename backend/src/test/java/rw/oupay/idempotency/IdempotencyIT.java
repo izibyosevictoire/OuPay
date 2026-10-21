@@ -20,11 +20,13 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestComponent;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.stereotype.Controller;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -58,6 +60,10 @@ class IdempotencyIT extends IntegrationTest {
         }
     }
 
+    // Since Spring 6 a type-level @RequestMapping alone does not make a bean a web handler: @Controller is required.
+    // @TestComponent keeps component scanning from ever picking this class up outside this test's own configuration.
+    @Controller
+    @TestComponent
     @RequestMapping("/api/v1/merchants/{merchantId}/idempotency-test")
     @ResponseBody
     static class TestOperationEndpoint {
