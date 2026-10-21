@@ -7,7 +7,6 @@ import java.sql.SQLException;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.dao.DeadlockLoserDataAccessException;
 import org.springframework.http.HttpStatus;
 
 class DatabaseErrorsTest {
@@ -39,9 +38,10 @@ class DatabaseErrorsTest {
     }
 
     @Test
-    void springsLockExceptionsCountEvenWithoutASqlCause() {
+    void springsLockExceptionIsRecognisedEvenWithoutASqlCause() {
         assertThat(DatabaseErrors.isTransientContention(new CannotAcquireLockException("lock"))).isTrue();
-        assertThat(DatabaseErrors.isTransientContention(new DeadlockLoserDataAccessException("deadlock", null))).isTrue();
+        // A deadlock victim is recognised by its SQLSTATE, whichever exception type Spring chose for it.
+        assertThat(DatabaseErrors.isTransientContention(new CannotAcquireLockException("deadlock", new SQLException("deadlock detected", "40P01")))).isTrue();
     }
 
     @Test

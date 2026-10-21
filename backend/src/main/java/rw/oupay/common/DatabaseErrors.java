@@ -4,7 +4,6 @@ import java.sql.SQLException;
 import java.util.Optional;
 import java.util.function.Supplier;
 import org.springframework.dao.CannotAcquireLockException;
-import org.springframework.dao.DeadlockLoserDataAccessException;
 
 /**
  * Recognises PostgreSQL failures by SQLSTATE, whatever Spring or Hibernate wrapped them in. The SQLSTATE is the only
@@ -44,7 +43,9 @@ public final class DatabaseErrors {
      * whole transaction can safely be attempted again.
      */
     public static boolean isTransientContention(Throwable failure) {
-        if (failure instanceof CannotAcquireLockException || failure instanceof DeadlockLoserDataAccessException) {
+        // Spring's own "could not get the lock" exception. A deadlock victim is recognised by its SQLSTATE below, whatever
+        // Spring wrapped it in (Spring's dedicated deadlock exception is deprecated, so it is not named here).
+        if (failure instanceof CannotAcquireLockException) {
             return true;
         }
         return sqlState(failure).filter(state -> DEADLOCK_DETECTED.equals(state) || LOCK_NOT_AVAILABLE.equals(state)).isPresent();

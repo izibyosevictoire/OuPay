@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.sql.SQLException;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.dao.DeadlockLoserDataAccessException;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.UncategorizedSQLException;
@@ -42,7 +42,7 @@ class GlobalExceptionHandlerTest {
     void aDeadlockIsARetryableBusyResponseWithoutLeakingDetails() {
         var cause = new SQLException("ERROR: deadlock detected Detail: Process 4711 waits for ShareLock on transaction 99; "
                 + "blocked by process 4712. Hint: See server log. Where: while updating tuple in relation \"stock_balances\"", "40P01");
-        var response = handler.handleDataAccess(new DeadlockLoserDataAccessException("update stock_balances set on_hand = 1", cause));
+        var response = handler.handleDataAccess(new CannotAcquireLockException("update stock_balances set on_hand = 1", cause));
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
         assertThat(response.getHeaders().getFirst("Retry-After")).isEqualTo("1");
         assertThat(response.getBody().code()).isEqualTo("try_again");
@@ -99,7 +99,7 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void everyErrorKeepsThePublicShapeOfCodeMessageAndFields() {
-        var busy = handler.handleDataAccess(new DeadlockLoserDataAccessException("x", new SQLException("d", "40P01"))).getBody();
+        var busy = handler.handleDataAccess(new CannotAcquireLockException("x", new SQLException("d", "40P01"))).getBody();
         var overflow = handler.handleIntegrity(new DataIntegrityViolationException("x", new SQLException("o", "22003"))).getBody();
         for (var body : new GlobalExceptionHandler.ErrorResponse[] {busy, overflow}) {
             assertThat(body.code()).isNotBlank();
