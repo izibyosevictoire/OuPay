@@ -11,8 +11,13 @@ describe('application shell', () => {
   it('lists every primary navigation destination for an owner', async () => {
     await renderAppAt('/')
     const navigation = screen.getAllByRole('navigation', { name: 'Primary' })[0]!
-    for (const { label } of PRIMARY_NAVIGATION) {
-      expect(within(navigation).getByRole('link', { name: label })).toBeInTheDocument()
+    // The sample business works in business mode, so mode-specific entries (Collect Payment) are not offered.
+    for (const { label, requiresMode } of PRIMARY_NAVIGATION) {
+      if (requiresMode) {
+        expect(within(navigation).queryByRole('link', { name: label })).not.toBeInTheDocument()
+      } else {
+        expect(within(navigation).getByRole('link', { name: label })).toBeInTheDocument()
+      }
     }
   })
 

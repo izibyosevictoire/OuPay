@@ -396,8 +396,13 @@ public class InvoiceService {
      * line order does): the business, the channel and the creator (ownership), and the whole draft (its financial meaning).
      */
     private String fingerprintOf(UUID merchantId, Actor actor, InvoiceCreation creation, InvoiceDtos.DraftRequest request) {
+        // A checkout sale is due on the day it is made: the trusted caller derives that date from the clock, so it is not part of
+        // what makes two requests the same sale (a retry after midnight must still find its sale). Manual invoices keep it.
+        InvoiceDtos.DraftRequest meaning = creation.channel() == SaleChannel.INVOICE ? request
+                : new InvoiceDtos.DraftRequest(request.branchId(), request.assignedToUserId(), request.customer(), request.items(),
+                        request.taxMode(), "", request.notes());
         return fingerprints.fingerprintOf("INVOICE_CREATE",
-                Map.of("merchantId", merchantId, "channel", creation.channel().name(), "createdBy", actor.userId()), request);
+                Map.of("merchantId", merchantId, "channel", creation.channel().name(), "createdBy", actor.userId()), meaning);
     }
 
     private InvoiceDtos.InvoiceDto repeatOf(Invoice existing, String fingerprint) {

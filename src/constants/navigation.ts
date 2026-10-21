@@ -3,6 +3,7 @@ import {
   Building2,
   CreditCard,
   FileText,
+  HandCoins,
   Landmark,
   LayoutDashboard,
   QrCode,
@@ -11,6 +12,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { Permission } from '@/features/auth/permissions/permissionDefinitions'
+import type { OperatingMode } from '@/types/merchant'
 
 export interface NavigationItem {
   label: string
@@ -21,6 +23,8 @@ export interface NavigationItem {
   description: string
   /** Capability needed to see this item and open its page. No permission = any member. */
   permission?: Permission
+  /** Only shown when the current business works in this operating mode. No mode = every business. */
+  requiresMode?: OperatingMode
 }
 
 export const PRIMARY_NAVIGATION: NavigationItem[] = [
@@ -30,6 +34,14 @@ export const PRIMARY_NAVIGATION: NavigationItem[] = [
     icon: LayoutDashboard,
     description: 'Business overview',
     permission: 'dashboard:view',
+  },
+  {
+    label: 'Collect Payment',
+    path: '/collect',
+    icon: HandCoins,
+    description: 'Bill an amount and show a QR code',
+    permission: 'invoices:create',
+    requiresMode: 'SIMPLIFIED',
   },
   {
     label: 'Invoices',

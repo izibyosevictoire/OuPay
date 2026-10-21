@@ -28,6 +28,42 @@ interface MockPaymentProfileServiceOptions {
   delayInMilliseconds?: number
 }
 
+/**
+ * The active link that should collect for an invoice at this branch, by this person: their own link at the
+ * branch first, then the branch's, then the business-wide one. Only links on a CONNECTED bank link qualify.
+ * Shared by invoice requests and the simplified checkout so both pick the same link.
+ */
+export function chooseCollectingProfile(
+  ledger: LedgerStore,
+  merchantId: string,
+  branchId: string,
+  assigneeUserId: string,
+): PaymentProfile | undefined {
+  const candidates = ledger.paymentProfiles.load().filter((profile) => {
+    if (profile.merchantId !== merchantId || profile.status !== 'ACTIVE') return false
+    const destination = ledger.paymentDestinations
+      .load()
+      .find((d) => d.id === profile.paymentDestinationId)
+    const connection = destination
+      ? ledger.bankConnections.load().find((c) => c.id === destination.bankConnectionId)
+      : undefined
+    return connection?.status === 'CONNECTED'
+  })
+  return (
+    candidates.find((p) => p.assignedCashierId === assigneeUserId && p.branchId === branchId) ??
+    candidates.find((p) => p.assignedCashierId === null && p.branchId === branchId) ??
+    candidates.find((p) => p.assignedCashierId === null && p.branchId === null)
+  )
+}
+
+/** A public reference no existing request uses. */
+export function newUniquePaymentReference(ledger: LedgerStore): string {
+  const references = new Set(ledger.paymentRequests.load().map((r) => r.publicReference))
+  let publicReference = generatePaymentReference()
+  while (references.has(publicReference)) publicReference = generatePaymentReference()
+  return publicReference
+}
+
 export function createMockPaymentProfileService(
   options: MockPaymentProfileServiceOptions = {},
 ): PaymentProfileService {
@@ -315,23 +351,12 @@ export function createMockPaymentProfileService(
           .find(({ state }) => state.status !== 'CANCELLED' && state.status !== 'EXPIRED')
         if (live) return withToken(live.request)
 
-        const candidates = ledger.paymentProfiles.load().filter((profile) => {
-          if (profile.merchantId !== merchantId || profile.status !== 'ACTIVE') return false
-          const destination = ledger.paymentDestinations
-            .load()
-            .find((d) => d.id === profile.paymentDestinationId)
-          const connection = destination
-            ? ledger.bankConnections.load().find((c) => c.id === destination.bankConnectionId)
-            : undefined
-          return connection?.status === 'CONNECTED'
-        })
-        const profile =
-          candidates.find(
-            (p) =>
-              p.assignedCashierId === invoice.assignedToUserId && p.branchId === invoice.branchId,
-          ) ??
-          candidates.find((p) => p.assignedCashierId === null && p.branchId === invoice.branchId) ??
-          candidates.find((p) => p.assignedCashierId === null && p.branchId === null)
+        const profile = chooseCollectingProfile(
+          ledger,
+          merchantId,
+          invoice.branchId,
+          invoice.assignedToUserId,
+        )
         if (!profile) {
           throw new PaymentServiceError(
             'no_active_profile',
@@ -340,9 +365,7 @@ export function createMockPaymentProfileService(
         }
 
         const now = new Date()
-        const references = new Set(ledger.paymentRequests.load().map((r) => r.publicReference))
-        let publicReference = generatePaymentReference()
-        while (references.has(publicReference)) publicReference = generatePaymentReference()
+        const publicReference = newUniquePaymentReference(ledger)
         const created = {
           id: newId('pr'),
           merchantId,

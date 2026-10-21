@@ -2,6 +2,11 @@ import type { AuthService } from '@/services/authService'
 import { AuthServiceError, type AuthServiceErrorCode } from '@/services/authService'
 import type { BankingConfigurationService } from '@/services/bankingService'
 import type { BranchService } from '@/services/branchService'
+import {
+  CheckoutServiceError,
+  type CheckoutService,
+  type CheckoutServiceErrorCode,
+} from '@/services/checkoutService'
 import type { DashboardService } from '@/services/dashboardService'
 import { InvoiceServiceError, type InvoiceService } from '@/services/invoiceService'
 import { MerchantServiceError, type MerchantService } from '@/services/merchantService'
@@ -89,6 +94,24 @@ const PAYMENT_CODES: PaymentServiceErrorCode[] = [
   'service_unavailable',
 ]
 
+const CHECKOUT_CODES: CheckoutServiceErrorCode[] = [
+  'unauthenticated',
+  'not_found',
+  'forbidden',
+  'validation',
+  'checkout_not_available',
+  'no_eligible_branch',
+  'branch_required',
+  'branch_not_eligible',
+  'branch_inactive',
+  'assignee_not_eligible',
+  'no_active_profile',
+  'client_request_id_reuse',
+  'idempotency_key_reuse',
+  'request_in_progress',
+  'service_unavailable',
+]
+
 const authError = (error: unknown) =>
   mapHttpError(error, (code, message) => new AuthServiceError(code, message), AUTH_CODES)
 const merchantError = (error: unknown) =>
@@ -101,6 +124,8 @@ const organizationError = (error: unknown) =>
   )
 const invoiceError = (error: unknown) =>
   mapHttpError(error, (code, message) => new InvoiceServiceError(code, message), INVOICE_CODES)
+const checkoutError = (error: unknown) =>
+  mapHttpError(error, (code, message) => new CheckoutServiceError(code, message), CHECKOUT_CODES)
 const paymentError = (error: unknown) =>
   mapHttpError(error, (code, message) => new PaymentServiceError(code, message), PAYMENT_CODES)
 
@@ -446,6 +471,32 @@ export function createHttpPaymentProfileService(http: HttpClient): PaymentProfil
     cancelPaymentRequest: translating(
       (id, requestId) => http.post(`${m(id)}/payment-requests/${requestId}/cancel`),
       paymentError,
+    ),
+  }
+}
+
+/**
+ * Simplified checkout. The sale's permanent identifier travels in the body and the retry key in the
+ * Idempotency-Key header; the amount goes as a JSON number and the server decides everything else.
+ */
+export function createHttpCheckoutService(http: HttpClient): CheckoutService {
+  return {
+    getSimpleCheckoutOptions: translating(
+      (id) => http.get(`${m(id)}/checkout/simple/options`),
+      checkoutError,
+    ),
+    billSimpleCheckout: translating(
+      (id, input) =>
+        http.post(`${m(id)}/checkout/simple`, {
+          headers: { 'Idempotency-Key': input.idempotencyKey },
+          body: {
+            amountRwf: input.amountRwf,
+            description: input.description,
+            branchId: input.branchId,
+            clientRequestId: input.clientRequestId,
+          },
+        }),
+      checkoutError,
     ),
   }
 }

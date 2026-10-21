@@ -3,6 +3,7 @@ import type { AuthService } from './authService'
 import type { BankSimulatorService } from './bankSimulatorService'
 import type { BankingConfigurationService } from './bankingService'
 import type { BranchService } from './branchService'
+import type { CheckoutService } from './checkoutService'
 import type { DashboardService } from './dashboardService'
 import type { ReportsService } from './reportsService'
 import { API_BASE_URL, API_MODE, SESSION_LOST_EVENT } from './http/apiConfig'
@@ -11,6 +12,7 @@ import {
   createHttpAuthService,
   createHttpBankingService,
   createHttpBranchService,
+  createHttpCheckoutService,
   createHttpDashboardService,
   createHttpReportsService,
   createHttpInvoiceService,
@@ -28,6 +30,7 @@ import { createMockAuthStore } from './mock/mockAuthStore'
 import { createMockBankingService } from './mock/mockBankingService'
 import { createMockBankSimulator } from './mock/mockBankSimulator'
 import { createMockBranchService } from './mock/mockBranchService'
+import { createMockCheckoutService } from './mock/mockCheckoutService'
 import { createLedgerStore } from './mock/ledger/mockLedgerStore'
 import { createMockDashboardService } from './mock/mockDashboardService'
 import { createMockInvoiceService } from './mock/mockInvoiceService'
@@ -62,6 +65,7 @@ interface Services {
   dashboardService: DashboardService
   reportsService: ReportsService | null
   invoiceService: InvoiceService
+  checkoutService: CheckoutService
   reconciliationService: ReconciliationService
   notificationService: NotificationService
   bankingService: BankingConfigurationService
@@ -77,6 +81,7 @@ function createMockServices(): Services {
   // service, so no screen or total can disagree with another.
   const mockLedger = createLedgerStore(mockAuthStore)
   const shared = { authStore: mockAuthStore, ledger: mockLedger }
+  const mockInvoiceService = createMockInvoiceService(shared)
   return {
     authService: createMockAuthService({ store: mockAuthStore }),
     merchantService: createMockMerchantService({ authStore: mockAuthStore }),
@@ -84,7 +89,9 @@ function createMockServices(): Services {
     staffService: createMockStaffService({ authStore: mockAuthStore }),
     dashboardService: createMockDashboardService(shared),
     reportsService: null,
-    invoiceService: createMockInvoiceService(shared),
+    invoiceService: mockInvoiceService,
+    // The demo checkout goes through the very same mock invoice service and ledger as every other screen.
+    checkoutService: createMockCheckoutService({ ...shared, invoiceService: mockInvoiceService }),
     reconciliationService: createMockReconciliationService(shared),
     notificationService: createMockNotificationService(shared),
     bankingService: createMockBankingService(shared),
@@ -111,6 +118,7 @@ function createHttpServices(): Services {
     dashboardService: createHttpDashboardService(http),
     reportsService: createHttpReportsService(http),
     invoiceService: createHttpInvoiceService(http),
+    checkoutService: createHttpCheckoutService(http),
     reconciliationService: createHttpReconciliationService(http),
     notificationService: createHttpNotificationService(http),
     bankingService: createHttpBankingService(http),
@@ -132,6 +140,7 @@ export const {
   dashboardService,
   reportsService,
   invoiceService,
+  checkoutService,
   reconciliationService,
   notificationService,
   bankingService,

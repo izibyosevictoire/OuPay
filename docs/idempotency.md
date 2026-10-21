@@ -64,7 +64,7 @@ the business row, enforced by the database, that holds **even if the idempotency
 
 | Operation | Permanent guard |
 |---|---|
-| Create a sale or simplified-checkout invoice | `invoices.client_request_id`: unique per `(merchant_id, client_request_id)` where not null (V8, implemented in R3; see [invoicing.md](invoicing.md#provenance-and-durable-request-identity)) |
+| Create a sale or simplified-checkout invoice | `invoices.client_request_id`: unique per `(merchant_id, client_request_id)` where not null (V8, implemented in R3; see [invoicing.md](invoicing.md#provenance-and-durable-request-identity)); used by `POST /checkout/simple` (R4) together with the `Idempotency-Key`, see [simplified-checkout.md](simplified-checkout.md) |
 | Bill (issue and reserve) | the invoice state machine (`DRAFT` to `ISSUED` happens once) and `UNIQUE (invoice_id)` on `stock_reservations` |
 | Deduct stock for a paid sale | `UNIQUE (movement_type, source_type, source_id)` with the invoice item id as the source |
 | Record a return | one movement per return line (`sale_return_lines.id` as the source), plus a unique client request id on the return |

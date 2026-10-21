@@ -36,6 +36,8 @@ export interface HttpClientOptions {
 
 export interface RequestOptions {
   body?: unknown
+  /** Extra request headers, for example Idempotency-Key. Never used for credentials. */
+  headers?: Record<string, string>
   query?: Record<string, string | number | boolean | undefined | null>
 }
 
@@ -89,7 +91,7 @@ export function createHttpClient({
     path: string,
     options: RequestOptions = {},
   ): Promise<T> {
-    const headers: Record<string, string> = { Accept: 'application/json' }
+    const headers: Record<string, string> = { Accept: 'application/json', ...options.headers }
     if (options.body !== undefined) headers['Content-Type'] = 'application/json'
     // The anonymous public API uses no cookies at all, so it needs (and gets) no CSRF token.
     if (method !== 'GET' && !path.startsWith('/public/')) {

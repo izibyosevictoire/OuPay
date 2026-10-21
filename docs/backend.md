@@ -121,6 +121,7 @@ Errors are always `{ "code", "message", "fields" }` with the stable codes the fr
 | Invoices | `GET/POST …/invoices`, `GET …/invoices/{id}`, `GET …/invoices/form-options`, `PUT …/{id}?expectedVersion`, `POST …/{id}/issue|cancel|void?expectedVersion` |
 | Banking | `GET /banking/providers`, `GET/POST …/bank-connections`, `POST …/bank-connections/{id}/complete|disable`, `GET …/payment-destinations` |
 | Ledger | `GET …/bank-transactions` (paged), `GET …/bank-transactions/{id}`, `GET …/payment-allocations` (paged), `GET …/payable-invoices`, `POST …/reconciliation/allocations`, `POST …/reconciliation/allocations/{id}/reverse`, `POST …/bank-transactions/{id}/review` |
+| Simplified checkout | `GET …/checkout/simple/options`, `POST …/checkout/simple` (requires `Idempotency-Key`; see [simplified-checkout.md](simplified-checkout.md)) |
 | Payment links | `GET/POST …/payment-profiles`, `GET …/{id}`, `GET …/form-options`, `PUT …/{id}/active`, `POST …/{id}/reissue`, `POST/GET …/invoices/{id}/payment-requests`, `POST …/payment-requests/{id}/cancel` |
 | Notifications | `GET …/notifications` (paged), `POST …/notifications/{id}/read`, `POST …/notifications/read-all` |
 | Dashboard | `GET …/dashboard/summary|recent-transactions|daily-payment-activity|provider-breakdown` |
