@@ -2,10 +2,11 @@ name: OuPay Backend CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   push:
     branches:
       - main
+      - develop
       - 'feature/**'
   workflow_dispatch:
 
