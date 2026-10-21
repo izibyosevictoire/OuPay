@@ -83,6 +83,43 @@ class ArchitectureTest {
     }
 
     @Test
+    void provenanceAndPaymentLifetimeAreChosenByTrustedCodeNeverByAController() throws IOException {
+        // Controllers only call the ordinary service methods. The trusted entry points (a chosen sale channel, a durable client
+        // request id, a chosen payment-request lifetime) exist for server code, so no request can impersonate a checkout flow.
+        List<String> offenders = sources().stream()
+                .filter(p -> p.getFileName().toString().endsWith("Controller.java"))
+                .filter(p -> {
+                    String source = code(p);
+                    return source.contains("SaleChannel") || source.contains("InvoiceCreation") || source.contains("createDraftFor")
+                            || source.contains("PaymentRequestOptions") || source.contains("PaymentRequestSource");
+                })
+                .map(p -> MAIN.relativize(p).toString().replace('\\', '/'))
+                .collect(Collectors.toList());
+        assertThat(offenders).isEmpty();
+    }
+
+    @Test
+    void noRequestBodyCanCarryProvenance() throws IOException {
+        // Wire records that ARE request bodies (named ...Request, ...Body or ...Input) never declare provenance fields.
+        java.util.regex.Pattern record = java.util.regex.Pattern.compile("record\\s+(\\w+(?:Request|Body|Input))\\s*\\((.*?)\\)\\s*\\{\\}", java.util.regex.Pattern.DOTALL);
+        List<String> offenders = new java.util.ArrayList<>();
+        for (Path file : sources()) {
+            if (!file.getFileName().toString().endsWith("Dtos.java")) {
+                continue;
+            }
+            var matcher = record.matcher(code(file));
+            while (matcher.find()) {
+                String components = matcher.group(2);
+                if (components.contains("SaleChannel") || components.contains("clientRequestId") || components.contains("PaymentRequestSource")
+                        || components.contains("createdByUserId") || components.contains("saleChannel")) {
+                    offenders.add(file.getFileName() + ":" + matcher.group(1));
+                }
+            }
+        }
+        assertThat(offenders).isEmpty();
+    }
+
+    @Test
     void controllersContainNoBusinessLogicOrRepositoryAccess() throws IOException {
         List<String> offenders = sources().stream()
                 .filter(p -> p.getFileName().toString().endsWith("Controller.java"))

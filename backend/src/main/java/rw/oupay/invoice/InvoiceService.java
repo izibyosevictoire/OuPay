@@ -23,6 +23,7 @@ import rw.oupay.branch.BranchAssignmentRepository;
 import rw.oupay.branch.BranchRepository;
 import rw.oupay.common.ApiException;
 import rw.oupay.common.Pagination;
+import rw.oupay.idempotency.IdempotencyService;
 import rw.oupay.ledger.InvoiceBalanceReader;
 import rw.oupay.ledger.LedgerMath;
 import rw.oupay.membership.Actor;
@@ -61,11 +62,12 @@ public class InvoiceService {
     private final JdbcClient jdbc;
     private final JsonMapper json;
     private final Clock clock;
+    private final IdempotencyService fingerprints;
 
     public InvoiceService(InvoiceRepository invoices, MerchantRepository merchants, BranchRepository branches,
                           BranchAssignmentRepository assignments, MembershipRepository memberships, UserRepository users,
                           InvoiceBalanceReader balances, MerchantAccess access, AuditService audit, JdbcClient jdbc,
-                          JsonMapper json, Clock clock) {
+                          JsonMapper json, Clock clock, IdempotencyService fingerprints) {
         this.invoices = invoices;
         this.merchants = merchants;
         this.branches = branches;
@@ -78,6 +80,7 @@ public class InvoiceService {
         this.jdbc = jdbc;
         this.json = json;
         this.clock = clock;
+        this.fingerprints = fingerprints;
     }
 
     // ---- reads ---------------------------------------------------------------------------------
@@ -139,18 +142,52 @@ public class InvoiceService {
 
     // ---- writes --------------------------------------------------------------------------------
 
+    /** What the existing endpoint uses: a traditional manual invoice. No request can choose another channel. */
     @Transactional
     public InvoiceDtos.InvoiceDto createDraft(UUID merchantId, InvoiceDtos.DraftRequest request) {
+        return createDraftFor(merchantId, request, InvoiceCreation.manual()).invoice();
+    }
+
+    /** The invoice, and whether this call created it (false: it already existed for the same durable client request). */
+    public record DraftOutcome(InvoiceDtos.InvoiceDto invoice, boolean created) {}
+
+    /**
+     * Creates a draft for a TRUSTED caller (a future POS or simplified checkout service) that supplies the invoice's
+     * provenance and, for checkout flows, the durable client request identity. No controller exposes this method and
+     * no request body can reach it, so provenance cannot be impersonated from outside.
+     *
+     * <p>Durable identity: for a given (business, clientRequestId) at most one invoice can ever exist, enforced by a unique
+     * index. The server fingerprints the creating request with R2's canonical fingerprint (the business, the channel, the
+     * creator and the whole draft: branch, assignee, customer, every line, tax mode, due date, notes) and stores it, immutably,
+     * with the request id. Concurrent creators of the same id are serialised on a transaction-scoped advisory lock, so the later
+     * one finds the committed invoice. A repeat with an IDENTICAL fingerprint gets that invoice back ({@code created = false});
+     * any other payload, person or channel under the same id is a 409 {@code client_request_id_reuse}. Nothing a caller supplies
+     * can influence the fingerprint, and it works whether or not an R2 HTTP idempotency record still exists.
+     *
+     * <p>Joins the caller's transaction, so it commits or rolls back with the rest of the checkout.
+     */
+    @Transactional
+    public DraftOutcome createDraftFor(UUID merchantId, InvoiceDtos.DraftRequest request, InvoiceCreation creation) {
         Actor actor = access.require(merchantId, Permission.INVOICES_CREATE);
+        String fingerprint = null;
+        if (creation.clientRequestId() != null) {
+            fingerprint = fingerprintOf(merchantId, actor, creation, request);
+            serialiseClientRequest(merchantId, creation.clientRequestId());
+            Optional<Invoice> existing = invoices.findByMerchantIdAndClientRequestId(merchantId, creation.clientRequestId());
+            if (existing.isPresent()) {
+                return new DraftOutcome(repeatOf(existing.get(), fingerprint), false);
+            }
+        }
         Prepared prepared = prepare(actor, merchantId, request);
         Instant now = clock.instant();
         Invoice invoice = new Invoice(UUID.randomUUID(), merchantId, nextInvoiceNumber(merchantId), actor.userId(),
-                actor.user().getFullName(), now);
+                actor.user().getFullName(), creation, fingerprint, now);
         applyContent(invoice, request, prepared, now);
         invoices.saveAndFlush(invoice);
         audit.record(merchantId, actor.userId(), "INVOICE_DRAFT_CREATED", "invoice", invoice.getId(),
-                "Draft " + invoice.getInvoiceNumber() + " created.");
-        return toDto(invoice, 0);
+                "Draft " + invoice.getInvoiceNumber() + " created"
+                        + (creation.channel() == SaleChannel.INVOICE ? "." : " (" + creation.channel() + ")."));
+        return new DraftOutcome(toDto(invoice, 0), true);
     }
 
     @Transactional
@@ -343,6 +380,33 @@ public class InvoiceService {
         return user.get();
     }
 
+    /**
+     * Makes every creator of the same (business, client request id) take turns, so the unique index is the backstop and
+     * not the normal path. The lock is released when the transaction ends. Different ids never wait for each other (a hash
+     * collision only causes a harmless short wait). Taken before any other lock of this transaction.
+     */
+    private void serialiseClientRequest(UUID merchantId, UUID clientRequestId) {
+        jdbc.sql("select pg_advisory_xact_lock(hashtextextended(:key, 0))")
+                .param("key", "invoice-client-request:" + merchantId + ":" + clientRequestId)
+                .query((rs, row) -> Boolean.TRUE).single();
+    }
+
+    /**
+     * What makes two creation requests the same sale, in R2's canonical form (key order and number formatting do not matter,
+     * line order does): the business, the channel and the creator (ownership), and the whole draft (its financial meaning).
+     */
+    private String fingerprintOf(UUID merchantId, Actor actor, InvoiceCreation creation, InvoiceDtos.DraftRequest request) {
+        return fingerprints.fingerprintOf("INVOICE_CREATE",
+                Map.of("merchantId", merchantId, "channel", creation.channel().name(), "createdBy", actor.userId()), request);
+    }
+
+    private InvoiceDtos.InvoiceDto repeatOf(Invoice existing, String fingerprint) {
+        if (!fingerprint.equals(existing.getClientRequestSha256())) {
+            throw ApiException.conflict("client_request_id_reuse", "This request identifier was already used for a different sale.");
+        }
+        return toDto(existing, balances.allocated(existing.getId()));
+    }
+
     private Invoice visible(Actor actor, UUID merchantId, UUID invoiceId) {
         Invoice invoice = invoices.findByIdAndMerchantId(invoiceId, merchantId).orElseThrow(InvoiceService::notFound);
         if (!actor.hasFullScope(Permission.INVOICES_VIEW) && !invoice.getAssignedToUserId().equals(actor.userId())) {
@@ -410,6 +474,6 @@ public class InvoiceService {
                 i.getVoidedAt(), i.getVoidReason(), i.getStatus(), payment.paymentStatus(),
                 new InvoiceDtos.PaymentDto(payment.invoiceTotal(), payment.allocatedAmount(), payment.remainingBalance(),
                         payment.unappliedAmount(), payment.paymentStatus()),
-                i.getNotes(), i.getVersion());
+                i.getNotes(), i.getVersion(), i.getSaleChannel());
     }
 }

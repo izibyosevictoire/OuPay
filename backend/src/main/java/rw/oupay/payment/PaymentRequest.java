@@ -2,6 +2,8 @@ package rw.oupay.payment;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
@@ -49,6 +51,19 @@ public class PaymentRequest {
     @Column(name = "customer_claimed_at")
     private Instant customerClaimedAt;
 
+    /** Where the request came from. Empty on requests created before provenance existed: read it through {@link #getSource()}. */
+    @Enumerated(EnumType.STRING)
+    @Column(updatable = false)
+    private PaymentRequestSource source;
+
+    /** The branch the collection belongs to; for an invoice request, the invoice's own branch. Fixed at creation. */
+    @Column(name = "branch_id", updatable = false)
+    private UUID branchId;
+
+    /** The member who created the request. Empty for anonymous open requests. Fixed at creation. */
+    @Column(name = "created_by_user_id", updatable = false)
+    private UUID createdByUserId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -70,6 +85,29 @@ public class PaymentRequest {
         this.updatedAt = now;
     }
 
+    /**
+     * A request with recorded provenance. Set only by trusted server code, from the invoice and the signed-in member. The
+     * combinations are validated here and again, as constraints, by the database: a request for an invoice names a source other
+     * than OPEN, its branch and its creator; an OPEN request has no invoice and no creator.
+     */
+    public PaymentRequest(UUID id, UUID merchantId, UUID paymentProfileId, UUID invoiceId, long requestedAmountRwf,
+                          String publicReference, Instant expiresAt, Instant now,
+                          PaymentRequestSource source, UUID branchId, UUID createdByUserId) {
+        this(id, merchantId, paymentProfileId, invoiceId, requestedAmountRwf, publicReference, expiresAt, now);
+        if (source == null) {
+            throw new IllegalArgumentException("A request with recorded provenance needs a source.");
+        }
+        if ((source == PaymentRequestSource.OPEN) != (invoiceId == null)) {
+            throw new IllegalArgumentException("A request is OPEN exactly when it has no invoice.");
+        }
+        if (source == PaymentRequestSource.OPEN ? createdByUserId != null : (branchId == null || createdByUserId == null)) {
+            throw new IllegalArgumentException("An invoice request names its branch and creator; an open request has no creator.");
+        }
+        this.source = source;
+        this.branchId = branchId;
+        this.createdByUserId = createdByUserId;
+    }
+
     public UUID getId() { return id; }
     public UUID getMerchantId() { return merchantId; }
     public UUID getPaymentProfileId() { return paymentProfileId; }
@@ -82,6 +120,19 @@ public class PaymentRequest {
     public Instant getCustomerClaimedAt() { return customerClaimedAt; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public UUID getBranchId() { return branchId; }
+    public UUID getCreatedByUserId() { return createdByUserId; }
+
+    /**
+     * Where the request came from. A request with no stored value predates provenance: with no invoice it is an OPEN
+     * collection, otherwise an INVOICE request (every older invoice is a traditional one).
+     */
+    public PaymentRequestSource getSource() {
+        if (source != null) {
+            return source;
+        }
+        return invoiceId == null ? PaymentRequestSource.OPEN : PaymentRequestSource.INVOICE;
+    }
 
     public void cancel(Instant now) {
         if (cancelledAt == null) {

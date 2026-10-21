@@ -48,7 +48,9 @@ public final class InvoiceDtos {
                              long taxTotal, long grandTotal, Instant issuedAt, String dueAt, Instant createdAt,
                              Instant updatedAt, Instant cancelledAt, Instant voidedAt, String voidReason,
                              InvoiceStatus status, LedgerMath.PaymentStatus paymentStatus, PaymentDto payment,
-                             String notes, long version) {}
+                             String notes, long version,
+                             /** Where the invoice came from. Never null: invoices that predate provenance are INVOICE. */
+                             SaleChannel saleChannel) {}
 
     public record InvoicePage(List<InvoiceDto> items, long totalCount, String nextCursor) {}
 
