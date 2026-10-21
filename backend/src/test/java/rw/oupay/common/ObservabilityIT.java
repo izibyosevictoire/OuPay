@@ -106,6 +106,7 @@ class ObservabilityIT extends IntegrationTest {
         assertThat(jdbc.queryForObject("select count(*) from auth_sessions where user_id <> ?", Integer.class, w.cafePerson.userId())).isEqualTo(liveSessions);
         assertThat(jdbc.queryForObject("select count(*) from email_outbox", Integer.class)).isEqualTo(1);   // the pending one survives
         assertThat(jdbc.queryForObject("select count(*) from audit_log", Integer.class)).isEqualTo(audit);
-        assertThat(housekeeping.runOnce()).containsExactly(0, 0, 0, 0);
+        // A second run finds nothing more to remove in any table (sessions, links, sent mail, failed mail, idempotency records).
+        assertThat(housekeeping.runOnce()).containsExactly(0, 0, 0, 0, 0);
     }
 }

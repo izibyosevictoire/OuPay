@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -73,6 +74,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     ResponseEntity<ErrorResponse> handleIntegrity(DataIntegrityViolationException e) {
+        if (DatabaseErrors.isNumericOutOfRange(e)) {
+            return numericOutOfRange(e);
+        }
+        if (DatabaseErrors.isTransientContention(e)) {
+            return busy(e);
+        }
         // A database constraint caught something the service did not (or a race the service lost).
         log.warn("Data integrity violation: {}", e.getMostSpecificCause().getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT)
@@ -85,6 +92,12 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(DataAccessException.class)
     ResponseEntity<ErrorResponse> handleDataAccess(DataAccessException e) {
+        if (DatabaseErrors.isTransientContention(e)) {
+            return busy(e);
+        }
+        if (DatabaseErrors.isNumericOutOfRange(e)) {
+            return numericOutOfRange(e);
+        }
         Throwable cause = e.getMostSpecificCause();
         if (cause instanceof java.sql.SQLException sql && "P0001".equals(sql.getSQLState())) {
             log.warn("Database rule refused a change: {}", cause.getMessage());
@@ -103,7 +116,38 @@ public class GlobalExceptionHandler {
                 || e instanceof org.springframework.web.ErrorResponse) {
             throw e; // let the framework produce the proper 401/403/404
         }
+        // A database failure that reached us wrapped in something other than a Spring data-access exception
+        // (for example a JPA or transaction-commit wrapper) is still recognised by its SQLSTATE.
+        if (DatabaseErrors.isTransientContention(e)) {
+            return busy(e);
+        }
+        if (DatabaseErrors.isNumericOutOfRange(e)) {
+            return numericOutOfRange(e);
+        }
         log.error("Unexpected error", e);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(new ErrorResponse("service_unavailable", "Something went wrong. Please try again.", List.of()));
+    }
+
+    /**
+     * A deadlock or lock timeout: PostgreSQL rolled this request's transaction back, so nothing was changed and the same
+     * request can be sent again (with the same Idempotency-Key, if it has one). Only the SQLSTATE is logged.
+     */
+    private ResponseEntity<ErrorResponse> busy(Exception e) {
+        log.warn("Database contention aborted a request (SQLState {}); the caller may retry", DatabaseErrors.sqlState(e).orElse("n/a"));
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header(HttpHeaders.RETRY_AFTER, "1")
+                .body(new ErrorResponse("try_again", "The system is busy finishing another change. Please try again in a moment.", List.of()));
+    }
+
+    /**
+     * A number was too large for its column. The database cannot tell whether the client sent it or the server computed
+     * it, so this is a server error by default; code that writes a client-supplied value says so explicitly with
+     * {@link DatabaseErrors#rejectingOverflowAsInput}, which turns it into a 422 before it gets here.
+     */
+    private ResponseEntity<ErrorResponse> numericOutOfRange(Exception e) {
+        log.error("A value was out of range for its database column (SQLState {}); it was not validated before being stored",
+                DatabaseErrors.NUMERIC_VALUE_OUT_OF_RANGE, e);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ErrorResponse("service_unavailable", "Something went wrong. Please try again.", List.of()));
     }
