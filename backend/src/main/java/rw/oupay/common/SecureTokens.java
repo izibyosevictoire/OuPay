@@ -23,6 +23,11 @@ public final class SecureTokens {
         return "OP-" + random(REFERENCE_ALPHABET, 12);
     }
 
+    /** {@code CC-} plus 8 characters: OuPay's own identifier for a collection code, never a bank-issued value. */
+    public static String collectionCodeReference() {
+        return "CC-" + random(REFERENCE_ALPHABET, 8);
+    }
+
     /** 32 random bytes as URL-safe base64, for opaque session cookies. */
     public static String sessionToken() {
         byte[] bytes = new byte[32];

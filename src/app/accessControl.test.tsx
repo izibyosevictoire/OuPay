@@ -179,6 +179,7 @@ describe('role-based navigation', () => {
       'Inventory',
       'Payments',
       'Payment links',
+      'Collection codes',
       'Banking',
       'Cashiers',
       'Branches',
@@ -197,6 +198,7 @@ describe('role-based navigation', () => {
       'Inventory',
       'Payments',
       'Payment links',
+      'Collection codes',
       'Cashiers',
       'Branches',
       'Reports',
@@ -214,6 +216,7 @@ describe('role-based navigation', () => {
       'Inventory',
       'Payment confirmations',
       'My payment links',
+      'Collection codes',
       'Settings',
     ])
   })
@@ -344,6 +347,7 @@ describe('account menu and switching businesses', () => {
         'Inventory',
         'Payment confirmations',
         'My payment links',
+        'Collection codes',
         'Settings',
       ]),
     )

@@ -6,6 +6,7 @@ import {
   Package,
   FileText,
   HandCoins,
+  KeyRound,
   Landmark,
   LayoutDashboard,
   QrCode,
@@ -84,6 +85,13 @@ export const PRIMARY_NAVIGATION: NavigationItem[] = [
     icon: QrCode,
     description: 'QR codes and NFC payment links',
     permission: 'payment_profiles:view',
+  },
+  {
+    // Every member gets this entry: owners and managers manage the registry, everyone else sees their own code. Both operating modes.
+    label: 'Collection codes',
+    path: '/collection-codes',
+    icon: KeyRound,
+    description: 'Payment collection codes and who holds them',
   },
   {
     label: 'Banking',

@@ -47,6 +47,13 @@ export const PERMISSION_DEFINITIONS = {
   'inventory:view': { OWNER: ALL, MANAGER: ALL, CASHIER: LIMITED },
   'inventory:receive': { OWNER: ALL, MANAGER: LIMITED, CASHIER: NONE },
   'inventory:adjust': { OWNER: ALL, MANAGER: LIMITED, CASHIER: NONE },
+  // The registry of merchant collection codes and who holds them (internal bookkeeping; it never approves a code). Viewing is
+  // for owners and managers. Assigning agents is limited for a manager to codes of branches they work at. Requesting codes,
+  // recording a bank request, suspending and deactivating are the owner's, like bank linkage. Anyone with an active membership
+  // may see THEIR OWN code (no permission needed).
+  'collection_codes:view': { OWNER: ALL, MANAGER: ALL, CASHIER: NONE },
+  'collection_codes:assign': { OWNER: ALL, MANAGER: LIMITED, CASHIER: NONE },
+  'collection_codes:manage': { OWNER: ALL, MANAGER: NONE, CASHIER: NONE },
   'reports:view': { OWNER: ALL, MANAGER: ALL, CASHIER: NONE },
   'banking:manage': { OWNER: ALL, MANAGER: NONE, CASHIER: NONE },
 } as const satisfies Record<string, RoleGrants>

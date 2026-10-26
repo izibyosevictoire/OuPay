@@ -37,7 +37,13 @@ public enum Permission {
     /** Receive stock. A manager records only at branches they are assigned to; never a cashier. */
     INVENTORY_RECEIVE("inventory:receive", all(), limited(), none()),
     /** Record opening stock and adjust stock (loss, damage, count differences). Same limits as receiving. */
-    INVENTORY_ADJUST("inventory:adjust", all(), limited(), none());
+    INVENTORY_ADJUST("inventory:adjust", all(), limited(), none()),
+    /** See the collection-code registry (settlement account, codes, agents). Cashiers see only their own code, through no permission. */
+    COLLECTION_CODES_VIEW("collection_codes:view", all(), all(), none()),
+    /** Assign, end and reassign agents. A manager may do so only for codes of branches they are assigned to. */
+    COLLECTION_CODES_ASSIGN("collection_codes:assign", all(), limited(), none()),
+    /** Request codes, record a bank request, suspend or deactivate: provisioning is the owner's, like bank linkage. Never approves. */
+    COLLECTION_CODES_MANAGE("collection_codes:manage", all(), none(), none());
 
     public enum Scope { ALL, LIMITED }
 

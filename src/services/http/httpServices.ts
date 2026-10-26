@@ -3,6 +3,11 @@ import { AuthServiceError, type AuthServiceErrorCode } from '@/services/authServ
 import type { BankingConfigurationService } from '@/services/bankingService'
 import type { BranchService } from '@/services/branchService'
 import {
+  CollectionCodeServiceError,
+  type CollectionCodeService,
+  type CollectionCodeServiceErrorCode,
+} from '@/services/collectionCodeService'
+import {
   CatalogServiceError,
   type CatalogService,
   type CatalogServiceErrorCode,
@@ -29,6 +34,15 @@ import type { ReconciliationService } from '@/services/reconciliationService'
 import type { StaffService } from '@/services/staffService'
 import type { AuthSession } from '@/types/auth'
 import type { CatalogItem, CatalogPackage, PriceVersion } from '@/types/catalog'
+import type {
+  CodeApproval,
+  CodeAssignment,
+  CollectionCode,
+  CollectionCodeOptions,
+  EligibilityIssue,
+  MyCollectionCode,
+  MyCollectionCodeSummary,
+} from '@/types/collectionCodes'
 import type { InventoryBalance, MovementResult, StockMovement } from '@/types/inventory'
 import type { InvoicePage } from '@/types/invoice'
 import { mapHttpError, translating } from './errorMapping'
@@ -182,7 +196,10 @@ const checkoutError = (error: unknown) =>
   mapHttpError(error, (code, message) => new CheckoutServiceError(code, message), CHECKOUT_CODES)
 /** The server omits null fields from its JSON, so a missing field means null. Normalised once, here. */
 type Nullable<T, K extends keyof T> = Omit<T, K> & { [P in K]?: T[P] | null }
-type RawCatalogItem = Omit<Nullable<CatalogItem, 'description' | 'code' | 'stockUnit'>, 'packages'> & {
+type RawCatalogItem = Omit<
+  Nullable<CatalogItem, 'description' | 'code' | 'stockUnit'>,
+  'packages'
+> & {
   packages?: CatalogPackage[]
 }
 type RawPriceVersion = Nullable<PriceVersion, 'reason'>
@@ -652,9 +669,7 @@ export function createHttpCatalogService(http: HttpClient): CatalogService {
     ),
     updateItem: translating(
       async (id, itemId, input) =>
-        normaliseCatalogItem(
-          await http.put<RawCatalogItem>(itemPath(id, itemId), { body: input }),
-        ),
+        normaliseCatalogItem(await http.put<RawCatalogItem>(itemPath(id, itemId), { body: input })),
       catalogError,
     ),
     changeItemStatus: translating(
@@ -738,6 +753,245 @@ export function createHttpInventoryService(http: HttpClient): InventoryService {
   }
 }
 
+const COLLECTION_CODE_ERROR_CODES: CollectionCodeServiceErrorCode[] = [
+  'unauthenticated',
+  'not_found',
+  'forbidden',
+  'validation',
+  'code_status_invalid',
+  'assignee_not_eligible',
+  'branch_not_eligible',
+  'already_assigned',
+  'assignment_changed',
+  'no_open_assignment',
+  'client_request_id_reuse',
+  'settlement_account_unavailable',
+  'version_conflict',
+  'service_unavailable',
+]
+const collectionCodeError = (error: unknown) =>
+  mapHttpError(
+    error,
+    (code, message) => new CollectionCodeServiceError(code, message),
+    COLLECTION_CODE_ERROR_CODES,
+  )
+
+/** The server omits null fields from its JSON, so a missing field means null. Normalised once, here. */
+type RawAssignment = Omit<
+  CodeAssignment,
+  | 'membershipId'
+  | 'assigneeUserId'
+  | 'assigneeRole'
+  | 'collectionPointLabel'
+  | 'branchId'
+  | 'branchName'
+  | 'branchCode'
+  | 'validTo'
+  | 'endedByName'
+  | 'endReason'
+  | 'assigneeCurrentStatus'
+> &
+  Partial<
+    Pick<
+      CodeAssignment,
+      | 'membershipId'
+      | 'assigneeUserId'
+      | 'assigneeRole'
+      | 'collectionPointLabel'
+      | 'branchId'
+      | 'branchName'
+      | 'branchCode'
+      | 'validTo'
+      | 'endedByName'
+      | 'endReason'
+      | 'assigneeCurrentStatus'
+    >
+  >
+type RawCollectionCode = Omit<
+  CollectionCode,
+  | 'branchId'
+  | 'branchName'
+  | 'branchCode'
+  | 'statusReason'
+  | 'bankRequestRef'
+  | 'externalCode'
+  | 'approval'
+  | 'eligibilityIssues'
+  | 'currentAssignment'
+> &
+  Partial<
+    Pick<
+      CollectionCode,
+      'branchId' | 'branchName' | 'branchCode' | 'statusReason' | 'bankRequestRef' | 'externalCode'
+    >
+  > & {
+    /** The server omits the evidence reference for people who do not manage codes. */
+    approval?: (Omit<CodeApproval, 'evidenceRef'> & { evidenceRef?: string | null }) | null
+    eligibilityIssues?: EligibilityIssue[]
+    currentAssignment?: RawAssignment | null
+  }
+interface RawCollectionCodePage<T> {
+  items?: T[]
+  nextCursor?: string | null
+}
+const normaliseAssignment = (raw: RawAssignment): CodeAssignment => ({
+  ...raw,
+  membershipId: raw.membershipId ?? null,
+  assigneeUserId: raw.assigneeUserId ?? null,
+  assigneeRole: raw.assigneeRole ?? null,
+  collectionPointLabel: raw.collectionPointLabel ?? null,
+  branchId: raw.branchId ?? null,
+  branchName: raw.branchName ?? null,
+  branchCode: raw.branchCode ?? null,
+  validTo: raw.validTo ?? null,
+  endedByName: raw.endedByName ?? null,
+  endReason: raw.endReason ?? null,
+  assigneeCurrentStatus: raw.assigneeCurrentStatus ?? null,
+})
+const normaliseCollectionCode = (raw: RawCollectionCode): CollectionCode => ({
+  ...raw,
+  branchId: raw.branchId ?? null,
+  branchName: raw.branchName ?? null,
+  branchCode: raw.branchCode ?? null,
+  statusReason: raw.statusReason ?? null,
+  bankRequestRef: raw.bankRequestRef ?? null,
+  // The server sends the bank-issued code only for an approved code; anything else is "not issued", never a placeholder.
+  externalCode: raw.externalCode ?? null,
+  approval: raw.approval
+    ? { ...raw.approval, evidenceRef: raw.approval.evidenceRef ?? null }
+    : null,
+  eligibilityIssues: raw.eligibilityIssues ?? [],
+  currentAssignment: raw.currentAssignment ? normaliseAssignment(raw.currentAssignment) : null,
+})
+
+/**
+ * The registry of merchant collection codes. Merchant identity is only ever the path, never the body. There is no endpoint, and so
+ * no method here, that approves or activates a code: that is done by the bank or an evidenced operator process, not by a merchant.
+ */
+export function createHttpCollectionCodeService(http: HttpClient): CollectionCodeService {
+  const base = (merchantId: string) => `${m(merchantId)}/collection-codes`
+  const codePath = (merchantId: string, codeId: string) => `${base(merchantId)}/${codeId}`
+  return {
+    getOptions: translating(async (id) => {
+      const options = await http.get<{
+        destinations?: CollectionCodeOptions['destinations']
+        branches?: CollectionCodeOptions['branches']
+        members?: CollectionCodeOptions['members']
+      }>(`${base(id)}/options`)
+      return {
+        destinations: options.destinations ?? [],
+        branches: options.branches ?? [],
+        members: (options.members ?? []).map((member) => ({
+          ...member,
+          branchIds: member.branchIds ?? [],
+        })),
+      }
+    }, collectionCodeError),
+    listCodes: translating(async (id, query) => {
+      const page = await http.get<RawCollectionCodePage<RawCollectionCode>>(base(id), {
+        query: {
+          limit: query?.limit,
+          cursor: query?.cursor,
+          status: query?.status,
+          branchId: query?.branchId,
+          q: query?.q?.trim() || undefined,
+        },
+      })
+      return {
+        items: (page.items ?? []).map(normaliseCollectionCode),
+        nextCursor: page.nextCursor ?? null,
+      }
+    }, collectionCodeError),
+    getCode: translating(
+      async (id, codeId) =>
+        normaliseCollectionCode(await http.get<RawCollectionCode>(codePath(id, codeId))),
+      collectionCodeError,
+    ),
+    requestCode: translating(async (id, input) => {
+      const result = await http.post<{ code: RawCollectionCode; replayed?: boolean }>(base(id), {
+        body: input,
+      })
+      return { code: normaliseCollectionCode(result.code), replayed: result.replayed ?? false }
+    }, collectionCodeError),
+    listAssignments: translating(async (id, codeId, query) => {
+      const page = await http.get<RawCollectionCodePage<RawAssignment>>(
+        `${codePath(id, codeId)}/assignments`,
+        { query: { limit: query?.limit, cursor: query?.cursor } },
+      )
+      return {
+        items: (page.items ?? []).map(normaliseAssignment),
+        nextCursor: page.nextCursor ?? null,
+      }
+    }, collectionCodeError),
+    assign: translating(
+      async (id, codeId, input) =>
+        normaliseAssignment(
+          await http.post<RawAssignment>(`${codePath(id, codeId)}/assignments`, { body: input }),
+        ),
+      collectionCodeError,
+    ),
+    endAssignment: translating(
+      async (id, codeId, input) =>
+        normaliseAssignment(
+          await http.post<RawAssignment>(`${codePath(id, codeId)}/assignments/end`, {
+            body: input,
+          }),
+        ),
+      collectionCodeError,
+    ),
+    reassign: translating(
+      async (id, codeId, input) =>
+        normaliseAssignment(
+          await http.post<RawAssignment>(`${codePath(id, codeId)}/reassign`, { body: input }),
+        ),
+      collectionCodeError,
+    ),
+    declareSubmission: translating(
+      async (id, codeId, input) =>
+        normaliseCollectionCode(
+          await http.post<RawCollectionCode>(`${codePath(id, codeId)}/submission`, { body: input }),
+        ),
+      collectionCodeError,
+    ),
+    suspend: translating(
+      async (id, codeId, input) =>
+        normaliseCollectionCode(
+          await http.post<RawCollectionCode>(`${codePath(id, codeId)}/suspend`, { body: input }),
+        ),
+      collectionCodeError,
+    ),
+    deactivate: translating(
+      async (id, codeId, input) =>
+        normaliseCollectionCode(
+          await http.post<RawCollectionCode>(`${codePath(id, codeId)}/deactivate`, { body: input }),
+        ),
+      collectionCodeError,
+    ),
+    getMyCode: translating(async (id): Promise<MyCollectionCode> => {
+      const mine = await http.get<{
+        assignment?: RawAssignment | null
+        code?:
+          | (Omit<MyCollectionCodeSummary, 'branchName' | 'externalCode'> & {
+              branchName?: string | null
+              externalCode?: string | null
+            })
+          | null
+      }>(`${base(id)}/mine`)
+      return {
+        assignment: mine.assignment ? normaliseAssignment(mine.assignment) : null,
+        code: mine.code
+          ? {
+              ...mine.code,
+              branchName: mine.code.branchName ?? null,
+              // Only ever shown for a payable code; a missing value is "no code to show".
+              externalCode: mine.code.externalCode ?? null,
+            }
+          : null,
+      }
+    }, collectionCodeError),
+  }
+}
+
 /** Anonymous customer pages: only public tokens, no merchant context, no session. */
 export function createHttpPublicPaymentService(http: HttpClient): PublicPaymentService {
   const base = '/public/payment-profiles'
@@ -762,7 +1016,6 @@ export function createHttpPublicPaymentService(http: HttpClient): PublicPaymentS
     ),
   }
 }
-
 
 export function createHttpReportsService(http: HttpClient): ReportsService {
   return {

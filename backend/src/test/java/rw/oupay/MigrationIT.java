@@ -12,7 +12,7 @@ class MigrationIT extends IntegrationTest {
     @Test
     void everyMigrationAppliedSuccessfullyInOrder() {
         List<String> versions = jdbc.queryForList("select version from flyway_schema_history where success order by installed_rank", String.class);
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11");
     }
 
     @Test
@@ -29,7 +29,7 @@ class MigrationIT extends IntegrationTest {
         assertThat(jdbc.queryForList("select data_type from information_schema.columns where table_schema = 'public' and column_name like '%\\_rwf'", String.class))
                 .containsOnly("bigint");
         for (String table : List.of("invoices", "bank_transactions", "payment_allocations", "payment_requests", "payment_profiles",
-                "bank_connections", "payment_destinations", "branches", "memberships", "notifications", "merchant_settings", "idempotency_keys", "catalog_items", "catalog_item_prices", "catalog_item_packages", "inventory_balances", "stock_movements")) {
+                "bank_connections", "payment_destinations", "branches", "memberships", "notifications", "merchant_settings", "idempotency_keys", "catalog_items", "catalog_item_prices", "catalog_item_packages", "inventory_balances", "stock_movements", "collection_codes", "collection_code_assignments")) {
             assertThat(jdbc.queryForObject("select count(*) from information_schema.columns where table_name = ? and column_name = 'merchant_id'",
                     Integer.class, table)).as(table + " has merchant_id").isEqualTo(1);
         }

@@ -14,6 +14,7 @@ import { BankingPage } from '@/features/banking/BankingPage'
 import { BranchDetailsPage } from '@/features/branches/BranchDetailsPage'
 import { BranchesPage } from '@/features/branches/BranchesPage'
 import { CatalogPage } from '@/features/catalog/CatalogPage'
+import { CollectionCodesPage } from '@/features/collectionCodes/CollectionCodesPage'
 import { InventoryPage } from '@/features/inventory/InventoryPage'
 import { SimplifiedCheckoutPage } from '@/features/checkout/SimplifiedCheckoutPage'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
@@ -50,6 +51,7 @@ const BUILT_MODULE_PATHS = [
   '/invoices',
   '/catalog',
   '/inventory',
+  '/collection-codes',
   '/collect',
   '/transactions',
   '/payments',
@@ -178,6 +180,8 @@ export const appRoutes: RouteObject[] = [
                 element: <PermissionRoute permission="inventory:view" />,
                 children: [{ path: '/inventory', element: <InventoryPage /> }],
               },
+              // Open to every member: the page shows the registry to those who may manage it and the person’s own code to everyone else.
+              { path: '/collection-codes', element: <CollectionCodesPage /> },
               {
                 element: <PermissionRoute permission="branches:manage" />,
                 children: [

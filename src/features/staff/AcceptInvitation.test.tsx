@@ -82,6 +82,7 @@ describe('invitation acceptance', () => {
       'Assigned invoices',
       'Payment confirmations',
       'My payment links',
+      'Collection codes',
       'Settings',
     ])
     const { store } = getActiveTestBackend()
