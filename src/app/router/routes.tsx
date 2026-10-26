@@ -16,6 +16,7 @@ import { BranchesPage } from '@/features/branches/BranchesPage'
 import { CatalogPage } from '@/features/catalog/CatalogPage'
 import { CollectionCodesPage } from '@/features/collectionCodes/CollectionCodesPage'
 import { InventoryPage } from '@/features/inventory/InventoryPage'
+import { EquityActivationPage } from '@/features/equityActivation/EquityActivationPage'
 import { SimplifiedCheckoutPage } from '@/features/checkout/SimplifiedCheckoutPage'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { BankSimulatorPage } from '@/features/demo/BankSimulatorPage'
@@ -53,6 +54,7 @@ const BUILT_MODULE_PATHS = [
   '/inventory',
   '/collection-codes',
   '/collect',
+  '/equity-activation',
   '/transactions',
   '/payments',
   '/payment-links',
@@ -214,6 +216,11 @@ export const appRoutes: RouteObject[] = [
               {
                 element: <PermissionRoute permission="banking:manage" />,
                 children: [{ path: '/banking', element: <BankingPage /> }],
+              },
+              {
+                // Owner only: the page holds a representative's identity details.
+                element: <PermissionRoute permission="kyc:manage" />,
+                children: [{ path: '/equity-activation', element: <EquityActivationPage /> }],
               },
               {
                 element: <PermissionRoute permission="reports:view" />,

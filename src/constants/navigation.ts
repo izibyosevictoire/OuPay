@@ -6,6 +6,7 @@ import {
   Package,
   FileText,
   HandCoins,
+  ShieldCheck,
   KeyRound,
   Landmark,
   LayoutDashboard,
@@ -113,6 +114,13 @@ export const PRIMARY_NAVIGATION: NavigationItem[] = [
     icon: Building2,
     description: 'Manage branches',
     permission: 'branches:manage',
+  },
+  {
+    label: 'Equity activation',
+    path: '/equity-activation',
+    icon: ShieldCheck,
+    description: 'Prepare your Equity business application',
+    permission: 'kyc:manage',
   },
   {
     label: 'Reports',

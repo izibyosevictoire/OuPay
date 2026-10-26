@@ -183,6 +183,7 @@ describe('role-based navigation', () => {
       'Banking',
       'Cashiers',
       'Branches',
+      'Equity activation',
       'Reports',
       'Settings',
     ])

@@ -95,15 +95,26 @@ public abstract class IntegrationTest {
         return jdbc.queryForObject("select count(*) from email_outbox where recipient = ? and kind = ?", Long.class, recipient, kind);
     }
 
-    /** Every test starts from empty business data (the schema and migrations stay). */
+    /**
+     * Every test starts from empty business data (the schema and migrations stay). Published reference data that a migration seeds
+     * (the immutable KYC requirement sets) is not business data and is kept.
+     */
     @BeforeEach
     void cleanDatabase() {
         if (mailSink != null) {
             mailSink.clear();
         }
         List<String> tables = jdbc.queryForList(
-                "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> 'flyway_schema_history'",
+                "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT IN ('flyway_schema_history', 'kyc_requirement_sets')",
                 String.class);
         jdbc.execute("TRUNCATE TABLE " + String.join(", ", tables) + " RESTART IDENTITY CASCADE");
+        // A requirement set a test published is removed again (with the immutability guard off for this statement only), so one test's
+        // published version can never leak into the next; the seeded version stays untouched.
+        jdbc.execute("ALTER TABLE kyc_requirement_sets DISABLE TRIGGER trg_kyc_requirement_sets_immutable");
+        try {
+            jdbc.update("DELETE FROM kyc_requirement_sets WHERE version > 1");
+        } finally {
+            jdbc.execute("ALTER TABLE kyc_requirement_sets ENABLE TRIGGER trg_kyc_requirement_sets_immutable");
+        }
     }
 }

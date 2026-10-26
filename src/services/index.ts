@@ -5,6 +5,7 @@ import type { BankingConfigurationService } from './bankingService'
 import type { BranchService } from './branchService'
 import type { CatalogService } from './catalogService'
 import type { CheckoutService } from './checkoutService'
+import type { KycService } from './kycService'
 import type { DashboardService } from './dashboardService'
 import type { CollectionCodeService } from './collectionCodeService'
 import type { InventoryService } from './inventoryService'
@@ -17,6 +18,7 @@ import {
   createHttpBranchService,
   createHttpCatalogService,
   createHttpCheckoutService,
+  createHttpKycService,
   createHttpDashboardService,
   createHttpCollectionCodeService,
   createHttpInventoryService,
@@ -38,6 +40,7 @@ import { createMockBankSimulator } from './mock/mockBankSimulator'
 import { createMockBranchService } from './mock/mockBranchService'
 import { createMockCatalogService } from './mock/mockCatalogService'
 import { createMockCheckoutService } from './mock/mockCheckoutService'
+import { createMockKycService } from './mock/mockKycService'
 import { createLedgerStore } from './mock/ledger/mockLedgerStore'
 import { createMockDashboardService } from './mock/mockDashboardService'
 import { createMockInvoiceService } from './mock/mockInvoiceService'
@@ -75,6 +78,7 @@ interface Services {
   reportsService: ReportsService | null
   invoiceService: InvoiceService
   checkoutService: CheckoutService
+  kycService: KycService
   catalogService: CatalogService
   inventoryService: InventoryService
   collectionCodeService: CollectionCodeService
@@ -104,6 +108,7 @@ function createMockServices(): Services {
     invoiceService: mockInvoiceService,
     // The demo checkout goes through the very same mock invoice service and ledger as every other screen.
     checkoutService: createMockCheckoutService({ ...shared, invoiceService: mockInvoiceService }),
+    kycService: createMockKycService({ authStore: mockAuthStore }),
     catalogService: createMockCatalogService({ authStore: mockAuthStore }),
     inventoryService: createMockInventoryService({ authStore: mockAuthStore }),
     collectionCodeService: createMockCollectionCodeService({ authStore: mockAuthStore }),
@@ -134,6 +139,7 @@ function createHttpServices(): Services {
     reportsService: createHttpReportsService(http),
     invoiceService: createHttpInvoiceService(http),
     checkoutService: createHttpCheckoutService(http),
+    kycService: createHttpKycService(http),
     catalogService: createHttpCatalogService(http),
     inventoryService: createHttpInventoryService(http),
     collectionCodeService: createHttpCollectionCodeService(http),
@@ -162,6 +168,7 @@ export const {
   catalogService,
   inventoryService,
   collectionCodeService,
+  kycService,
   reconciliationService,
   notificationService,
   bankingService,

@@ -18,6 +18,7 @@ import {
   type CheckoutServiceErrorCode,
 } from '@/services/checkoutService'
 import type { DashboardService } from '@/services/dashboardService'
+import { KycServiceError, type KycService, type KycServiceErrorCode } from '@/services/kycService'
 import {
   InventoryServiceError,
   type InventoryService,
@@ -180,6 +181,28 @@ const INVENTORY_CODES: InventoryServiceErrorCode[] = [
   'service_unavailable',
 ]
 
+const KYC_CODES: KycServiceErrorCode[] = [
+  'unauthenticated',
+  'not_found',
+  'forbidden',
+  'validation',
+  'application_exists',
+  'application_not_editable',
+  'application_incomplete',
+  'consent_required',
+  'consent_text_changed',
+  'invalid_transition',
+  'version_conflict',
+  'client_request_id_reuse',
+  'sensitive_storage_unavailable',
+  'sensitive_value_unreadable',
+  'documents_required',
+  'not_implemented',
+  'service_unavailable',
+]
+
+const kycError = (error: unknown) =>
+  mapHttpError(error, (code, message) => new KycServiceError(code, message), KYC_CODES)
 const authError = (error: unknown) =>
   mapHttpError(error, (code, message) => new AuthServiceError(code, message), AUTH_CODES)
 const merchantError = (error: unknown) =>
@@ -989,6 +1012,64 @@ export function createHttpCollectionCodeService(http: HttpClient): CollectionCod
           : null,
       }
     }, collectionCodeError),
+  }
+}
+
+/**
+ * Equity activation (KYC). The business is only ever the path. There is no endpoint, and so no method here, that sets a status, records
+ * a hand-off or records a bank decision: those need evidence and are not a merchant's to record.
+ */
+export function createHttpKycService(http: HttpClient): KycService {
+  const base = (merchantId: string) => `${m(merchantId)}/kyc`
+  const app = (merchantId: string, applicationId: string) =>
+    `${base(merchantId)}/applications/${applicationId}`
+  return {
+    getOptions: translating((id) => http.get(`${base(id)}/options`), kycError),
+    listApplications: translating((id) => http.get(`${base(id)}/applications`), kycError),
+    getApplication: translating((id, applicationId) => http.get(app(id, applicationId)), kycError),
+    startApplication: translating(
+      (id, clientOperationId) =>
+        http.post(`${base(id)}/applications`, { body: { clientOperationId } }),
+      kycError,
+    ),
+    saveAnswers: translating(
+      (id, applicationId, expectedVersion, answers) =>
+        http.put(`${app(id, applicationId)}/answers`, { body: { expectedVersion, answers } }),
+      kycError,
+    ),
+    declareDocument: translating(
+      (id, applicationId, documentKey, expectedVersion, declaredReady) =>
+        http.put(`${app(id, applicationId)}/documents/${encodeURIComponent(documentKey)}`, {
+          body: { expectedVersion, declaredReady },
+        }),
+      kycError,
+    ),
+    recordConsent: translating(
+      (id, applicationId, expectedVersion, consentTextVersion) =>
+        http.post(`${app(id, applicationId)}/consent`, {
+          body: { expectedVersion, consentTextVersion, affirmed: true },
+        }),
+      kycError,
+    ),
+    submit: translating(
+      (id, applicationId, expectedVersion, submissionRequestId) =>
+        http.post(`${app(id, applicationId)}/submit`, {
+          body: { expectedVersion, submissionRequestId },
+        }),
+      kycError,
+    ),
+    respondToInformationRequest: translating(
+      (id, applicationId, requestId, response) =>
+        http.post(`${app(id, applicationId)}/information-requests/${requestId}/response`, {
+          body: { response },
+        }),
+      kycError,
+    ),
+    revealValue: translating(
+      (id, applicationId, fieldKey) =>
+        http.post(`${app(id, applicationId)}/answers/${encodeURIComponent(fieldKey)}/reveal`),
+      kycError,
+    ),
   }
 }
 

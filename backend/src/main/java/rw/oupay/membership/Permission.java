@@ -43,7 +43,9 @@ public enum Permission {
     /** Assign, end and reassign agents. A manager may do so only for codes of branches they are assigned to. */
     COLLECTION_CODES_ASSIGN("collection_codes:assign", all(), limited(), none()),
     /** Request codes, record a bank request, suspend or deactivate: provisioning is the owner's, like bank linkage. Never approves. */
-    COLLECTION_CODES_MANAGE("collection_codes:manage", all(), none(), none());
+    COLLECTION_CODES_MANAGE("collection_codes:manage", all(), none(), none()),
+    /** Equity KYC onboarding: representative identity, answers, consent and documents. Owner only; never a manager or a cashier. */
+    KYC_MANAGE("kyc:manage", all(), none(), none());
 
     public enum Scope { ALL, LIMITED }
 

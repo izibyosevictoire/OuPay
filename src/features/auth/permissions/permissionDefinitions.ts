@@ -54,6 +54,9 @@ export const PERMISSION_DEFINITIONS = {
   'collection_codes:view': { OWNER: ALL, MANAGER: ALL, CASHIER: NONE },
   'collection_codes:assign': { OWNER: ALL, MANAGER: LIMITED, CASHIER: NONE },
   'collection_codes:manage': { OWNER: ALL, MANAGER: NONE, CASHIER: NONE },
+  // Equity activation (KYC): the owner's alone. It holds a representative's identity details and the consent that covers them, so
+  // neither managers nor cashiers may read or change any of it.
+  'kyc:manage': { OWNER: ALL, MANAGER: NONE, CASHIER: NONE },
   'reports:view': { OWNER: ALL, MANAGER: ALL, CASHIER: NONE },
   'banking:manage': { OWNER: ALL, MANAGER: NONE, CASHIER: NONE },
 } as const satisfies Record<string, RoleGrants>

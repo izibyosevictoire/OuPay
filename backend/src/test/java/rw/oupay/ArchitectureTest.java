@@ -66,7 +66,7 @@ class ArchitectureTest {
         // Each service that reads or writes business data must call MerchantAccess itself (not rely on controllers).
         for (String file : new String[] {"invoice/InvoiceService.java", "branch/BranchService.java", "staff/StaffService.java",
                 "merchant/MerchantService.java", "merchant/MerchantSettingsService.java", "idempotency/IdempotencyService.java", "banking/BankingService.java", "ledger/ReconciliationService.java",
-                "payment/PaymentProfileService.java", "checkout/SimplifiedCheckoutService.java", "notification/NotificationService.java", "dashboard/DashboardService.java", "audit/AuditService.java"}) {
+                "payment/PaymentProfileService.java", "checkout/SimplifiedCheckoutService.java", "kyc/KycService.java", "notification/NotificationService.java", "dashboard/DashboardService.java", "audit/AuditService.java"}) {
             String source = read(MAIN.resolve(file));
             assertThat(source).as(file).contains("MerchantAccess").containsPattern("access\\.require(Member)?\\(");
         }
@@ -138,6 +138,28 @@ class ArchitectureTest {
             assertThat(checkout).as("the checkout must not use " + forbidden).doesNotContain(forbidden);
         }
         assertThat(checkout).contains("idempotency.executeOnce(");
+    }
+
+    @Test
+    void noWebEndpointCanRecordWhatTheBankDidWithAKycApplication() throws IOException {
+        // Hand-off, requests for information and decisions exist only with evidence, in a service that has no HTTP surface.
+        for (Path file : sources()) {
+            if (file.getFileName().toString().endsWith("Controller.java")) {
+                assertThat(code(file)).as(file.getFileName().toString()).doesNotContain("KycEvidenceService");
+            }
+        }
+        // And no KYC request body can carry a status, evidence or a decision.
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("record\\s+(\\w+Request)\\s*\\((.*?)\\)\\s*\\{\\}", java.util.regex.Pattern.DOTALL)
+                .matcher(code(MAIN.resolve("kyc/KycDtos.java")));
+        int seen = 0;
+        while (matcher.find()) {
+            seen++;
+            String components = matcher.group(2).toLowerCase(java.util.Locale.ROOT);
+            for (String forbidden : new String[] {"status", "evidence", "handoff", "handedoff", "decision", "approved", "rejected"}) {
+                assertThat(components).as(matcher.group(1)).doesNotContain(forbidden);
+            }
+        }
+        assertThat(seen).isGreaterThanOrEqualTo(5);
     }
 
     @Test

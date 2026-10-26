@@ -19,6 +19,7 @@ export const MOCK_STORAGE_KEYS = {
   paymentRequests: 'oupay.mock.paymentRequests',
   refunds: 'oupay.mock.refunds',
   checkoutSales: 'oupay.mock.checkoutSales',
+  kycApplications: 'oupay.mock.kycApplications',
   catalogItems: 'oupay.mock.catalogItems',
   catalogPrices: 'oupay.mock.catalogPrices',
   inventoryBalances: 'oupay.mock.inventoryBalances',
