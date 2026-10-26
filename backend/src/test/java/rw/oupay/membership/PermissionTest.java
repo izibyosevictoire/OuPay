@@ -37,6 +37,9 @@ class PermissionTest {
         expected.put(Permission.BANKING_MANAGE, new Scope[] {all, null, null});
         expected.put(Permission.CATALOG_VIEW, new Scope[] {all, all, all});
         expected.put(Permission.CATALOG_MANAGE, new Scope[] {all, all, null});
+        expected.put(Permission.INVENTORY_VIEW, new Scope[] {all, all, lim});
+        expected.put(Permission.INVENTORY_RECEIVE, new Scope[] {all, lim, null});
+        expected.put(Permission.INVENTORY_ADJUST, new Scope[] {all, lim, null});
 
         assertThat(expected.keySet()).containsExactlyInAnyOrder(Permission.values());
         expected.forEach((permission, scopes) -> {
@@ -49,7 +52,8 @@ class PermissionTest {
     @Test
     void cashiersNeverGetFullScopeOverRecordsOfOthersOrAnyMoneyMovingPower() {
         for (Permission p : new Permission[] {Permission.PAYMENTS_RECONCILE, Permission.BANKING_MANAGE, Permission.MEMBERSHIP_MANAGE,
-                Permission.INVOICES_VOID, Permission.PAYMENT_PROFILES_MANAGE, Permission.PROFILE_EDIT, Permission.CATALOG_MANAGE}) {
+                Permission.INVOICES_VOID, Permission.PAYMENT_PROFILES_MANAGE, Permission.PROFILE_EDIT, Permission.CATALOG_MANAGE,
+                Permission.INVENTORY_RECEIVE, Permission.INVENTORY_ADJUST}) {
             assertThat(p.scopeFor(Role.CASHIER)).as(p.key()).isEmpty();
         }
         for (Permission p : new Permission[] {Permission.INVOICES_VIEW, Permission.TRANSACTIONS_VIEW, Permission.PAYMENTS_VIEW_CONFIRMATIONS}) {

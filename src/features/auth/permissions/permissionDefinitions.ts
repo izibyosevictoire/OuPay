@@ -41,6 +41,12 @@ export const PERMISSION_DEFINITIONS = {
   // The goods-and-services catalog (BUSINESS mode). Cashiers may read it (they will sell from it) but never change it.
   'catalog:view': { OWNER: ALL, MANAGER: ALL, CASHIER: ALL },
   'catalog:manage': { OWNER: ALL, MANAGER: ALL, CASHIER: NONE },
+  // Branch-level stock of goods (BUSINESS mode). Viewing: owners and managers see every branch, a cashier only the branches
+  // they are assigned to. Recording stock (`receive`, and `adjust` which also covers opening stock) is limited for a manager
+  // to the branches they are assigned to, and never granted to cashiers.
+  'inventory:view': { OWNER: ALL, MANAGER: ALL, CASHIER: LIMITED },
+  'inventory:receive': { OWNER: ALL, MANAGER: LIMITED, CASHIER: NONE },
+  'inventory:adjust': { OWNER: ALL, MANAGER: LIMITED, CASHIER: NONE },
   'reports:view': { OWNER: ALL, MANAGER: ALL, CASHIER: NONE },
   'banking:manage': { OWNER: ALL, MANAGER: NONE, CASHIER: NONE },
 } as const satisfies Record<string, RoleGrants>

@@ -54,3 +54,28 @@ export function formatExactDecimal(value: ExactDecimal): string {
   const fraction = digits.slice(digits.length - value.scale)
   return `${negative ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}`
 }
+
+/** Exact sum. */
+export function addExactDecimals(a: ExactDecimal, b: ExactDecimal): ExactDecimal {
+  const scale = Math.max(a.scale, b.scale)
+  const left = a.unscaled * 10n ** BigInt(scale - a.scale)
+  const right = b.unscaled * 10n ** BigInt(scale - b.scale)
+  return normalise(left + right, scale)
+}
+
+export function negateExactDecimal(value: ExactDecimal): ExactDecimal {
+  return { unscaled: -value.unscaled, scale: value.scale }
+}
+
+/** Exact product. */
+export function multiplyExactDecimals(a: ExactDecimal, b: ExactDecimal): ExactDecimal {
+  return normalise(a.unscaled * b.unscaled, a.scale + b.scale)
+}
+
+/** -1, 0 or 1. */
+export function compareExactDecimals(a: ExactDecimal, b: ExactDecimal): -1 | 0 | 1 {
+  const scale = Math.max(a.scale, b.scale)
+  const left = a.unscaled * 10n ** BigInt(scale - a.scale)
+  const right = b.unscaled * 10n ** BigInt(scale - b.scale)
+  return left < right ? -1 : left > right ? 1 : 0
+}

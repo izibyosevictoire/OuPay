@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Boxes,
   Building2,
   CreditCard,
   Package,
@@ -58,6 +59,14 @@ export const PRIMARY_NAVIGATION: NavigationItem[] = [
     icon: Package,
     description: 'Goods and services you sell',
     permission: 'catalog:view',
+    requiresMode: 'BUSINESS',
+  },
+  {
+    label: 'Inventory',
+    path: '/inventory',
+    icon: Boxes,
+    description: 'Stock of goods by branch',
+    permission: 'inventory:view',
     requiresMode: 'BUSINESS',
   },
   {

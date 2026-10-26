@@ -14,6 +14,7 @@ import { BankingPage } from '@/features/banking/BankingPage'
 import { BranchDetailsPage } from '@/features/branches/BranchDetailsPage'
 import { BranchesPage } from '@/features/branches/BranchesPage'
 import { CatalogPage } from '@/features/catalog/CatalogPage'
+import { InventoryPage } from '@/features/inventory/InventoryPage'
 import { SimplifiedCheckoutPage } from '@/features/checkout/SimplifiedCheckoutPage'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { BankSimulatorPage } from '@/features/demo/BankSimulatorPage'
@@ -48,6 +49,7 @@ const BUILT_MODULE_PATHS = [
   '/cashiers',
   '/invoices',
   '/catalog',
+  '/inventory',
   '/collect',
   '/transactions',
   '/payments',
@@ -170,6 +172,11 @@ export const appRoutes: RouteObject[] = [
                 // The page itself explains when the business is not in business mode.
                 element: <PermissionRoute permission="catalog:view" />,
                 children: [{ path: '/catalog', element: <CatalogPage /> }],
+              },
+              {
+                // The page itself explains when the business is not in business mode.
+                element: <PermissionRoute permission="inventory:view" />,
+                children: [{ path: '/inventory', element: <InventoryPage /> }],
               },
               {
                 element: <PermissionRoute permission="branches:manage" />,

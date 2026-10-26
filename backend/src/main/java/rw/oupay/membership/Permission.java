@@ -31,7 +31,13 @@ public enum Permission {
     /** Read the goods and services catalog. Cashiers get read-only access (they will sell from it). */
     CATALOG_VIEW("catalog:view", all(), all(), all()),
     /** Create and change catalog items, prices, availability and packages. Never granted to cashiers. */
-    CATALOG_MANAGE("catalog:manage", all(), all(), none());
+    CATALOG_MANAGE("catalog:manage", all(), all(), none()),
+    /** See branch stock. A cashier sees only the branches they are assigned to. */
+    INVENTORY_VIEW("inventory:view", all(), all(), limited()),
+    /** Receive stock. A manager records only at branches they are assigned to; never a cashier. */
+    INVENTORY_RECEIVE("inventory:receive", all(), limited(), none()),
+    /** Record opening stock and adjust stock (loss, damage, count differences). Same limits as receiving. */
+    INVENTORY_ADJUST("inventory:adjust", all(), limited(), none());
 
     public enum Scope { ALL, LIMITED }
 

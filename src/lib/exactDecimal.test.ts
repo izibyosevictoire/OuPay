@@ -1,6 +1,10 @@
 import {
+  addExactDecimals,
+  compareExactDecimals,
   formatExactDecimal,
   integralDigits,
+  multiplyExactDecimals,
+  negateExactDecimal,
   parseExactDecimal,
   shiftDecimalPoint,
 } from './exactDecimal'
@@ -46,5 +50,27 @@ describe('exact decimal arithmetic', () => {
     expect(integralDigits(parseExactDecimal('100000000000000')!)).toBe(15)
     expect(integralDigits(parseExactDecimal('0.5')!)).toBe(0)
     expect(integralDigits(parseExactDecimal('0')!)).toBe(0)
+  })
+})
+
+describe('exact decimal sums, products and comparison', () => {
+  const d = (text: string) => parseExactDecimal(text)!
+  const f = formatExactDecimal
+
+  it('adds and negates without floating-point error', () => {
+    expect(f(addExactDecimals(d('0.1'), d('0.2')))).toBe('0.3')
+    expect(f(addExactDecimals(d('1000'), d('-250.5')))).toBe('749.5')
+    expect(f(addExactDecimals(d('1'), negateExactDecimal(d('1'))))).toBe('0')
+  })
+
+  it('multiplies exactly', () => {
+    expect(f(multiplyExactDecimals(d('25000'), d('1.5')))).toBe('37500')
+    expect(f(multiplyExactDecimals(d('0.000001'), d('0.5')))).toBe('0.0000005')
+  })
+
+  it('compares by value regardless of scale', () => {
+    expect(compareExactDecimals(d('1'), d('1.000000'))).toBe(0)
+    expect(compareExactDecimals(d('0.9'), d('1'))).toBe(-1)
+    expect(compareExactDecimals(d('10'), d('9.999999'))).toBe(1)
   })
 })

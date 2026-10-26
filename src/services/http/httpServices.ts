@@ -13,6 +13,11 @@ import {
   type CheckoutServiceErrorCode,
 } from '@/services/checkoutService'
 import type { DashboardService } from '@/services/dashboardService'
+import {
+  InventoryServiceError,
+  type InventoryService,
+  type InventoryServiceErrorCode,
+} from '@/services/inventoryService'
 import { InvoiceServiceError, type InvoiceService } from '@/services/invoiceService'
 import { MerchantServiceError, type MerchantService } from '@/services/merchantService'
 import type { NotificationService } from '@/services/notificationService'
@@ -24,6 +29,7 @@ import type { ReconciliationService } from '@/services/reconciliationService'
 import type { StaffService } from '@/services/staffService'
 import type { AuthSession } from '@/types/auth'
 import type { CatalogItem, CatalogPackage, PriceVersion } from '@/types/catalog'
+import type { InventoryBalance, MovementResult, StockMovement } from '@/types/inventory'
 import type { InvoicePage } from '@/types/invoice'
 import { mapHttpError, translating } from './errorMapping'
 import type { ReportsService } from '@/services/reportsService'
@@ -138,6 +144,28 @@ const CATALOG_CODES: CatalogServiceErrorCode[] = [
   'service_unavailable',
 ]
 
+const INVENTORY_CODES: InventoryServiceErrorCode[] = [
+  'unauthenticated',
+  'not_found',
+  'forbidden',
+  'validation',
+  'invalid_item',
+  'package_inactive',
+  'unsupported_unit',
+  'dimension_mismatch',
+  'invalid_quantity',
+  'invalid_count',
+  'precision_exceeded',
+  'quantity_out_of_range',
+  'invalid_package_conversion',
+  'insufficient_stock',
+  'opening_already_recorded',
+  'operation_id_reuse',
+  'branch_inactive',
+  'inventory_unavailable',
+  'service_unavailable',
+]
+
 const authError = (error: unknown) =>
   mapHttpError(error, (code, message) => new AuthServiceError(code, message), AUTH_CODES)
 const merchantError = (error: unknown) =>
@@ -173,6 +201,42 @@ const normaliseCatalogItem = (raw: RawCatalogItem): CatalogItem => ({
 
 const catalogError = (error: unknown) =>
   mapHttpError(error, (code, message) => new CatalogServiceError(code, message), CATALOG_CODES)
+const inventoryError = (error: unknown) =>
+  mapHttpError(error, (code, message) => new InventoryServiceError(code, message), INVENTORY_CODES)
+
+/** The server omits null fields from its JSON, so a missing field means null. Normalised once, here. */
+type RawInventoryBalance = Omit<InventoryBalance, 'itemCode'> & { itemCode?: string | null }
+type RawStockMovement = Omit<StockMovement, 'enteredAs' | 'reason' | 'reference'> & {
+  enteredAs?: string | null
+  reason?: string | null
+  reference?: string | null
+}
+interface RawInventoryPage<T> {
+  items?: T[]
+  nextCursor?: string | null
+  totalCount?: number | null
+}
+interface RawMovementResult {
+  movement: RawStockMovement
+  balance: RawInventoryBalance
+  replayed?: boolean
+}
+const normaliseBalance = (raw: RawInventoryBalance): InventoryBalance => ({
+  ...raw,
+  itemCode: raw.itemCode ?? null,
+})
+const normaliseMovement = (raw: RawStockMovement): StockMovement => ({
+  ...raw,
+  enteredAs: raw.enteredAs ?? null,
+  reason: raw.reason ?? null,
+  reference: raw.reference ?? null,
+})
+const normaliseResult = (raw: RawMovementResult): MovementResult => ({
+  movement: normaliseMovement(raw.movement),
+  balance: normaliseBalance(raw.balance),
+  replayed: raw.replayed ?? false,
+})
+
 const paymentError = (error: unknown) =>
   mapHttpError(error, (code, message) => new PaymentServiceError(code, message), PAYMENT_CODES)
 
@@ -612,6 +676,64 @@ export function createHttpCatalogService(http: HttpClient): CatalogService {
       (id, itemId, packageId, input) =>
         http.put(`${itemPath(id, itemId)}/packages/${packageId}`, { body: input }),
       catalogError,
+    ),
+  }
+}
+
+/**
+ * Branch-level stock of goods. Quantities travel as plain decimal text. Every write carries the client's operation id, so a
+ * retry of the same submission can never add stock twice; merchant identity is only ever the path, never the body.
+ */
+export function createHttpInventoryService(http: HttpClient): InventoryService {
+  const base = (merchantId: string) => `${m(merchantId)}/inventory`
+  return {
+    getOptions: translating((id) => http.get(`${base(id)}/options`), inventoryError),
+    listBalances: translating(async (id, query) => {
+      const page = await http.get<RawInventoryPage<RawInventoryBalance>>(`${base(id)}/balances`, {
+        query: {
+          limit: query?.limit,
+          cursor: query?.cursor,
+          branchId: query?.branchId,
+          itemId: query?.itemId,
+          q: query?.q?.trim() || undefined,
+        },
+      })
+      return {
+        items: (page.items ?? []).map(normaliseBalance),
+        nextCursor: page.nextCursor ?? null,
+        totalCount: page.totalCount ?? null,
+      }
+    }, inventoryError),
+    listMovements: translating(async (id, query) => {
+      const page = await http.get<RawInventoryPage<RawStockMovement>>(`${base(id)}/movements`, {
+        query: {
+          limit: query?.limit,
+          cursor: query?.cursor,
+          branchId: query?.branchId,
+          itemId: query?.itemId,
+          type: query?.type,
+        },
+      })
+      return {
+        items: (page.items ?? []).map(normaliseMovement),
+        nextCursor: page.nextCursor ?? null,
+        totalCount: page.totalCount ?? null,
+      }
+    }, inventoryError),
+    recordOpening: translating(
+      async (id, input) =>
+        normaliseResult(await http.post<RawMovementResult>(`${base(id)}/opening`, { body: input })),
+      inventoryError,
+    ),
+    receiveStock: translating(
+      async (id, input) =>
+        normaliseResult(await http.post<RawMovementResult>(`${base(id)}/receive`, { body: input })),
+      inventoryError,
+    ),
+    adjustStock: translating(
+      async (id, input) =>
+        normaliseResult(await http.post<RawMovementResult>(`${base(id)}/adjust`, { body: input })),
+      inventoryError,
     ),
   }
 }
