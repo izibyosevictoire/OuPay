@@ -399,8 +399,10 @@ describe('Collect Payment: navigation', () => {
       permission: 'invoices:create',
       requiresMode: 'SIMPLIFIED',
     })
-    // No other entry is mode-specific, and nothing existing was hidden or replaced.
-    expect(PRIMARY_NAVIGATION.filter((item) => item.requiresMode)).toHaveLength(1)
+    // Only Collect Payment (simplified) and Catalog (business) are mode-specific; nothing existing was hidden or replaced.
+    expect(
+      PRIMARY_NAVIGATION.filter((item) => item.requiresMode).map((item) => item.path),
+    ).toEqual(['/collect', '/catalog'])
     for (const path of [
       '/',
       '/invoices',

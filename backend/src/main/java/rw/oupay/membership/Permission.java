@@ -27,7 +27,11 @@ public enum Permission {
     CASHIERS_MANAGE("cashiers:manage", all(), all(), none()),
     MEMBERSHIP_MANAGE("membership:manage", all(), none(), none()),
     REPORTS_VIEW("reports:view", all(), all(), none()),
-    BANKING_MANAGE("banking:manage", all(), none(), none());
+    BANKING_MANAGE("banking:manage", all(), none(), none()),
+    /** Read the goods and services catalog. Cashiers get read-only access (they will sell from it). */
+    CATALOG_VIEW("catalog:view", all(), all(), all()),
+    /** Create and change catalog items, prices, availability and packages. Never granted to cashiers. */
+    CATALOG_MANAGE("catalog:manage", all(), all(), none());
 
     public enum Scope { ALL, LIMITED }
 

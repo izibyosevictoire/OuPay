@@ -18,6 +18,8 @@ const EXPECTED_MATRIX: [Permission, Record<BusinessRole, 'all' | 'limited' | nul
   ['branches:manage', { OWNER: 'all', MANAGER: 'all', CASHIER: null }],
   ['cashiers:manage', { OWNER: 'all', MANAGER: 'all', CASHIER: null }],
   ['membership:manage', { OWNER: 'all', MANAGER: null, CASHIER: null }],
+  ['catalog:view', { OWNER: 'all', MANAGER: 'all', CASHIER: 'all' }],
+  ['catalog:manage', { OWNER: 'all', MANAGER: 'all', CASHIER: null }],
   ['reports:view', { OWNER: 'all', MANAGER: 'all', CASHIER: null }],
   ['banking:manage', { OWNER: 'all', MANAGER: null, CASHIER: null }],
 ]

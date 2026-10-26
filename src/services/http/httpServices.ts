@@ -3,6 +3,11 @@ import { AuthServiceError, type AuthServiceErrorCode } from '@/services/authServ
 import type { BankingConfigurationService } from '@/services/bankingService'
 import type { BranchService } from '@/services/branchService'
 import {
+  CatalogServiceError,
+  type CatalogService,
+  type CatalogServiceErrorCode,
+} from '@/services/catalogService'
+import {
   CheckoutServiceError,
   type CheckoutService,
   type CheckoutServiceErrorCode,
@@ -18,6 +23,7 @@ import type { PublicPaymentService } from '@/services/publicPaymentService'
 import type { ReconciliationService } from '@/services/reconciliationService'
 import type { StaffService } from '@/services/staffService'
 import type { AuthSession } from '@/types/auth'
+import type { CatalogItem, CatalogPackage, PriceVersion } from '@/types/catalog'
 import type { InvoicePage } from '@/types/invoice'
 import { mapHttpError, translating } from './errorMapping'
 import type { ReportsService } from '@/services/reportsService'
@@ -112,6 +118,26 @@ const CHECKOUT_CODES: CheckoutServiceErrorCode[] = [
   'service_unavailable',
 ]
 
+const CATALOG_CODES: CatalogServiceErrorCode[] = [
+  'unauthenticated',
+  'not_found',
+  'forbidden',
+  'validation',
+  'invalid_unit_configuration',
+  'unsupported_unit',
+  'dimension_mismatch',
+  'invalid_quantity',
+  'invalid_count',
+  'precision_exceeded',
+  'quantity_out_of_range',
+  'invalid_package_conversion',
+  'duplicate_code',
+  'duplicate_label',
+  'version_conflict',
+  'catalog_unavailable',
+  'service_unavailable',
+]
+
 const authError = (error: unknown) =>
   mapHttpError(error, (code, message) => new AuthServiceError(code, message), AUTH_CODES)
 const merchantError = (error: unknown) =>
@@ -126,6 +152,27 @@ const invoiceError = (error: unknown) =>
   mapHttpError(error, (code, message) => new InvoiceServiceError(code, message), INVOICE_CODES)
 const checkoutError = (error: unknown) =>
   mapHttpError(error, (code, message) => new CheckoutServiceError(code, message), CHECKOUT_CODES)
+/** The server omits null fields from its JSON, so a missing field means null. Normalised once, here. */
+type Nullable<T, K extends keyof T> = Omit<T, K> & { [P in K]?: T[P] | null }
+type RawCatalogItem = Omit<Nullable<CatalogItem, 'description' | 'code' | 'stockUnit'>, 'packages'> & {
+  packages?: CatalogPackage[]
+}
+type RawPriceVersion = Nullable<PriceVersion, 'reason'>
+interface RawCatalogPage {
+  items?: RawCatalogItem[]
+  nextCursor?: string | null
+  totalCount?: number | null
+}
+const normaliseCatalogItem = (raw: RawCatalogItem): CatalogItem => ({
+  ...raw,
+  description: raw.description ?? null,
+  code: raw.code ?? null,
+  stockUnit: raw.stockUnit ?? null,
+  packages: raw.packages ?? [],
+})
+
+const catalogError = (error: unknown) =>
+  mapHttpError(error, (code, message) => new CatalogServiceError(code, message), CATALOG_CODES)
 const paymentError = (error: unknown) =>
   mapHttpError(error, (code, message) => new PaymentServiceError(code, message), PAYMENT_CODES)
 
@@ -497,6 +544,74 @@ export function createHttpCheckoutService(http: HttpClient): CheckoutService {
           },
         }),
       checkoutError,
+    ),
+  }
+}
+
+/**
+ * The goods-and-services catalog. Decimals travel as plain text and prices as whole-RWF JSON numbers; merchant identity is
+ * only ever the path, never the body. Versions are sent in the body (`expectedVersion`) for optimistic locking.
+ */
+export function createHttpCatalogService(http: HttpClient): CatalogService {
+  const base = (merchantId: string) => `${m(merchantId)}/catalog`
+  const itemPath = (merchantId: string, itemId: string) => `${base(merchantId)}/items/${itemId}`
+  return {
+    listMeasurementUnits: translating(
+      (id) => http.get(`${base(id)}/measurement-units`),
+      catalogError,
+    ),
+    listItems: translating(async (id, query) => {
+      const page = await http.get<RawCatalogPage>(`${base(id)}/items`, {
+        query: {
+          limit: query?.limit,
+          cursor: query?.cursor,
+          q: query?.q?.trim() || undefined,
+          type: query?.type,
+          active: query?.active,
+        },
+      })
+      return {
+        items: (page.items ?? []).map(normaliseCatalogItem),
+        nextCursor: page.nextCursor ?? null,
+        totalCount: page.totalCount ?? null,
+      }
+    }, catalogError),
+    getItem: translating(
+      async (id, itemId) =>
+        normaliseCatalogItem(await http.get<RawCatalogItem>(itemPath(id, itemId))),
+      catalogError,
+    ),
+    createItem: translating(
+      async (id, input) =>
+        normaliseCatalogItem(await http.post<RawCatalogItem>(`${base(id)}/items`, { body: input })),
+      catalogError,
+    ),
+    updateItem: translating(
+      async (id, itemId, input) =>
+        normaliseCatalogItem(
+          await http.put<RawCatalogItem>(itemPath(id, itemId), { body: input }),
+        ),
+      catalogError,
+    ),
+    changeItemStatus: translating(
+      async (id, itemId, input) =>
+        normaliseCatalogItem(
+          await http.put<RawCatalogItem>(`${itemPath(id, itemId)}/status`, { body: input }),
+        ),
+      catalogError,
+    ),
+    listPriceHistory: translating(async (id, itemId) => {
+      const versions = await http.get<RawPriceVersion[]>(`${itemPath(id, itemId)}/price-history`)
+      return versions.map((v) => ({ ...v, reason: v.reason ?? null }))
+    }, catalogError),
+    createPackage: translating(
+      (id, itemId, input) => http.post(`${itemPath(id, itemId)}/packages`, { body: input }),
+      catalogError,
+    ),
+    updatePackage: translating(
+      (id, itemId, packageId, input) =>
+        http.put(`${itemPath(id, itemId)}/packages/${packageId}`, { body: input }),
+      catalogError,
     ),
   }
 }

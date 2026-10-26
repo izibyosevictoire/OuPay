@@ -38,6 +38,9 @@ export const PERMISSION_DEFINITIONS = {
   'branches:manage': { OWNER: ALL, MANAGER: ALL, CASHIER: NONE },
   'cashiers:manage': { OWNER: ALL, MANAGER: ALL, CASHIER: NONE },
   'membership:manage': { OWNER: ALL, MANAGER: NONE, CASHIER: NONE },
+  // The goods-and-services catalog (BUSINESS mode). Cashiers may read it (they will sell from it) but never change it.
+  'catalog:view': { OWNER: ALL, MANAGER: ALL, CASHIER: ALL },
+  'catalog:manage': { OWNER: ALL, MANAGER: ALL, CASHIER: NONE },
   'reports:view': { OWNER: ALL, MANAGER: ALL, CASHIER: NONE },
   'banking:manage': { OWNER: ALL, MANAGER: NONE, CASHIER: NONE },
 } as const satisfies Record<string, RoleGrants>

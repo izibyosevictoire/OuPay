@@ -4,6 +4,7 @@ import {
   bankingService,
   bankSimulator,
   branchService,
+  catalogService,
   checkoutService,
   notificationService,
   paymentProfileService,
@@ -19,6 +20,7 @@ import { createMemoryStorage, createMockAuthStore } from '@/services/mock/mockAu
 import { createMockBankingService } from '@/services/mock/mockBankingService'
 import { createMockBankSimulator } from '@/services/mock/mockBankSimulator'
 import { createMockBranchService } from '@/services/mock/mockBranchService'
+import { createMockCatalogService } from '@/services/mock/mockCatalogService'
 import { createMockCheckoutService } from '@/services/mock/mockCheckoutService'
 import { createBankEventProcessor } from '@/services/mock/ledger/bankEventProcessor'
 import { createLedgerStore } from '@/services/mock/ledger/mockLedgerStore'
@@ -70,6 +72,11 @@ export function createTestBackend() {
     merchantStorage,
     delayInMilliseconds: 0,
   })
+  const fastCatalog = createMockCatalogService({
+    authStore: store,
+    merchantStorage,
+    delayInMilliseconds: 0,
+  })
   const fastReconciliation = createMockReconciliationService({
     authStore: store,
     ledger,
@@ -114,6 +121,7 @@ export function createTestBackend() {
     fastDashboard,
     fastInvoices,
     fastCheckout,
+    fastCatalog,
     fastAuth,
     fastMerchants,
     fastBranches,
@@ -154,6 +162,7 @@ export function useFastBackend() {
   delegateAll(bankingService, backend.fastBanking)
   delegateAll(paymentProfileService, backend.fastProfiles)
   delegateAll(checkoutService, backend.fastCheckout)
+  delegateAll(catalogService, backend.fastCatalog)
   delegateAll(publicPaymentService, backend.fastPublic)
   if (bankSimulator) delegateAll(bankSimulator, backend.fastSimulator)
   return {

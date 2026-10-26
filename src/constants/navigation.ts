@@ -2,6 +2,7 @@ import {
   BarChart3,
   Building2,
   CreditCard,
+  Package,
   FileText,
   HandCoins,
   Landmark,
@@ -50,6 +51,14 @@ export const PRIMARY_NAVIGATION: NavigationItem[] = [
     icon: FileText,
     description: 'Create and track invoices',
     permission: 'invoices:view',
+  },
+  {
+    label: 'Catalog',
+    path: '/catalog',
+    icon: Package,
+    description: 'Goods and services you sell',
+    permission: 'catalog:view',
+    requiresMode: 'BUSINESS',
   },
   {
     label: 'Payments',

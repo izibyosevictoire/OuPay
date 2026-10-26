@@ -3,6 +3,7 @@ import type { AuthService } from './authService'
 import type { BankSimulatorService } from './bankSimulatorService'
 import type { BankingConfigurationService } from './bankingService'
 import type { BranchService } from './branchService'
+import type { CatalogService } from './catalogService'
 import type { CheckoutService } from './checkoutService'
 import type { DashboardService } from './dashboardService'
 import type { ReportsService } from './reportsService'
@@ -12,6 +13,7 @@ import {
   createHttpAuthService,
   createHttpBankingService,
   createHttpBranchService,
+  createHttpCatalogService,
   createHttpCheckoutService,
   createHttpDashboardService,
   createHttpReportsService,
@@ -30,6 +32,7 @@ import { createMockAuthStore } from './mock/mockAuthStore'
 import { createMockBankingService } from './mock/mockBankingService'
 import { createMockBankSimulator } from './mock/mockBankSimulator'
 import { createMockBranchService } from './mock/mockBranchService'
+import { createMockCatalogService } from './mock/mockCatalogService'
 import { createMockCheckoutService } from './mock/mockCheckoutService'
 import { createLedgerStore } from './mock/ledger/mockLedgerStore'
 import { createMockDashboardService } from './mock/mockDashboardService'
@@ -66,6 +69,7 @@ interface Services {
   reportsService: ReportsService | null
   invoiceService: InvoiceService
   checkoutService: CheckoutService
+  catalogService: CatalogService
   reconciliationService: ReconciliationService
   notificationService: NotificationService
   bankingService: BankingConfigurationService
@@ -92,6 +96,7 @@ function createMockServices(): Services {
     invoiceService: mockInvoiceService,
     // The demo checkout goes through the very same mock invoice service and ledger as every other screen.
     checkoutService: createMockCheckoutService({ ...shared, invoiceService: mockInvoiceService }),
+    catalogService: createMockCatalogService({ authStore: mockAuthStore }),
     reconciliationService: createMockReconciliationService(shared),
     notificationService: createMockNotificationService(shared),
     bankingService: createMockBankingService(shared),
@@ -119,6 +124,7 @@ function createHttpServices(): Services {
     reportsService: createHttpReportsService(http),
     invoiceService: createHttpInvoiceService(http),
     checkoutService: createHttpCheckoutService(http),
+    catalogService: createHttpCatalogService(http),
     reconciliationService: createHttpReconciliationService(http),
     notificationService: createHttpNotificationService(http),
     bankingService: createHttpBankingService(http),
@@ -141,6 +147,7 @@ export const {
   reportsService,
   invoiceService,
   checkoutService,
+  catalogService,
   reconciliationService,
   notificationService,
   bankingService,
