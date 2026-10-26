@@ -140,7 +140,7 @@ export interface ListCollectionCodesQuery {
 
 export interface RequestCollectionCodeInput {
   /** One per submission attempt; kept across retries of the same submission so a retry cannot create a second request. */
-  clientRequestId: string
+  clientOperationId: string
   settlementDestinationId: string
   displayLabel: string
   branchId?: string

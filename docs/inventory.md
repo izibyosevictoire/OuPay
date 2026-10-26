@@ -83,6 +83,8 @@ before any lookup) and another actor reusing an operation id gets a bare `409` w
 
 ## Concurrency, transactions and idempotency
 
+* **History order is the order the balance changed in.** The time of a movement is taken AFTER the balance lock is held, and the V10 trigger keeps `created_at` strictly increasing per balance (it can move a time forward by microseconds when two movements fall in one clock tick, or the clock steps back). A stable secondary key could not do this: movement ids are random, so a `(created_at, id)` tie would show a running balance out of sequence. Across different balances, ties are ordered by id, which is stable and keeps keyset pagination exact.
+
 * **Transaction ownership.** Each write is one `@Transactional` service method: the movement insert (which the database applies to the
   balance in the same statement) and the audit entry commit or roll back together. The application never updates a balance itself; the
   entity is read-only and refreshed after the insert. Nothing external (no e-mail, no HTTP call) happens inside it, so the whole transaction is safe to

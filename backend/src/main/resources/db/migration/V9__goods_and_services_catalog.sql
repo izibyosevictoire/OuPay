@@ -45,7 +45,7 @@ CREATE TABLE catalog_items (
     -- dimension's canonical unit (matching the R5a measurement module).
     CONSTRAINT ck_catalog_items_units CHECK (
         (item_type = 'SERVICE' AND measurement_dimension = 'COUNT' AND stock_unit IS NULL AND sale_unit = 'pc')
-        OR (item_type = 'GOODS' AND (
+        OR (item_type = 'GOODS' AND stock_unit IS NOT NULL AND (
                (measurement_dimension = 'COUNT'  AND stock_unit = 'pc'  AND sale_unit = 'pc')
             OR (measurement_dimension = 'MASS'   AND stock_unit = 'g'   AND sale_unit IN ('g', 'kg'))
             OR (measurement_dimension = 'VOLUME' AND stock_unit = 'ml'  AND sale_unit IN ('ml', 'l'))

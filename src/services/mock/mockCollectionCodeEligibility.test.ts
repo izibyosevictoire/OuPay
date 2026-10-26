@@ -168,7 +168,7 @@ describe('eligibility for collection is computed live', () => {
     expect(code.eligibilityIssues).toContain('SIMULATED')
     expect(code.eligibilityIssues).not.toContain('NOT_BANK_APPROVED')
     const created = await s.codes.requestCode(M, {
-      clientRequestId: 'aaaaaaaa-bbbb-4ccc-8ddd-000000000001',
+      clientOperationId: 'aaaaaaaa-bbbb-4ccc-8ddd-000000000001',
       settlementDestinationId: 'dst-sample-001',
       displayLabel: 'Fresh',
     })

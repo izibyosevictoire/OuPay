@@ -14,6 +14,9 @@ public interface CollectionCodeAssignmentRepository extends JpaRepository<Collec
     /** The single open assignment of a code, if any (a partial unique index guarantees there is at most one). */
     Optional<CollectionCodeAssignment> findByCodeIdAndMerchantIdAndValidToIsNull(UUID codeId, UUID merchantId);
 
+    /** The most recent period of a code (open or ended). */
+    Optional<CollectionCodeAssignment> findFirstByCodeIdAndMerchantIdOrderByValidFromDescIdDesc(UUID codeId, UUID merchantId);
+
     @Query("select a from CollectionCodeAssignment a where a.merchantId = :merchantId and a.codeId in :codeIds and a.validTo is null")
     List<CollectionCodeAssignment> findOpenForCodes(UUID merchantId, Collection<UUID> codeIds);
 

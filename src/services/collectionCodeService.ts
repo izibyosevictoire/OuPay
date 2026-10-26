@@ -57,7 +57,7 @@ export interface CollectionCodeService {
   /** Newest first, keyset-paged. */
   listCodes(merchantId: string, query?: ListCollectionCodesQuery): Promise<CollectionCodePage>
   getCode(merchantId: string, codeId: string): Promise<CollectionCode>
-  /** An internal request (status REQUESTED). Nothing is sent to Equity. Idempotent by `clientRequestId`. */
+  /** An internal request (status REQUESTED). Nothing is sent to Equity. Idempotent by `clientOperationId`. */
   requestCode(
     merchantId: string,
     input: RequestCollectionCodeInput,

@@ -142,8 +142,9 @@ CREATE TRIGGER trg_stock_movements_immutable BEFORE UPDATE OR DELETE ON stock_mo
 CREATE FUNCTION apply_stock_movement() RETURNS trigger AS $$
 DECLARE
     current_quantity numeric(20,6);
+    last_at timestamptz;
 BEGIN
-    SELECT quantity_on_hand INTO current_quantity FROM inventory_balances
+    SELECT quantity_on_hand, updated_at INTO current_quantity, last_at FROM inventory_balances
         WHERE merchant_id = NEW.merchant_id AND branch_id = NEW.branch_id AND item_id = NEW.item_id
         FOR UPDATE;
     IF NOT FOUND THEN
@@ -156,6 +157,10 @@ BEGIN
     IF current_quantity + NEW.quantity_delta IS DISTINCT FROM NEW.balance_after THEN
         RAISE EXCEPTION 'the movement does not continue from the current balance';
     END IF;
+    -- History order IS the order the balance changed in: created_at is strictly increasing per balance, even when two movements
+    -- are recorded within one clock tick (or the clock steps back), so ordering by (created_at, id) can never show a running balance
+    -- out of sequence. The balance row lock held here makes "previous" well defined.
+    NEW.created_at := GREATEST(NEW.created_at, last_at + interval '1 microsecond');
     PERFORM set_config('oupay.applying_stock_movement', 'on', true);
     UPDATE inventory_balances SET quantity_on_hand = NEW.balance_after, updated_at = NEW.created_at, version = version + 1
         WHERE merchant_id = NEW.merchant_id AND branch_id = NEW.branch_id AND item_id = NEW.item_id;

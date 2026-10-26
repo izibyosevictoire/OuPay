@@ -260,9 +260,10 @@ public class InventoryService {
 
         // 3. Lock 2: the balance row. Created empty if this is the first stock of the item at the branch (a rolled-back failure
         //    takes that empty row with it).
-        Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
-        ensureBalance(merchantId, branch.getId(), item, now);
+        ensureBalance(merchantId, branch.getId(), item, clock.instant().truncatedTo(ChronoUnit.MICROS));
         InventoryBalance balance = balances.lockByKey(merchantId, branch.getId(), item.getId()).orElseThrow();
+        // The time of the movement is taken AFTER the lock is held, so the order of movements follows the order the balance really changed in.
+        Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
         if (type == MovementType.OPENING && movements.existsByMerchantIdAndBranchIdAndItemId(merchantId, branch.getId(), item.getId())) {
             throw ApiException.conflict("opening_already_recorded",
                     "Stock has already been recorded for this item at this branch. Receive or adjust stock instead.");
@@ -288,6 +289,7 @@ public class InventoryService {
             throw e;
         }
         entityManager.refresh(balance);
+        entityManager.refresh(movement);  // the database keeps created_at strictly increasing per balance; report what is stored
         audit.record(merchantId, actor.userId(), auditKind(type), "inventory_movement", movement.getId(),
                 abbreviate(auditMessage(type, item, branch, delta, after, reason)));
         return new Outcome(new InventoryDtos.MovementResult(toDto(movement, item, branch, actor.user().getFullName()),

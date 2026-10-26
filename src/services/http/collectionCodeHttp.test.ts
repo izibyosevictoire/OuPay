@@ -74,7 +74,7 @@ describe('HTTP collection codes keep the contract with the backend', () => {
   it('requests a code with the client request id in the body and the merchant only in the path', async () => {
     const { codes, calls } = setup({ status: 201, body: { code: { id: CODE }, replayed: false } })
     const result = await codes.requestCode(M, {
-      clientRequestId: REQUEST_ID,
+      clientOperationId: REQUEST_ID,
       settlementDestinationId: 'dst-1',
       displayLabel: 'Counter',
       branchId: 'b1',
@@ -84,7 +84,7 @@ describe('HTTP collection codes keep the contract with the backend', () => {
       method: 'POST',
       url: BASE,
       body: {
-        clientRequestId: REQUEST_ID,
+        clientOperationId: REQUEST_ID,
         settlementDestinationId: 'dst-1',
         displayLabel: 'Counter',
         branchId: 'b1',
@@ -98,7 +98,7 @@ describe('HTTP collection codes keep the contract with the backend', () => {
     const { codes } = setup({ body: { code: { id: CODE } } })
     await expect(
       codes.requestCode(M, {
-        clientRequestId: REQUEST_ID,
+        clientOperationId: REQUEST_ID,
         settlementDestinationId: 'd',
         displayLabel: 'L',
       }),

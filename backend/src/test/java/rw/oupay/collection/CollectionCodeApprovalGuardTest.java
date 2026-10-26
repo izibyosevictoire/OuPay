@@ -15,13 +15,13 @@ import rw.oupay.common.ApiException;
  */
 class CollectionCodeApprovalGuardTest {
 
-    private static CollectionCodeApprovalService service(MockEnvironment environment, boolean enabled) {
-        return new CollectionCodeApprovalService(null, null, null, null, null, Clock.systemUTC(), environment, enabled);
+    private static CollectionCodeApprovalService service(boolean enabled) {
+        return new CollectionCodeApprovalService(null, null, null, null, null, Clock.systemUTC(), enabled);
     }
 
     @Test
     void approvalAndResumeAreUnavailableByDefault() {
-        CollectionCodeApprovalService service = service(new MockEnvironment(), false);
+        CollectionCodeApprovalService service = service(false);
         var evidence = new CollectionCodeApprovalService.Evidence(ApprovalSource.OPERATOR, "EV-1", UUID.randomUUID(), UUID.randomUUID());
         assertThatThrownBy(() -> service.approve(UUID.randomUUID(), UUID.randomUUID(), "TILL-1", evidence))
                 .isInstanceOfSatisfying(ApiException.class, e -> assertThat(e.code()).isEqualTo("not_implemented"));
@@ -33,13 +33,24 @@ class CollectionCodeApprovalGuardTest {
     }
 
     @Test
-    void theApplicationRefusesToStartWithApprovalEnabledInProduction() {
-        MockEnvironment production = new MockEnvironment();
-        production.setActiveProfiles("prod");
-        assertThatThrownBy(() -> service(production, true)).isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("oupay.collection-codes.approval-enabled");
-        // Disabled in production is the normal, safe configuration; enabled outside production is for tests.
-        service(production, false);
-        service(new MockEnvironment(), true);
+    void approvalCanOnlyBeEnabledUnderTheTestProfile() {
+        for (String profile : new String[] {"prod", "staging", "dev", "production", "default"}) {
+            MockEnvironment environment = new MockEnvironment();
+            environment.setActiveProfiles(profile);
+            assertThatThrownBy(() -> new CollectionCodeApprovalStartupGuard(environment, true)).as(profile).isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("oupay.collection-codes.approval-enabled");
+            new CollectionCodeApprovalStartupGuard(environment, false);
+        }
+        // No profile at all (a bare deployment) is refused too.
+        assertThatThrownBy(() -> new CollectionCodeApprovalStartupGuard(new MockEnvironment(), true)).isInstanceOf(IllegalStateException.class);
+        // The test profile is the only way in, and listing prod next to it does not open the door.
+        MockEnvironment tests = new MockEnvironment();
+        tests.setActiveProfiles("test");
+        new CollectionCodeApprovalStartupGuard(tests, true);
+        MockEnvironment both = new MockEnvironment();
+        both.setActiveProfiles("prod", "test");
+        assertThatThrownBy(() -> new CollectionCodeApprovalStartupGuard(both, true)).isInstanceOf(IllegalStateException.class);
+        new CollectionCodeApprovalStartupGuard(both, false);
+        new CollectionCodeApprovalStartupGuard(new MockEnvironment(), false);
     }
 }

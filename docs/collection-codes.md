@@ -90,7 +90,7 @@ No merchant-facing endpoint sets `ACTIVE`, records a bank-issued code, or marks 
 `CollectionCodeApprovalService` is the only place a code becomes bank-approved, and **it is off**:
 
 * It refuses `approve` and `resume` (`501 not_implemented`) unless `oupay.collection-codes.approval-enabled=true`. The default is `false`, and the
-  application **refuses to start** with it `true` under the `prod` profile. Only the integration tests switch it on.
+  application **refuses to start** with it `true` under **any profile other than `test`** (an allow-list, so production, staging, dev and a bare deployment are all refused). Only the integration tests switch it on.
 * **Why:** OuPay has no operator authentication and cannot yet verify a bank event. Two different user ids are not two independent decisions, and
   a caller naming `BANK_EVENT` is not proof the bank said anything. Approval stays unavailable for production until the real Equity integration (R6e)
   verifies authenticated bank evidence, or a separately reviewed operator process authenticates its operators and records their independent
@@ -119,7 +119,7 @@ No merchant-facing endpoint sets `ACTIVE`, records a bank-issued code, or marks 
 | --- | --- | --- |
 | `GET /options` | `collection_codes:view` | Settlement accounts (masked), branches, assignable members. |
 | `GET ""?limit&cursor&status&branchId&q` | view | Keyset page, newest first. |
-| `POST ""` | `manage` | `clientRequestId` (durable, idempotent), settlement account, label, optional branch. `201`, or `200 replayed:true`; authorisation is rechecked on a replay. |
+| `POST ""` | `manage` | `clientOperationId` (durable, idempotent), settlement account, label, optional branch. `201`, or `200 replayed:true`; authorisation is rechecked on a replay. |
 | `GET /{id}`, `GET /{id}/assignments` | view | Detail; full history (keyset, newest first). |
 | `POST /{id}/assignments`, `/assignments/end`, `/reassign` | `assign` | Managers only for codes of branches they are assigned to; branchless codes are the owner's. |
 | `POST /{id}/submission` | `manage` | Declares a request to the bank (`REQUEST_DECLARED`). |

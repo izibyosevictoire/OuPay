@@ -66,7 +66,7 @@ class CollectionCodeIT extends IntegrationTest {
 
     private Map<String, Object> request(String label, UUID branchId) {
         Map<String, Object> body = new HashMap<>();
-        body.put("clientRequestId", UUID.randomUUID().toString());
+        body.put("clientOperationId", UUID.randomUUID().toString());
         body.put("settlementDestinationId", destination.toString());
         body.put("displayLabel", label);
         if (branchId != null) {
@@ -543,7 +543,7 @@ class CollectionCodeIT extends IntegrationTest {
         // ... or to a code of another merchant.
         Bank.link(mvc, w.cafeOwner, w.cafeMerchantId);
         UUID cafeDestination = jdbc.queryForObject("select id from payment_destinations where merchant_id = ?", UUID.class, w.cafeMerchantId);
-        var cafeCode = w.cafeOwner.post(base(w.cafeMerchantId), Map.of("clientRequestId", UUID.randomUUID().toString(),
+        var cafeCode = w.cafeOwner.post(base(w.cafeMerchantId), Map.of("clientOperationId", UUID.randomUUID().toString(),
                 "settlementDestinationId", cafeDestination.toString(), "displayLabel", "Cafe till")).json().path("code");
         w.cafeOwner.post(base(w.cafeMerchantId) + "/" + id(cafeCode) + "/submission", Map.of("expectedVersion", 0, "bankRequestRef", "EQ-CAFE"));
         assertCode("external_code_taken", () -> approvals.approve(w.cafeMerchantId, uuid(id(cafeCode)), "TILL-5005", new CollectionCodeApprovalService.Evidence(
@@ -622,7 +622,7 @@ class CollectionCodeIT extends IntegrationTest {
         // Through its own URL the shop's code, destination and staff simply do not exist.
         Bank.link(mvc, w.cafeOwner, w.cafeMerchantId);
         UUID cafeDestination = jdbc.queryForObject("select id from payment_destinations where merchant_id = ?", UUID.class, w.cafeMerchantId);
-        var cafeCode = w.cafeOwner.post(base(w.cafeMerchantId), Map.of("clientRequestId", UUID.randomUUID().toString(),
+        var cafeCode = w.cafeOwner.post(base(w.cafeMerchantId), Map.of("clientOperationId", UUID.randomUUID().toString(),
                 "settlementDestinationId", cafeDestination.toString(), "displayLabel", "Cafe till")).json().path("code");
         assertThat(w.cafeOwner.get(base(w.cafeMerchantId) + "/" + id(code)).status()).isEqualTo(404);
         var staffOfAnother = w.cafeOwner.post(base(w.cafeMerchantId) + "/" + id(cafeCode) + "/assignments",
@@ -798,6 +798,8 @@ class CollectionCodeIT extends IntegrationTest {
 
     @Test
     void anAgentSeesOnlyTheirOwnCodeAndNeverAPendingOne() {
+        // A real (non-simulated) account, so the message describes the code's status rather than the simulation.
+        jdbc.update("update payment_destinations set is_simulated = false where merchant_id = ?", w.merchantId);
         JsonNode mine = pending("My stall", w.branchId);
         JsonNode theirs = requested("Their stall", w.branchId);
         ok(assign(w.owner, mine, cashierMembership), 201);
@@ -825,23 +827,33 @@ class CollectionCodeIT extends IntegrationTest {
         ok(w.owner.post(base() + "/" + id(created.get(0)) + "/submission", Map.of("expectedVersion", 0, "bankRequestRef", "R1")), 200);
         var first = w.owner.get(base() + "?limit=2").json();
         assertThat(first.path("items").size()).isEqualTo(2);
-        assertThat(first.path("items").get(0).path("displayLabel").asString()).isEqualTo("Counter 5");
         List<String> seen = new ArrayList<>();
-        first.path("items").forEach(c -> seen.add(id(c)));
+        List<java.time.Instant> times = new ArrayList<>();
+        first.path("items").forEach(c -> {
+            seen.add(id(c));
+            times.add(java.time.Instant.parse(c.path("createdAt").asString()));
+        });
         String cursor = first.path("nextCursor").asString();
         while (!cursor.isEmpty()) {
             var next = w.owner.get(base() + "?limit=2&cursor=" + cursor).json();
-            next.path("items").forEach(c -> seen.add(id(c)));
+            next.path("items").forEach(c -> {
+                seen.add(id(c));
+                times.add(java.time.Instant.parse(c.path("createdAt").asString()));
+            });
             cursor = isAbsent(next.path("nextCursor")) ? "" : next.path("nextCursor").asString();
         }
         assertThat(seen).hasSize(5).doesNotHaveDuplicates();
+        // Rows created in one clock tick are ordered by id, so what must hold is that creation times never increase down the list.
+        for (int i = 1; i < times.size(); i++) {
+            assertThat(times.get(i).isAfter(times.get(i - 1))).isFalse();
+        }
         assertThat(w.owner.get(base() + "?status=REQUEST_DECLARED").json().path("items").size()).isEqualTo(1);
         assertThat(w.owner.get(base() + "?status=REQUESTED").json().path("items").size()).isEqualTo(4);
         assertThat(w.owner.get(base() + "?branchId=" + secondBranchId).json().path("items").size()).isEqualTo(2);
         assertThat(w.owner.get(base() + "?q=counter 3").json().path("items").size()).isEqualTo(1);
         String ref = created.get(2).path("internalRef").asString();
         assertThat(w.owner.get(base() + "?q=" + ref.toLowerCase()).json().path("items").size()).isEqualTo(1);
-        assertThat(w.owner.get(base() + "?q=%25").json().path("items").size()).isZero();
+        assertThat(w.owner.get(base() + "?q=%").json().path("items").size()).isZero();
         assertThat(w.owner.get(base() + "?cursor=garbage").status()).isEqualTo(400);
         assertThat(w.owner.get(base() + "?status=BOGUS").status()).isEqualTo(400);
         assertThat(w.owner.get(base() + "/" + UUID.randomUUID()).status()).isEqualTo(404);
@@ -867,6 +879,16 @@ class CollectionCodeIT extends IntegrationTest {
             cursor = isAbsent(next.path("nextCursor")) ? "" : next.path("nextCursor").asString();
         }
         assertThat(seen).hasSize(5).doesNotHaveDuplicates();
+        // Period boundaries: every period starts strictly after the one before it started, and exactly when that one ended (no gap, no overlap),
+        // however fast the rotations were made.
+        var all = w.owner.get(base() + "/" + id(code) + "/assignments?limit=10").json().path("items");
+        assertThat(all.size()).isEqualTo(5);
+        for (int i = 0; i < all.size() - 1; i++) {
+            var newer = all.get(i);
+            var older = all.get(i + 1);
+            assertThat(java.time.Instant.parse(newer.path("validFrom").asString())).isAfter(java.time.Instant.parse(older.path("validFrom").asString()));
+            assertThat(older.path("validTo").asString()).isEqualTo(newer.path("validFrom").asString());
+        }
     }
 
     @Test

@@ -551,8 +551,8 @@ export function createMockCollectionCodeService(
       run(() => {
         const actor = authorize(merchantId, 'collection_codes:manage')
         if (
-          typeof input.clientRequestId !== 'string' ||
-          !UUID_PATTERN.test(input.clientRequestId)
+          typeof input.clientOperationId !== 'string' ||
+          !UUID_PATTERN.test(input.clientOperationId)
         ) {
           throw invalid('The request identifier is not valid.')
         }
@@ -564,7 +564,7 @@ export function createMockCollectionCodeService(
           input.branchId ?? '',
         ])
         const existing = codes().find(
-          (c) => c.merchantId === merchantId && c.clientRequestId === input.clientRequestId,
+          (c) => c.merchantId === merchantId && c.clientOperationId === input.clientOperationId,
         )
         if (existing) {
           if (existing.fingerprint !== fingerprint) {
@@ -612,7 +612,7 @@ export function createMockCollectionCodeService(
           bankRequestRef: null,
           externalCode: null,
           approval: null,
-          clientRequestId: input.clientRequestId,
+          clientOperationId: input.clientOperationId,
           fingerprint,
           createdByUserId: actor.user.id,
           createdAt: now,

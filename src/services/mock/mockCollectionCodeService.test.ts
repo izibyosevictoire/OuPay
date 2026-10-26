@@ -41,7 +41,7 @@ async function codeOf(promise: Promise<unknown>): Promise<CollectionCodeServiceE
 
 const request = (s: Setup, over: Partial<Parameters<Setup['codes']['requestCode']>[1]> = {}) =>
   s.codes.requestCode(M, {
-    clientRequestId: requestId(),
+    clientOperationId: requestId(),
     settlementDestinationId: 'dst-sample-001',
     displayLabel: 'New counter',
     ...over,
@@ -189,17 +189,17 @@ describe('the code registry: requesting', () => {
   it('is idempotent by request id, and a different request under the same id is a conflict', async () => {
     const s = setup()
     const id = requestId()
-    const first = await request(s, { clientRequestId: id })
-    const again = await request(s, { clientRequestId: id })
+    const first = await request(s, { clientOperationId: id })
+    const again = await request(s, { clientOperationId: id })
     expect(again.replayed).toBe(true)
     expect(again.code.id).toBe(first.code.id)
     expect(
       (await s.codes.listCodes(M)).items.filter((c) => c.displayLabel === 'New counter'),
     ).toHaveLength(1)
-    expect(await codeOf(request(s, { clientRequestId: id, displayLabel: 'Something else' }))).toBe(
+    expect(await codeOf(request(s, { clientOperationId: id, displayLabel: 'Something else' }))).toBe(
       'client_request_id_reuse',
     )
-    expect(await codeOf(request(s, { clientRequestId: 'not-a-uuid' }))).toBe('validation')
+    expect(await codeOf(request(s, { clientOperationId: 'not-a-uuid' }))).toBe('validation')
   })
 
   it('validates the label, the settlement account and the branch', async () => {

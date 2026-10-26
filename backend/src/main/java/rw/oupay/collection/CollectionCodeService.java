@@ -195,7 +195,7 @@ public class CollectionCodeService {
     // ---------------------------------------------------------------------------------------------
 
     /**
-     * Registers a request for a code on one of the merchant's settlement accounts. Durable and idempotent by {@code clientRequestId}:
+     * Registers a request for a code on one of the merchant's settlement accounts. Durable and idempotent by {@code clientOperationId}:
      * the same request returns the same code, a different one under the same id is a 409. The code starts {@code REQUESTED}; nothing is
      * sent to the bank.
      */
@@ -227,9 +227,9 @@ public class CollectionCodeService {
 
         // Lock 1: repeats of one request take turns. A repeat finds the committed code.
         jdbc.sql("select pg_advisory_xact_lock(hashtextextended(:key, 0))")
-                .param("key", "collection-code-request:" + merchantId + ":" + request.clientRequestId())
+                .param("key", "collection-code-request:" + merchantId + ":" + request.clientOperationId())
                 .query((rs, row) -> Boolean.TRUE).single();
-        Optional<CollectionCode> existing = codes.findByMerchantIdAndClientRequestId(merchantId, request.clientRequestId());
+        Optional<CollectionCode> existing = codes.findByMerchantIdAndClientRequestId(merchantId, request.clientOperationId());
         if (existing.isPresent()) {
             if (!fingerprint.equals(existing.get().getRequestSha256())) {
                 throw ApiException.conflict("client_request_id_reuse", "This request identifier was already used for a different request.");
@@ -241,7 +241,7 @@ public class CollectionCodeService {
             internalRef = SecureTokens.collectionCodeReference();
         } while (codes.existsByInternalRef(internalRef));
         CollectionCode code = codes.saveAndFlush(new CollectionCode(merchantId, destination.getProviderId(), destination.getId(),
-                destination.isSimulated(), internalRef, label, branchId, request.clientRequestId(), fingerprint, actor.userId(), clock.instant()));
+                destination.isSimulated(), internalRef, label, branchId, request.clientOperationId(), fingerprint, actor.userId(), clock.instant()));
         audit.record(merchantId, actor.userId(), "COLLECTION_CODE_REQUESTED", "collection_code", code.getId(),
                 "Collection code " + code.getInternalRef() + " (\"" + label + "\") requested. Nothing has been sent to the bank.");
         return new Written(toDto(code, lookup(merchantId, List.of(code), true)), true);
@@ -305,7 +305,7 @@ public class CollectionCodeService {
             throw ApiException.conflict("already_assigned", "This code already has an agent. Reassign it instead.");
         }
         CollectionCodeAssignment created = open(merchantId, code, resolveSubject(merchantId, code, request.membershipId(),
-                request.collectionPointLabel(), request.branchId()), actor, clock.instant());
+                request.collectionPointLabel(), request.branchId()), actor, nextStart(merchantId, codeId));
         audit.record(merchantId, actor.userId(), "COLLECTION_CODE_ASSIGNED", "collection_code", code.getId(),
                 "Collection code " + code.getInternalRef() + " assigned to " + created.getAssigneeName() + ".");
         return toDto(created, currentStatuses(List.of(created)));
@@ -339,7 +339,7 @@ public class CollectionCodeService {
         if (same) {
             throw ApiException.conflict("already_assigned", "This code is already assigned to that agent.");
         }
-        Instant now = clock.instant();
+        Instant now = nextStart(merchantId, codeId);
         previous.end(actor.userId(), actor.user().getFullName(), request.reason().trim(), now);
         assignments.saveAndFlush(previous);
         CollectionCodeAssignment created = open(merchantId, code, next, actor, now);
@@ -352,6 +352,23 @@ public class CollectionCodeService {
     // ---------------------------------------------------------------------------------------------
     // Rules
     // ---------------------------------------------------------------------------------------------
+
+    /**
+     * When a new period of a code starts: now, but never before the previous period began (plus one microsecond) or ended. History is ordered by
+     * (valid_from, id) and the id is random, so two periods of ONE code must never start in the same instant; this keeps them strictly ordered
+     * (and never overlapping) even within one clock tick or if the clock steps back. It only ever moves a start by microseconds, and only forward.
+     */
+    private Instant nextStart(UUID merchantId, UUID codeId) {
+        // The database keeps microseconds: compare and store the same value.
+        Instant now = clock.instant().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        return assignments.findFirstByCodeIdAndMerchantIdOrderByValidFromDescIdDesc(codeId, merchantId).map(previous -> {
+            Instant floor = previous.getValidFrom().plus(1, java.time.temporal.ChronoUnit.MICROS);
+            if (previous.getValidTo() != null && previous.getValidTo().isAfter(floor)) {
+                floor = previous.getValidTo();
+            }
+            return now.isBefore(floor) ? floor : now;
+        }).orElse(now);
+    }
 
     private CollectionCodeAssignment open(UUID merchantId, CollectionCode code, CollectionCodeAssignment.Subject subject, Actor actor, Instant now) {
         return assignments.saveAndFlush(new CollectionCodeAssignment(code.getId(), merchantId, subject, actor.userId(), actor.user().getFullName(), now));

@@ -26,7 +26,7 @@ export interface StoredCollectionCode {
   /** SAMPLE DATA ONLY: the connection status of a fictional settlement account that has no connection record. */
   sampleConnectionStatus?: string
   /** The durable identity of the request and what made it (so a repeat is the same request). */
-  clientRequestId: string
+  clientOperationId: string
   fingerprint: string
   createdByUserId: string
   createdAt: string
@@ -81,7 +81,7 @@ const code = (
   bankRequestRef: null,
   externalCode: null,
   approval: null,
-  clientRequestId: uuid(n),
+  clientOperationId: uuid(n),
   fingerprint: `sample-${n}`,
   createdByUserId: DEMO_USER_IDS.owner,
   createdAt: at(10, 9),

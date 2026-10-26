@@ -18,7 +18,7 @@ public final class CollectionCodeDtos {
 
     /** Asks OuPay to register a code request. Nothing is sent to the bank. */
     public record RequestCodeRequest(
-            @NotNull UUID clientRequestId,
+            @NotNull UUID clientOperationId,
             @NotNull UUID settlementDestinationId,
             @NotBlank @Size(max = 60) String displayLabel,
             UUID branchId) {}

@@ -301,12 +301,12 @@ describe('collection codes: requesting and lifecycle', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(/will not be created twice/)
     await user.click(within(dialog).getByRole('button', { name: 'Record request' }))
     await waitFor(() => expect(create).toHaveBeenCalledTimes(2))
-    const [first, second] = create.mock.calls.map((call) => call[1].clientRequestId)
+    const [first, second] = create.mock.calls.map((call) => call[1].clientOperationId)
     expect(first).toBe(second)
     await user.type(within(dialog).getByLabelText(/^Label/), ' 2')
     await user.click(within(dialog).getByRole('button', { name: 'Record request' }))
     await waitFor(() => expect(create).toHaveBeenCalledTimes(3))
-    expect(create.mock.calls[2]![1].clientRequestId).not.toBe(first)
+    expect(create.mock.calls[2]![1].clientOperationId).not.toBe(first)
   })
 
   it('records the owner’s declared bank request, which Equity has not confirmed', async () => {

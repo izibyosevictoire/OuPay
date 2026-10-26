@@ -726,17 +726,32 @@ class InventoryIT extends IntegrationTest {
 
         var first = w.owner.get(base() + "/movements?limit=3").json();
         assertThat(first.path("items").size()).isEqualTo(3);
-        assertThat(first.path("items").get(0).path("itemName").asString()).isEqualTo("Soda");
         String cursor = first.path("nextCursor").asString();
         assertThat(cursor).isNotEmpty();
         List<String> seen = new ArrayList<>();
-        first.path("items").forEach(m -> seen.add(m.path("id").asString()));
+        List<java.time.Instant> times = new ArrayList<>();
+        first.path("items").forEach(m -> {
+            seen.add(m.path("id").asString());
+            times.add(java.time.Instant.parse(m.path("createdAt").asString()));
+        });
         while (!cursor.isEmpty()) {
             var next = w.owner.get(base() + "/movements?limit=3&cursor=" + cursor).json();
-            next.path("items").forEach(m -> seen.add(m.path("id").asString()));
+            next.path("items").forEach(m -> {
+                seen.add(m.path("id").asString());
+                times.add(java.time.Instant.parse(m.path("createdAt").asString()));
+            });
             cursor = isAbsent(next.path("nextCursor")) ? "" : next.path("nextCursor").asString();
         }
         assertThat(seen).hasSize(7).doesNotHaveDuplicates();
+        // Across different balances rows created in one clock tick are ordered by id, so creation times just never increase down the list.
+        for (int i = 1; i < times.size(); i++) {
+            assertThat(times.get(i).isAfter(times.get(i - 1))).isFalse();
+        }
+        // Within ONE balance the order is exactly the order the balance changed in, whatever the clock does: the running balance reads 19, 20, 16, 13, 11, 10.
+        var chain = w.owner.get(base() + "/movements?itemId=" + rice.path("id").asString() + "&branchId=" + w.branchId).json().path("items");
+        List<String> running = new ArrayList<>();
+        chain.forEach(m -> running.add(m.path("balanceAfter").asString()));
+        assertThat(running).containsExactly("19000", "20000", "16000", "13000", "11000", "10000");
 
         assertThat(w.owner.get(base() + "/movements?type=ADJUST_OUT").json().path("items").size()).isEqualTo(1);
         assertThat(w.owner.get(base() + "/movements?type=RECEIVE").json().path("items").size()).isEqualTo(5);

@@ -142,23 +142,30 @@ class CatalogIT extends IntegrationTest {
 
     @Test
     void listsWithPaginationNewestFirst() {
-        List<String> names = new ArrayList<>();
         for (int i = 1; i <= 5; i++) {
-            names.add(created(w.owner, goods("Item " + i, null, "COUNT", "pc", 100 * i)).path("name").asString());
+            created(w.owner, goods("Item " + i, null, "COUNT", "pc", 100 * i));
         }
-        var first = w.owner.get(base() + "/items?limit=2").json();
-        assertThat(first.path("items").size()).isEqualTo(2);
-        assertThat(first.path("items").get(0).path("name").asString()).isEqualTo("Item 5");
-        assertThat(first.path("items").get(1).path("name").asString()).isEqualTo("Item 4");
-        String cursor = first.path("nextCursor").asString();
-        assertThat(cursor).isNotEmpty();
-
-        var second = w.owner.get(base() + "/items?limit=2&cursor=" + cursor).json();
-        assertThat(second.path("items").get(0).path("name").asString()).isEqualTo("Item 3");
-        var third = w.owner.get(base() + "/items?limit=2&cursor=" + second.path("nextCursor").asString()).json();
-        assertThat(third.path("items").size()).isEqualTo(1);
-        assertThat(third.path("items").get(0).path("name").asString()).isEqualTo("Item 1");
-        assertThat(isAbsent(third.path("nextCursor"))).isTrue();
+        // Items created in quick succession may share a creation instant; the order is then fixed by the id, so a page boundary is still exact.
+        // What must hold, whatever the clock: every item appears exactly once, and creation times never increase from one row to the next.
+        List<String> ids = new ArrayList<>();
+        List<java.time.Instant> times = new ArrayList<>();
+        String cursor = null;
+        int pages = 0;
+        do {
+            var page = w.owner.get(base() + "/items?limit=2" + (cursor == null ? "" : "&cursor=" + cursor)).json();
+            assertThat(page.path("items").size()).isLessThanOrEqualTo(2);
+            for (JsonNode item : page.path("items")) {
+                ids.add(item.path("id").asString());
+                times.add(java.time.Instant.parse(item.path("createdAt").asString()));
+            }
+            cursor = isAbsent(page.path("nextCursor")) ? null : page.path("nextCursor").asString();
+            pages++;
+        } while (cursor != null && pages < 10);
+        assertThat(pages).isEqualTo(3);
+        assertThat(ids).hasSize(5).doesNotHaveDuplicates();
+        for (int i = 1; i < times.size(); i++) {
+            assertThat(times.get(i).isAfter(times.get(i - 1))).as("creation times never increase down the list").isFalse();
+        }
         assertThat(w.owner.get(base() + "/items?cursor=not-a-cursor").status()).isEqualTo(400);
     }
 
@@ -188,8 +195,8 @@ class CatalogIT extends IntegrationTest {
         created(w.owner, goods("100% cotton", null, "LENGTH", "m", 3_000));
         created(w.owner, goods("Plain cotton", null, "LENGTH", "m", 2_000));
         created(w.owner, goods("Under_score", null, "COUNT", "pc", 10));
-        assertThat(names(w.owner.get(base() + "/items?q=100%25"))).containsExactly("100% cotton");
-        assertThat(names(w.owner.get(base() + "/items?q=%25"))).containsExactly("100% cotton");
+        assertThat(names(w.owner.get(base() + "/items?q=100%"))).containsExactly("100% cotton");
+        assertThat(names(w.owner.get(base() + "/items?q=%"))).containsExactly("100% cotton");
         assertThat(names(w.owner.get(base() + "/items?q=_"))).containsExactly("Under_score");
         assertThat(w.owner.get(base() + "/items?q=" + "x".repeat(101)).status()).isEqualTo(422);
     }
@@ -588,11 +595,13 @@ class CatalogIT extends IntegrationTest {
         assertThat(w.owner.get(invoiceUrl).body()).isEqualTo(before);
         assertThat(jdbc.queryForObject("select count(*) from invoices", Long.class)).isEqualTo(invoicesBefore);
         assertThat(jdbc.queryForObject("select count(*) from invoice_items", Long.class)).isEqualTo(itemsBefore);
-        // No invoice, payment or ledger table references the catalog.
+        // No invoice, payment or ledger table references the catalog. The only table outside it that does is stock (R5c), which is not
+        // financial: its balances point at goods, and the catalog never points back.
         assertThat(jdbc.queryForList("select tc.table_name from information_schema.table_constraints tc "
                 + "join information_schema.constraint_column_usage ccu on ccu.constraint_name = tc.constraint_name "
                 + "where tc.constraint_type = 'FOREIGN KEY' and ccu.table_name like 'catalog\\_%' and tc.table_name not like 'catalog\\_%'",
-                String.class)).isEmpty();
+                String.class)).containsOnly("inventory_balances")
+                .doesNotContain("invoices", "invoice_items", "payment_requests", "payment_profiles", "bank_transactions", "payment_allocations");
     }
 
     // --- activation -------------------------------------------------------------------------------------

@@ -190,7 +190,7 @@ CREATE INDEX ix_collection_code_assignments_member ON collection_code_assignment
 
 CREATE FUNCTION guard_collection_code_assignment() RETURNS trigger AS $$
 DECLARE
-    code_status varchar(12);
+    code_status varchar(20);
 BEGIN
     IF TG_OP = 'DELETE' THEN
         RAISE EXCEPTION 'collection code assignment history is never deleted';

@@ -5,8 +5,6 @@ import java.time.Instant;
 import java.util.Locale;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.env.Environment;
-import org.springframework.core.env.Profiles;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,7 +20,7 @@ import rw.oupay.user.UserRepository;
  * <p><b>Unavailable until real evidence can be verified.</b> OuPay has no operator authentication and no way to verify a bank
  * event yet, so this service refuses {@link #approve} and {@link #resume} unless
  * {@code oupay.collection-codes.approval-enabled=true}, which is {@code false} by default, and the application <b>refuses to start</b>
- * with it enabled under the {@code prod} profile. Two different user ids are not proof of two independent decisions, and a caller
+ * with it enabled under ANY profile other than {@code test} (see {@link CollectionCodeApprovalStartupGuard}; production, staging, dev and a bare deployment are all refused). Two different user ids are not proof of two independent decisions, and a caller
  * naming {@link ApprovalSource#BANK_EVENT} is not proof that the bank said anything. Until the real Equity integration (R6e) verifies
  * authenticated bank evidence, or a separately reviewed operator process authenticates its operators and records their independent
  * decisions, approval stays unavailable for production use. It exists, switched off, so the model and its tests are complete; the
@@ -56,12 +54,8 @@ public class CollectionCodeApprovalService {
     private final boolean approvalEnabled;
 
     public CollectionCodeApprovalService(CollectionCodeRepository codes, CollectionCodeAssignmentRepository assignments, UserRepository users,
-                                         MembershipRepository memberships, AuditService audit, Clock clock, Environment environment,
+                                         MembershipRepository memberships, AuditService audit, Clock clock,
                                          @Value("${oupay.collection-codes.approval-enabled:false}") boolean approvalEnabled) {
-        if (approvalEnabled && environment.acceptsProfiles(Profiles.of("prod"))) {
-            throw new IllegalStateException("Unsafe configuration, refusing to start: oupay.collection-codes.approval-enabled must not be true in "
-                    + "production until bank evidence is verified by a real integration or an authenticated operator process exists");
-        }
         this.codes = codes;
         this.assignments = assignments;
         this.users = users;
