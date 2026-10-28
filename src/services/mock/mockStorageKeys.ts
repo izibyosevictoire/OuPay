@@ -25,6 +25,7 @@ export const MOCK_STORAGE_KEYS = {
   catalogPrices: 'oupay.mock.catalogPrices',
   inventoryBalances: 'oupay.mock.inventoryBalances',
   inventoryMovements: 'oupay.mock.inventoryMovements',
+  posDrafts: 'oupay.mock.posDrafts',
   collectionCodes: 'oupay.mock.collectionCodes',
   collectionCodeAssignments: 'oupay.mock.collectionCodeAssignments',
   demoSession: 'oupay.mock.demoSession',

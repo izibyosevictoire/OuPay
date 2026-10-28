@@ -10,6 +10,7 @@ import type { KycService } from './kycService'
 import type { DashboardService } from './dashboardService'
 import type { CollectionCodeService } from './collectionCodeService'
 import type { InventoryService } from './inventoryService'
+import type { PosService } from './posService'
 import type { ReportsService } from './reportsService'
 import { API_BASE_URL, API_MODE, SESSION_LOST_EVENT } from './http/apiConfig'
 import { createHttpClient } from './http/httpClient'
@@ -25,6 +26,7 @@ import {
   createHttpDashboardService,
   createHttpCollectionCodeService,
   createHttpInventoryService,
+  createHttpPosService,
   createHttpReportsService,
   createHttpInvoiceService,
   createHttpMerchantService,
@@ -50,6 +52,7 @@ import { createMockDashboardService } from './mock/mockDashboardService'
 import { createMockInvoiceService } from './mock/mockInvoiceService'
 import { createMockCollectionCodeService } from './mock/mockCollectionCodeService'
 import { createMockInventoryService } from './mock/mockInventoryService'
+import { createMockPosService } from './mock/mockPosService'
 import { createMockMerchantService } from './mock/mockMerchantService'
 import { createMockNotificationService } from './mock/mockNotificationService'
 import { createMockPaymentProfileService } from './mock/mockPaymentProfileService'
@@ -87,6 +90,7 @@ interface Services {
   kycService: KycService
   catalogService: CatalogService
   inventoryService: InventoryService
+  posService: PosService
   collectionCodeService: CollectionCodeService
   reconciliationService: ReconciliationService
   notificationService: NotificationService
@@ -120,6 +124,7 @@ function createMockServices(): Services {
     kycService: createMockKycService({ authStore: mockAuthStore }),
     catalogService: createMockCatalogService({ authStore: mockAuthStore }),
     inventoryService: createMockInventoryService({ authStore: mockAuthStore }),
+    posService: createMockPosService({ authStore: mockAuthStore }),
     collectionCodeService: createMockCollectionCodeService({ authStore: mockAuthStore }),
     reconciliationService: createMockReconciliationService(shared),
     notificationService: createMockNotificationService(shared),
@@ -153,6 +158,7 @@ function createHttpServices(): Services {
     kycService: createHttpKycService(http),
     catalogService: createHttpCatalogService(http),
     inventoryService: createHttpInventoryService(http),
+    posService: createHttpPosService(http),
     collectionCodeService: createHttpCollectionCodeService(http),
     reconciliationService: createHttpReconciliationService(http),
     notificationService: createHttpNotificationService(http),
@@ -180,6 +186,7 @@ export const {
   publicCodeSaleService,
   catalogService,
   inventoryService,
+  posService,
   collectionCodeService,
   kycService,
   reconciliationService,

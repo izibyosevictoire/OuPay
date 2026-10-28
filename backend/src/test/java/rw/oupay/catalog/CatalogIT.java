@@ -595,12 +595,12 @@ class CatalogIT extends IntegrationTest {
         assertThat(w.owner.get(invoiceUrl).body()).isEqualTo(before);
         assertThat(jdbc.queryForObject("select count(*) from invoices", Long.class)).isEqualTo(invoicesBefore);
         assertThat(jdbc.queryForObject("select count(*) from invoice_items", Long.class)).isEqualTo(itemsBefore);
-        // No invoice, payment or ledger table references the catalog. The only table outside it that does is stock (R5c), which is not
-        // financial: its balances point at goods, and the catalog never points back.
+        // No invoice, payment or ledger table references the catalog. The only tables outside it that do are stock (R5c) and POS drafts
+        // (R7a), which are not financial: their rows point at goods and price versions, and the catalog never points back.
         assertThat(jdbc.queryForList("select tc.table_name from information_schema.table_constraints tc "
                 + "join information_schema.constraint_column_usage ccu on ccu.constraint_name = tc.constraint_name "
                 + "where tc.constraint_type = 'FOREIGN KEY' and ccu.table_name like 'catalog\\_%' and tc.table_name not like 'catalog\\_%'",
-                String.class)).containsOnly("inventory_balances")
+                String.class)).containsOnly("inventory_balances", "pos_draft_lines")
                 .doesNotContain("invoices", "invoice_items", "payment_requests", "payment_profiles", "bank_transactions", "payment_allocations");
     }
 

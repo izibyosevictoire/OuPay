@@ -31,6 +31,16 @@ import {
   type CheckoutServiceErrorCode,
 } from '@/services/checkoutService'
 import type { DashboardService } from '@/services/dashboardService'
+import { PosServiceError, type PosService, type PosServiceErrorCode } from '@/services/posService'
+import type {
+  PosCatalogItem,
+  PosDraft,
+  PosDraftPage,
+  PosOptions,
+  PosPricedLine,
+  PosProblem,
+  PosQuote,
+} from '@/types/pos'
 import { KycServiceError, type KycService, type KycServiceErrorCode } from '@/services/kycService'
 import {
   InventoryServiceError,
@@ -175,6 +185,23 @@ const CHECKOUT_CODES: CheckoutServiceErrorCode[] = [
   'service_unavailable',
 ]
 
+const POS_CODES: PosServiceErrorCode[] = [
+  'unauthenticated',
+  'not_found',
+  'forbidden',
+  'validation',
+  'pos_unavailable',
+  'no_eligible_branch',
+  'branch_not_eligible',
+  'invalid_cart',
+  'version_conflict',
+  'draft_not_open',
+  'client_request_id_reuse',
+  'idempotency_key_reuse',
+  'request_in_progress',
+  'service_unavailable',
+]
+
 const CATALOG_CODES: CatalogServiceErrorCode[] = [
   'unauthenticated',
   'not_found',
@@ -257,6 +284,8 @@ const codeCheckoutError = (error: unknown) =>
     (code, message) => new CodeCheckoutServiceError(code, message),
     CODE_CHECKOUT_CODES,
   )
+const posError = (error: unknown) =>
+  mapHttpError(error, (code, message) => new PosServiceError(code, message), POS_CODES)
 const checkoutError = (error: unknown) =>
   mapHttpError(error, (code, message) => new CheckoutServiceError(code, message), CHECKOUT_CODES)
 /** The server omits null fields from its JSON, so a missing field means null. Normalised once, here. */
@@ -744,6 +773,140 @@ export function createHttpCheckoutService(http: HttpClient): CheckoutService {
           },
         }),
       checkoutError,
+    ),
+  }
+}
+
+/** The server omits null fields, so a missing field means null. Normalised once, here. */
+type RawPosLine = Omit<
+  PosPricedLine,
+  'code' | 'enteredUnit' | 'packageId' | 'packageLabel' | 'stock'
+> & {
+  code?: string | null
+  enteredUnit?: PosPricedLine['enteredUnit']
+  packageId?: string | null
+  packageLabel?: string | null
+  stock?:
+    | (Omit<NonNullable<PosPricedLine['stock']>, 'onHand' | 'requested'> & {
+        onHand?: string | null
+        requested?: string | null
+      })
+    | null
+}
+type RawPosProblem = Omit<PosProblem, 'currentPriceVersion' | 'currentPriceRwf'> & {
+  currentPriceVersion?: number | null
+  currentPriceRwf?: number | null
+}
+type RawPosItem = Omit<PosCatalogItem, 'code' | 'packages' | 'stock'> & {
+  code?: string | null
+  packages?: PosCatalogItem['packages']
+  stock: Omit<PosCatalogItem['stock'], 'onHand' | 'onHandInSaleUnit'> & {
+    onHand?: string | null
+    onHandInSaleUnit?: string | null
+  }
+}
+type RawPosDraft = Omit<PosDraft, 'note' | 'lines'> & { note?: string | null; lines: RawPosLine[] }
+type RawPosQuote = Omit<PosQuote, 'lines' | 'problems'> & {
+  lines?: RawPosLine[]
+  problems?: RawPosProblem[]
+}
+
+const posLineOf = (raw: RawPosLine): PosPricedLine => ({
+  ...raw,
+  code: raw.code ?? null,
+  enteredUnit: raw.enteredUnit ?? null,
+  packageId: raw.packageId ?? null,
+  packageLabel: raw.packageLabel ?? null,
+  stock: raw.stock
+    ? { ...raw.stock, onHand: raw.stock.onHand ?? null, requested: raw.stock.requested ?? null }
+    : null,
+})
+const posDraftOf = (raw: RawPosDraft): PosDraft => ({
+  ...raw,
+  note: raw.note ?? null,
+  lines: raw.lines.map(posLineOf),
+})
+
+/**
+ * The business POS. The draft's permanent identifier travels in the body and the retry key in the Idempotency-Key header. A line
+ * carries its quantity as a decimal STRING and never a price: the server prices from the catalog.
+ */
+export function createHttpPosService(http: HttpClient): PosService {
+  const base = (merchantId: string) => `${m(merchantId)}/pos`
+  return {
+    getPosOptions: translating(
+      (id) =>
+        http
+          .get<PosOptions>(`${base(id)}/options`)
+          .then((o) => ({ ...o, branches: o.branches ?? [] })),
+      posError,
+    ),
+    searchPosItems: translating(async (id, branchId, query) => {
+      const raw = await http.get<RawPosItem[]>(`${base(id)}/items`, {
+        query: { branchId, q: query?.trim() || undefined, limit: 50 },
+      })
+      return raw.map((item): PosCatalogItem => ({
+        ...item,
+        code: item.code ?? null,
+        packages: item.packages ?? [],
+        stock: {
+          ...item.stock,
+          onHand: item.stock.onHand ?? null,
+          onHandInSaleUnit: item.stock.onHandInSaleUnit ?? null,
+        },
+      }))
+    }, posError),
+    quotePosCart: translating(async (id, input) => {
+      const raw = await http.post<RawPosQuote>(`${base(id)}/quote`, { body: input })
+      return {
+        ...raw,
+        lines: (raw.lines ?? []).map(posLineOf),
+        problems: (raw.problems ?? []).map((p) => ({
+          ...p,
+          currentPriceVersion: p.currentPriceVersion ?? null,
+          currentPriceRwf: p.currentPriceRwf ?? null,
+        })),
+      }
+    }, posError),
+    createPosDraft: translating(
+      async (id, input) =>
+        posDraftOf(
+          await http.post<RawPosDraft>(`${base(id)}/drafts`, {
+            headers: { 'Idempotency-Key': input.idempotencyKey },
+            body: {
+              clientRequestId: input.clientRequestId,
+              branchId: input.branchId,
+              note: input.note,
+              lines: input.lines,
+            },
+          }),
+        ),
+      posError,
+    ),
+    listPosDrafts: translating(async (id, cursor) => {
+      const page = await http.get<Partial<PosDraftPage>>(`${base(id)}/drafts`, {
+        query: { limit: 20, cursor },
+      })
+      return { items: page.items ?? [], nextCursor: page.nextCursor ?? null }
+    }, posError),
+    getPosDraft: translating(
+      async (id, draftId) =>
+        posDraftOf(await http.get<RawPosDraft>(`${base(id)}/drafts/${draftId}`)),
+      posError,
+    ),
+    updatePosDraft: translating(
+      async (id, draftId, input) =>
+        posDraftOf(await http.put<RawPosDraft>(`${base(id)}/drafts/${draftId}`, { body: input })),
+      posError,
+    ),
+    discardPosDraft: translating(
+      async (id, draftId, expectedVersion) =>
+        posDraftOf(
+          await http.delete<RawPosDraft>(`${base(id)}/drafts/${draftId}`, {
+            query: { expectedVersion },
+          }),
+        ),
+      posError,
     ),
   }
 }

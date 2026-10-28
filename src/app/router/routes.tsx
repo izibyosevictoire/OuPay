@@ -14,6 +14,7 @@ import { BankingPage } from '@/features/banking/BankingPage'
 import { BranchDetailsPage } from '@/features/branches/BranchDetailsPage'
 import { BranchesPage } from '@/features/branches/BranchesPage'
 import { CatalogPage } from '@/features/catalog/CatalogPage'
+import { PosPage } from '@/features/pos/PosPage'
 import { CollectionCodesPage } from '@/features/collectionCodes/CollectionCodesPage'
 import { InventoryPage } from '@/features/inventory/InventoryPage'
 import { EquityActivationPage } from '@/features/equityActivation/EquityActivationPage'
@@ -57,6 +58,7 @@ const BUILT_MODULE_PATHS = [
   '/collection-codes',
   '/collect',
   '/code-checkout',
+  '/pos',
   '/equity-activation',
   '/transactions',
   '/payments',
@@ -176,6 +178,8 @@ export const appRoutes: RouteObject[] = [
                   { path: '/collect', element: <SimplifiedCheckoutPage /> },
                   // The page itself explains when the person holds no code, or the code cannot bill.
                   { path: '/code-checkout', element: <CodeCheckoutPage /> },
+                  // The page itself explains when the business is not in business mode, or the person has no branch.
+                  { path: '/pos', element: <PosPage /> },
                 ],
               },
               {

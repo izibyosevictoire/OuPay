@@ -36,4 +36,10 @@ public interface CatalogItemRepository extends JpaRepository<CatalogItem, UUID> 
             + " order by i.createdAt desc, i.id desc")
     List<CatalogItem> page(UUID merchantId, Instant at, UUID id, boolean anyType, CatalogItemType type, boolean anyActive,
                            boolean active, boolean anyText, String pattern, Pageable pageable);
+
+    /** The ACTIVE items a point of sale can sell, by name: the search is a lower-case LIKE pattern the caller has escaped with '!'. */
+    @Query("select i from CatalogItem i where i.merchantId = :merchantId and i.active = true"
+            + " and (:anyText = true or lower(i.name) like :pattern escape '!' or lower(coalesce(i.code, '')) like :pattern escape '!')"
+            + " order by lower(i.name) asc, i.id asc")
+    List<CatalogItem> searchActive(UUID merchantId, boolean anyText, String pattern, Pageable pageable);
 }

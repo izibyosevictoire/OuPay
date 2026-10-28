@@ -399,10 +399,10 @@ describe('Collect Payment: navigation', () => {
       permission: 'invoices:create',
       requiresMode: 'SIMPLIFIED',
     })
-    // Only Collect Payment (simplified), Catalog and Inventory (business) are mode-specific; nothing existing was hidden or replaced.
+    // Only Collect Payment (simplified), POS billing, Catalog and Inventory (business) are mode-specific; nothing existing was hidden or replaced.
     expect(
       PRIMARY_NAVIGATION.filter((item) => item.requiresMode).map((item) => item.path),
-    ).toEqual(['/collect', '/catalog', '/inventory'])
+    ).toEqual(['/collect', '/pos', '/catalog', '/inventory'])
     for (const path of [
       '/',
       '/invoices',

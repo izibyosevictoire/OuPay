@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   QrCode,
   Settings,
+  ShoppingCart,
   Users,
   type LucideIcon,
 } from 'lucide-react'
@@ -47,6 +48,15 @@ export const PRIMARY_NAVIGATION: NavigationItem[] = [
     description: 'Bill an amount and show a QR code',
     permission: 'invoices:create',
     requiresMode: 'SIMPLIFIED',
+  },
+  {
+    // The business counterpart of Collect Payment: a cart of goods and services from the catalog, saved as a draft.
+    label: 'POS billing',
+    path: '/pos',
+    icon: ShoppingCart,
+    description: 'Build a cart from the catalog',
+    permission: 'invoices:create',
+    requiresMode: 'BUSINESS',
   },
   {
     // For people who hold a collection code (the page explains when you hold none). Both operating modes.
