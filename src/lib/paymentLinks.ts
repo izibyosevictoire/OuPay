@@ -21,6 +21,11 @@ export const buildRequestUrl = (
   baseUrl = getPublicPaymentBaseUrl(),
 ) => `${baseUrl}/p/${paymentProfileId}/r/${publicReference}`
 
+/** The customer's page of a code sale. The sale reference is a public identifier, never a credential. */
+export const buildCodeSaleUrl = (saleReference: string, baseUrl = getPublicPaymentBaseUrl()) =>
+  `${baseUrl}/code-sale/${saleReference}`
+export const buildLocalCodeSalePath = (saleReference: string) => `/code-sale/${saleReference}`
+
 /** The same page inside this app, so the demo can be opened locally. */
 export const buildLocalProfilePath = (paymentProfileId: string) => `/p/${paymentProfileId}`
 export const buildLocalRequestPath = (paymentProfileId: string, publicReference: string) =>

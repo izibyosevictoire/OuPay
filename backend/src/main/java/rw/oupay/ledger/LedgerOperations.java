@@ -25,6 +25,7 @@ import rw.oupay.notification.NotificationService;
 public class LedgerOperations {
 
     private final PaymentAllocationRepository allocations;
+    private final CodeSaleAllocationPolicy codeSales;
     private final BankTransactionRepository transactions;
     private final InvoiceBalanceReader balances;
     private final InvoiceRepository invoices;
@@ -33,10 +34,11 @@ public class LedgerOperations {
     private final FinancialMetrics metrics;
     private final Clock clock;
 
-    public LedgerOperations(PaymentAllocationRepository allocations, BankTransactionRepository transactions,
+    public LedgerOperations(PaymentAllocationRepository allocations, CodeSaleAllocationPolicy codeSales, BankTransactionRepository transactions,
                             InvoiceBalanceReader balances, InvoiceRepository invoices, AuditService audit,
                             NotificationService notifications, FinancialMetrics metrics, Clock clock) {
         this.allocations = allocations;
+        this.codeSales = codeSales;
         this.transactions = transactions;
         this.balances = balances;
         this.invoices = invoices;
@@ -68,6 +70,8 @@ public class LedgerOperations {
         if (!invoice.getMerchantId().equals(tx.getMerchantId()) || invoice.getStatus() != InvoiceStatus.ISSUED) {
             throw LedgerRuleException.invoiceNotPayable(invoice.getInvoiceNumber());
         }
+        // A demonstration code sale never takes bank money, and no code sale is matched automatically (the database trigger says the same).
+        codeSales.requireAllowed(invoice, origin);
         if (amount <= 0) {
             throw new LedgerRuleException("validation", "The amount must be a positive whole number of francs.");
         }

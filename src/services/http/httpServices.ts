@@ -3,6 +3,18 @@ import { AuthServiceError, type AuthServiceErrorCode } from '@/services/authServ
 import type { BankingConfigurationService } from '@/services/bankingService'
 import type { BranchService } from '@/services/branchService'
 import {
+  CodeCheckoutServiceError,
+  type CodeCheckoutService,
+  type CodeCheckoutServiceErrorCode,
+  type PublicCodeSaleService,
+} from '@/services/codeCheckoutService'
+import type {
+  CodeCheckoutOptions,
+  CodePresentation,
+  CodeSale,
+  PublicCodeSale,
+} from '@/types/codeCheckout'
+import {
   CollectionCodeServiceError,
   type CollectionCodeService,
   type CollectionCodeServiceErrorCode,
@@ -110,6 +122,7 @@ const PAYMENT_CODES: PaymentServiceErrorCode[] = [
   'allocation_conflict',
   'transaction_not_confirmed',
   'invoice_not_payable',
+  'code_sale_not_payable',
   'exceeds_remaining',
   'exceeds_unapplied',
   'allocation_not_active',
@@ -118,6 +131,26 @@ const PAYMENT_CODES: PaymentServiceErrorCode[] = [
   'profile_unavailable',
   'request_unavailable',
   'no_active_profile',
+  'service_unavailable',
+]
+
+const CODE_CHECKOUT_CODES: CodeCheckoutServiceErrorCode[] = [
+  'unauthenticated',
+  'not_found',
+  'forbidden',
+  'validation',
+  'no_assigned_code',
+  'code_not_assigned',
+  'code_required',
+  'code_not_available',
+  'live_collection_unavailable',
+  'no_eligible_branch',
+  'branch_required',
+  'branch_not_eligible',
+  'no_active_profile',
+  'client_request_id_reuse',
+  'idempotency_key_reuse',
+  'request_in_progress',
   'service_unavailable',
 ]
 
@@ -215,6 +248,12 @@ const organizationError = (error: unknown) =>
   )
 const invoiceError = (error: unknown) =>
   mapHttpError(error, (code, message) => new InvoiceServiceError(code, message), INVOICE_CODES)
+const codeCheckoutError = (error: unknown) =>
+  mapHttpError(
+    error,
+    (code, message) => new CodeCheckoutServiceError(code, message),
+    CODE_CHECKOUT_CODES,
+  )
 const checkoutError = (error: unknown) =>
   mapHttpError(error, (code, message) => new CheckoutServiceError(code, message), CHECKOUT_CODES)
 /** The server omits null fields from its JSON, so a missing field means null. Normalised once, here. */
@@ -649,6 +688,95 @@ export function createHttpCheckoutService(http: HttpClient): CheckoutService {
         }),
       checkoutError,
     ),
+  }
+}
+
+/** The server omits null fields, so a missing field means null. Normalised once, here. */
+type RawCodePresentation = Omit<CodePresentation, 'bankCode' | 'demoReference' | 'notice'> & {
+  bankCode?: string | null
+  demoReference?: string | null
+  notice?: string | null
+}
+
+const presentationOf = (raw: RawCodePresentation): CodePresentation => ({
+  ...raw,
+  bankCode: raw.bankCode ?? null,
+  demoReference: raw.demoReference ?? null,
+  notice: raw.notice ?? null,
+})
+
+type RawCodeSale = Omit<CodeSale, 'code'> & { code: RawCodePresentation }
+type RawPublicCodeSale = Omit<PublicCodeSale, 'code' | 'description' | 'instructions'> & {
+  code: RawCodePresentation
+  description?: string | null
+  instructions?: string[] | null
+}
+type RawCodeCheckoutOptions = Omit<CodeCheckoutOptions, 'codes' | 'note'> & {
+  codes?: (Omit<CodeCheckoutOptions['codes'][number], 'reason' | 'branchName'> & {
+    reason?: string | null
+    branchName?: string | null
+  })[]
+  note?: string | null
+}
+
+const codeSaleOf = (raw: RawCodeSale): CodeSale => ({ ...raw, code: presentationOf(raw.code) })
+
+/**
+ * Billing through a collection code. The sale's permanent identifier travels in the body and the retry key in the Idempotency-Key
+ * header; the amount goes as a JSON number and the server decides everything else (the code's mode, the status, the expiry).
+ */
+export function createHttpCodeCheckoutService(http: HttpClient): CodeCheckoutService {
+  const base = (merchantId: string) => `${m(merchantId)}/checkout/code-sale`
+  return {
+    getCodeCheckoutOptions: translating(async (id: string) => {
+      const raw = await http.get<RawCodeCheckoutOptions>(`${base(id)}/options`)
+      return {
+        ...raw,
+        note: raw.note ?? null,
+        codes: (raw.codes ?? []).map((c) => ({
+          ...c,
+          reason: c.reason ?? null,
+          branchName: c.branchName ?? null,
+        })),
+      }
+    }, codeCheckoutError),
+    billCodeSale: translating(
+      async (id, input) =>
+        codeSaleOf(
+          await http.post<RawCodeSale>(base(id), {
+            headers: { 'Idempotency-Key': input.idempotencyKey },
+            body: {
+              amountRwf: input.amountRwf,
+              description: input.description,
+              collectionCodeId: input.collectionCodeId,
+              branchId: input.branchId,
+              clientRequestId: input.clientRequestId,
+            },
+          }),
+        ),
+      codeCheckoutError,
+    ),
+    getCodeSale: translating(
+      async (id, saleId) => codeSaleOf(await http.get<RawCodeSale>(`${base(id)}/${saleId}`)),
+      codeCheckoutError,
+    ),
+  }
+}
+
+/** The customer's page of a code sale: anonymous, read-only, keyed only by the sale reference. */
+export function createHttpPublicCodeSaleService(http: HttpClient): PublicCodeSaleService {
+  return {
+    getPublicCodeSale: translating(async (reference: string) => {
+      const raw = await http.get<RawPublicCodeSale>(
+        `/public/code-sales/${encodeURIComponent(reference)}`,
+      )
+      return {
+        ...raw,
+        description: raw.description ?? null,
+        instructions: raw.instructions ?? [],
+        code: presentationOf(raw.code),
+      }
+    }, codeCheckoutError),
   }
 }
 

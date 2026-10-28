@@ -13,5 +13,7 @@ package rw.oupay.invoice;
 public enum SaleChannel {
     INVOICE,
     POS,
-    SIMPLIFIED
+    SIMPLIFIED,
+    /** An agent's code-based sale (R6c). Never accepted from a client. */
+    CODE
 }

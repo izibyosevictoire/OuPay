@@ -174,6 +174,7 @@ describe('role-based navigation', () => {
     await heading('Dashboard')
     expect(navLabels()).toEqual([
       'Dashboard',
+      'Code checkout',
       'Invoices',
       'Catalog',
       'Inventory',
@@ -194,6 +195,7 @@ describe('role-based navigation', () => {
     await heading('Dashboard')
     expect(navLabels()).toEqual([
       'Dashboard',
+      'Code checkout',
       'Invoices',
       'Catalog',
       'Inventory',
@@ -212,6 +214,7 @@ describe('role-based navigation', () => {
     await heading('Dashboard')
     expect(navLabels()).toEqual([
       'Dashboard',
+      'Code checkout',
       'Assigned invoices',
       'Catalog',
       'Inventory',
@@ -343,6 +346,7 @@ describe('account menu and switching businesses', () => {
     await waitFor(() =>
       expect(navLabels()).toEqual([
         'Dashboard',
+        'Code checkout',
         'Assigned invoices',
         'Catalog',
         'Inventory',

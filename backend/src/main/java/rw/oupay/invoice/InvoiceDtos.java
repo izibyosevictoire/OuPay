@@ -50,7 +50,9 @@ public final class InvoiceDtos {
                              InvoiceStatus status, LedgerMath.PaymentStatus paymentStatus, PaymentDto payment,
                              String notes, long version,
                              /** Where the invoice came from. Never null: invoices that predate provenance are INVOICE. */
-                             SaleChannel saleChannel) {}
+                             SaleChannel saleChannel,
+                             /** A demonstration sale: never a real invoice, never in lists, totals, reports or any outside system. */
+                             boolean demonstration) {}
 
     public record InvoicePage(List<InvoiceDto> items, long totalCount, String nextCursor) {}
 

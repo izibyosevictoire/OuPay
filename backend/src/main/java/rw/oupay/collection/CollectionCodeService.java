@@ -190,6 +190,27 @@ public class CollectionCodeService {
                         assignment.getBranchName(), eligible, eligible ? code.getExternalCode() : null, messageFor(code, issues)));
     }
 
+    /** A code the caller holds right now, with the reasons (empty = eligible for collection) it cannot be used. */
+    public record HeldCode(CollectionCode code, CollectionCodeAssignment assignment, List<String> issues) {}
+
+    /**
+     * The codes the CALLER currently holds through an open member assignment, each with its live eligibility issues ({@code SIMULATED},
+     * {@code NOT_BANK_APPROVED}, {@code ASSIGNEE_NOT_ACTIVE}, ...). It needs only an active membership: it is the caller's own, and nobody
+     * else's can be asked for. Used by the code checkout, which decides from these (never from anything a client claims).
+     */
+    @Transactional(readOnly = true)
+    public List<HeldCode> heldByMe(UUID merchantId) {
+        Actor actor = access.requireMember(merchantId);
+        List<HeldCode> held = new ArrayList<>();
+        List<CollectionCodeAssignment> open = assignments.findOpenForUser(merchantId, actor.userId());
+        List<CollectionCode> list = open.stream().map(a -> codes.findByIdAndMerchantId(a.getCodeId(), merchantId).orElseThrow()).toList();
+        Lookup lookup = lookup(merchantId, list, false);
+        for (int i = 0; i < open.size(); i++) {
+            held.add(new HeldCode(list.get(i), open.get(i), eligibilityIssues(list.get(i), open.get(i), lookup)));
+        }
+        return held;
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Provisioning requests and lifecycle (owner)
     // ---------------------------------------------------------------------------------------------

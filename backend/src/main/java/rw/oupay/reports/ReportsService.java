@@ -76,6 +76,7 @@ public class ReportsService {
                    AND a.merchant_id = i.merchant_id
                 WHERE i.merchant_id = :merchantId
                   AND i.status = 'ISSUED'
+                  AND NOT i.is_demonstration
                   AND i.issued_at >= :startAt
                   AND i.issued_at < :endAt
                 """)

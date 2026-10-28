@@ -79,6 +79,7 @@ describe('invitation acceptance', () => {
     // She joined as a cashier, so she gets the cashier navigation.
     expect(navLabels()).toEqual([
       'Dashboard',
+      'Code checkout',
       'Assigned invoices',
       'Payment confirmations',
       'My payment links',

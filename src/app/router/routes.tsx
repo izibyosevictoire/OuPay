@@ -18,6 +18,8 @@ import { CollectionCodesPage } from '@/features/collectionCodes/CollectionCodesP
 import { InventoryPage } from '@/features/inventory/InventoryPage'
 import { EquityActivationPage } from '@/features/equityActivation/EquityActivationPage'
 import { SimplifiedCheckoutPage } from '@/features/checkout/SimplifiedCheckoutPage'
+import { CodeCheckoutPage } from '@/features/codeCheckout/CodeCheckoutPage'
+import { PublicCodeSalePage } from '@/features/codeCheckout/PublicCodeSalePage'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { BankSimulatorPage } from '@/features/demo/BankSimulatorPage'
 import { EditInvoicePage } from '@/features/invoices/EditInvoicePage'
@@ -54,6 +56,7 @@ const BUILT_MODULE_PATHS = [
   '/inventory',
   '/collection-codes',
   '/collect',
+  '/code-checkout',
   '/equity-activation',
   '/transactions',
   '/payments',
@@ -108,6 +111,7 @@ export const appRoutes: RouteObject[] = [
     children: [
       { path: '/p/:paymentProfileId', element: <PublicProfilePage /> },
       { path: '/p/:paymentProfileId/r/:publicReference', element: <PublicRequestPage /> },
+      { path: '/code-sale/:reference', element: <PublicCodeSalePage /> },
     ],
   },
   {
@@ -170,6 +174,8 @@ export const appRoutes: RouteObject[] = [
                   { path: '/invoices/new', element: <NewInvoicePage /> },
                   // The page itself explains when the business is not in simplified mode (and what to do instead).
                   { path: '/collect', element: <SimplifiedCheckoutPage /> },
+                  // The page itself explains when the person holds no code, or the code cannot bill.
+                  { path: '/code-checkout', element: <CodeCheckoutPage /> },
                 ],
               },
               {

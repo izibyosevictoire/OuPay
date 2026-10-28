@@ -19,9 +19,11 @@ import rw.oupay.common.TokenHashing;
 import rw.oupay.invoice.Invoice;
 import rw.oupay.invoice.InvoiceRepository;
 import rw.oupay.invoice.InvoiceStatus;
+import rw.oupay.invoice.SaleChannel;
 import rw.oupay.notification.NotificationService;
 import rw.oupay.payment.PaymentRequest;
 import rw.oupay.payment.PaymentRequestRepository;
+import rw.oupay.payment.PaymentRequestSource;
 
 /**
  * THE TRUSTED BANK-EVENT PROCESSOR.
@@ -212,6 +214,16 @@ public class BankEventProcessor {
             return;
         }
         Optional<PaymentRequest> request = requests.findByMerchantIdAndPublicReference(merchantId, reference);
+        // CODE sales are never matched here: not by their sale reference, not by their invoice number, and not by amount, time or agent either.
+        // Money that names one stays CONFIRMED and UNMATCHED and goes to review, until bank attribution (R6d) has real evidence to use.
+        boolean codeSale = request.map(r -> r.getSource() == PaymentRequestSource.CODE).orElse(false)
+                || (request.isEmpty() && invoices.findByMerchantIdAndInvoiceNumber(merchantId, reference)
+                        .map(i -> i.getSaleChannel() == SaleChannel.CODE).orElse(false));
+        if (codeSale) {
+            ledger.flagForReview(tx, "The reference " + reference + " names a code sale. Code sales are not matched to bank money automatically yet, "
+                    + "so this payment stays confirmed and unmatched for review.");
+            return;
+        }
         if (request.isPresent() && !request.get().getId().equals(tx.getPaymentRequestId())) {
             tx.linkRequest(request.get().getId(), clock.instant());
             transactions.saveAndFlush(tx);

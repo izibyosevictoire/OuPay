@@ -46,6 +46,7 @@ public class ReconciliationService {
     private final BankConnectionRepository connections;
     private final AuditLogRepository auditLog;
     private final LedgerOperations ledger;
+    private final CodeSaleAllocationPolicy codeSalePolicy;
     private final NotificationService notifications;
     private final MerchantAccess access;
     private final AuditService audit;
@@ -53,7 +54,7 @@ public class ReconciliationService {
 
     public ReconciliationService(BankTransactionRepository transactions, PaymentAllocationRepository allocations,
                                  InvoiceRepository invoices, BankConnectionRepository connections, AuditLogRepository auditLog,
-                                 LedgerOperations ledger, NotificationService notifications, MerchantAccess access,
+                                 LedgerOperations ledger, CodeSaleAllocationPolicy codeSalePolicy, NotificationService notifications, MerchantAccess access,
                                  AuditService audit, Clock clock) {
         this.transactions = transactions;
         this.allocations = allocations;
@@ -61,6 +62,7 @@ public class ReconciliationService {
         this.connections = connections;
         this.auditLog = auditLog;
         this.ledger = ledger;
+        this.codeSalePolicy = codeSalePolicy;
         this.notifications = notifications;
         this.access = access;
         this.audit = audit;
@@ -104,7 +106,9 @@ public class ReconciliationService {
     @Transactional(readOnly = true)
     public List<ReconciliationDtos.PayableInvoice> payableInvoices(UUID merchantId) {
         access.require(merchantId, Permission.PAYMENTS_RECONCILE);
-        List<Invoice> issued = invoices.findAllForMerchant(merchantId).stream().filter(i -> i.getStatus() == InvoiceStatus.ISSUED).toList();
+        // A demonstration code sale takes no real payment, so it is never offered as something bank money can be applied to.
+        List<Invoice> issued = invoices.findAllForMerchant(merchantId).stream().filter(i -> i.getStatus() == InvoiceStatus.ISSUED)
+                .filter(i -> !codeSalePolicy.isDemonstration(i)).toList();
         Map<UUID, Long> allocated = allocatedByInvoice(issued.stream().map(Invoice::getId).toList());
         return issued.stream()
                 .map(i -> new ReconciliationDtos.PayableInvoice(i.getId(), i.getInvoiceNumber(), i.getCustomerName(), i.getGrandTotalRwf(),
@@ -156,6 +160,7 @@ public class ReconciliationService {
             if (invoice.getStatus() != InvoiceStatus.ISSUED) {
                 throw LedgerRuleException.invoiceNotPayable(invoice.getInvoiceNumber());
             }
+            codeSalePolicy.requireAllowed(invoice, PaymentAllocation.Origin.MANUAL);
             if (line.amount() <= 0) {
                 throw ApiException.validation("Amounts must be positive whole numbers of francs.");
             }

@@ -5,6 +5,7 @@ import type { BankingConfigurationService } from './bankingService'
 import type { BranchService } from './branchService'
 import type { CatalogService } from './catalogService'
 import type { CheckoutService } from './checkoutService'
+import type { CodeCheckoutService, PublicCodeSaleService } from './codeCheckoutService'
 import type { KycService } from './kycService'
 import type { DashboardService } from './dashboardService'
 import type { CollectionCodeService } from './collectionCodeService'
@@ -18,6 +19,8 @@ import {
   createHttpBranchService,
   createHttpCatalogService,
   createHttpCheckoutService,
+  createHttpCodeCheckoutService,
+  createHttpPublicCodeSaleService,
   createHttpKycService,
   createHttpDashboardService,
   createHttpCollectionCodeService,
@@ -40,6 +43,7 @@ import { createMockBankSimulator } from './mock/mockBankSimulator'
 import { createMockBranchService } from './mock/mockBranchService'
 import { createMockCatalogService } from './mock/mockCatalogService'
 import { createMockCheckoutService } from './mock/mockCheckoutService'
+import { createMockCodeCheckout } from './mock/mockCodeCheckoutService'
 import { createMockKycService } from './mock/mockKycService'
 import { createLedgerStore } from './mock/ledger/mockLedgerStore'
 import { createMockDashboardService } from './mock/mockDashboardService'
@@ -78,6 +82,8 @@ interface Services {
   reportsService: ReportsService | null
   invoiceService: InvoiceService
   checkoutService: CheckoutService
+  codeCheckoutService: CodeCheckoutService
+  publicCodeSaleService: PublicCodeSaleService
   kycService: KycService
   catalogService: CatalogService
   inventoryService: InventoryService
@@ -98,6 +104,7 @@ function createMockServices(): Services {
   const mockLedger = createLedgerStore(mockAuthStore)
   const shared = { authStore: mockAuthStore, ledger: mockLedger }
   const mockInvoiceService = createMockInvoiceService(shared)
+  const mockCodeCheckout = createMockCodeCheckout({ ...shared, invoiceService: mockInvoiceService })
   return {
     authService: createMockAuthService({ store: mockAuthStore }),
     merchantService: createMockMerchantService({ authStore: mockAuthStore }),
@@ -108,6 +115,8 @@ function createMockServices(): Services {
     invoiceService: mockInvoiceService,
     // The demo checkout goes through the very same mock invoice service and ledger as every other screen.
     checkoutService: createMockCheckoutService({ ...shared, invoiceService: mockInvoiceService }),
+    codeCheckoutService: mockCodeCheckout.codeCheckoutService,
+    publicCodeSaleService: mockCodeCheckout.publicCodeSaleService,
     kycService: createMockKycService({ authStore: mockAuthStore }),
     catalogService: createMockCatalogService({ authStore: mockAuthStore }),
     inventoryService: createMockInventoryService({ authStore: mockAuthStore }),
@@ -139,6 +148,8 @@ function createHttpServices(): Services {
     reportsService: createHttpReportsService(http),
     invoiceService: createHttpInvoiceService(http),
     checkoutService: createHttpCheckoutService(http),
+    codeCheckoutService: createHttpCodeCheckoutService(http),
+    publicCodeSaleService: createHttpPublicCodeSaleService(http),
     kycService: createHttpKycService(http),
     catalogService: createHttpCatalogService(http),
     inventoryService: createHttpInventoryService(http),
@@ -165,6 +176,8 @@ export const {
   reportsService,
   invoiceService,
   checkoutService,
+  codeCheckoutService,
+  publicCodeSaleService,
   catalogService,
   inventoryService,
   collectionCodeService,

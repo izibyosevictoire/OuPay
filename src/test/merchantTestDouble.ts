@@ -6,6 +6,8 @@ import {
   branchService,
   catalogService,
   checkoutService,
+  codeCheckoutService,
+  publicCodeSaleService,
   kycService,
   inventoryService,
   collectionCodeService,
@@ -25,6 +27,7 @@ import { createMockBankSimulator } from '@/services/mock/mockBankSimulator'
 import { createMockBranchService } from '@/services/mock/mockBranchService'
 import { createMockCatalogService } from '@/services/mock/mockCatalogService'
 import { createMockCheckoutService } from '@/services/mock/mockCheckoutService'
+import { createMockCodeCheckout } from '@/services/mock/mockCodeCheckoutService'
 import { createMockKycService } from '@/services/mock/mockKycService'
 import { createMockCollectionCodeService } from '@/services/mock/mockCollectionCodeService'
 import { createMockInventoryService } from '@/services/mock/mockInventoryService'
@@ -72,6 +75,13 @@ export function createTestBackend() {
     delayInMilliseconds: 0,
   })
   const fastCheckout = createMockCheckoutService({
+    authStore: store,
+    ledger,
+    invoiceService: fastInvoices,
+    merchantStorage,
+    delayInMilliseconds: 0,
+  })
+  const fastCodeCheckout = createMockCodeCheckout({
     authStore: store,
     ledger,
     invoiceService: fastInvoices,
@@ -141,6 +151,7 @@ export function createTestBackend() {
     fastDashboard,
     fastInvoices,
     fastCheckout,
+    fastCodeCheckout,
     fastCatalog,
     fastInventory,
     fastCollectionCodes,
@@ -185,6 +196,8 @@ export function useFastBackend() {
   delegateAll(bankingService, backend.fastBanking)
   delegateAll(paymentProfileService, backend.fastProfiles)
   delegateAll(checkoutService, backend.fastCheckout)
+  delegateAll(codeCheckoutService, backend.fastCodeCheckout.codeCheckoutService)
+  delegateAll(publicCodeSaleService, backend.fastCodeCheckout.publicCodeSaleService)
   delegateAll(kycService, backend.fastKyc)
   delegateAll(catalogService, backend.fastCatalog)
   delegateAll(inventoryService, backend.fastInventory)

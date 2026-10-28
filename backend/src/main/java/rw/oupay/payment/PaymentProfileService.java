@@ -183,7 +183,7 @@ public class PaymentProfileService {
     /** A request for an issued invoice, for exactly its outstanding balance, open for the traditional seven days. */
     @Transactional
     public PaymentDtos.RequestDto createInvoiceRequest(UUID merchantId, UUID invoiceId) {
-        return createInvoiceRequest(merchantId, invoiceId, PaymentRequestOptions.traditionalInvoice(), false);
+        return createInvoiceRequest(merchantId, invoiceId, PaymentRequestOptions.traditionalInvoice(), false, null);
     }
 
     /**
@@ -204,11 +204,28 @@ public class PaymentProfileService {
      */
     @Transactional
     public PaymentDtos.RequestDto createInvoiceRequest(UUID merchantId, UUID invoiceId, PaymentRequestOptions options) {
-        return createInvoiceRequest(merchantId, invoiceId, options, true);
+        return createInvoiceRequest(merchantId, invoiceId, options, true, null);
+    }
+
+    /**
+     * The request for a CODE sale (trusted server code only): the same fixed-amount request, but the payment link that carries it must settle
+     * to the code's own settlement account, so the money can only ever be expected where the code says. 409 {@code no_active_profile} if there
+     * is no active link on a connected bank link for that account.
+     */
+    @Transactional
+    public PaymentDtos.RequestDto createCodeSaleRequest(UUID merchantId, UUID invoiceId, PaymentRequestOptions options, UUID settlementDestinationId) {
+        return createInvoiceRequest(merchantId, invoiceId, options, true, settlementDestinationId);
+    }
+
+    /** Whether a code sale settling to this account could be collected through some active link right now. */
+    @Transactional(readOnly = true)
+    public boolean canCollectTo(UUID merchantId, UUID branchId, UUID assigneeUserId, UUID settlementDestinationId) {
+        access.require(merchantId, Permission.INVOICES_CREATE);
+        return chooseProfile(merchantId, branchId, assigneeUserId, settlementDestinationId).isPresent();
     }
 
     private PaymentDtos.RequestDto createInvoiceRequest(UUID merchantId, UUID invoiceId, PaymentRequestOptions options,
-                                                        boolean lifetimeMustMatchAnExistingRequest) {
+                                                        boolean lifetimeMustMatchAnExistingRequest, UUID mustSettleTo) {
         Actor actor = access.require(merchantId, Permission.INVOICES_VIEW);
         Invoice invoice = visibleInvoice(actor, merchantId, invoiceId);
         // Serialise with other creators and with allocations for this invoice.
@@ -236,7 +253,7 @@ public class PaymentProfileService {
             return toDto(live.get());
         }
         Invoice target = invoice;
-        PaymentProfile profile = chooseProfile(merchantId, target.getBranchId(), target.getAssignedToUserId())
+        PaymentProfile profile = chooseProfile(merchantId, target.getBranchId(), target.getAssignedToUserId(), mustSettleTo)
                 .orElseThrow(() -> new ApiException(HttpStatus.CONFLICT, "no_active_profile",
                         "There is no active payment link for this invoice. Create or switch one on in Payment links."));
         Instant now = clock.instant();
@@ -256,7 +273,7 @@ public class PaymentProfileService {
     @Transactional(readOnly = true)
     public boolean canCollectFor(UUID merchantId, UUID branchId, UUID assigneeUserId) {
         access.require(merchantId, Permission.INVOICES_CREATE);
-        return chooseProfile(merchantId, branchId, assigneeUserId).isPresent();
+        return chooseProfile(merchantId, branchId, assigneeUserId, null).isPresent();
     }
 
     @Transactional(readOnly = true)
@@ -283,9 +300,10 @@ public class PaymentProfileService {
     // ---- internals -----------------------------------------------------------------------------
 
     /** Best-matching active link: cashier+branch, then branch, then business-wide. */
-    private Optional<PaymentProfile> chooseProfile(UUID merchantId, UUID branchId, UUID assigneeUserId) {
+    private Optional<PaymentProfile> chooseProfile(UUID merchantId, UUID branchId, UUID assigneeUserId, UUID mustSettleTo) {
         List<PaymentProfile> candidates = profiles.findByMerchantIdOrderByCreatedAtDesc(merchantId).stream()
                 .filter(p -> p.getStatus() == PaymentProfile.Status.ACTIVE)
+                .filter(p -> mustSettleTo == null || mustSettleTo.equals(p.getPaymentDestinationId()))
                 .filter(p -> destinations.findByIdAndMerchantId(p.getPaymentDestinationId(), merchantId)
                         .flatMap(d -> connections.findById(d.getBankConnectionId()))
                         .filter(c -> c.getStatus() == BankConnection.Status.CONNECTED).isPresent())

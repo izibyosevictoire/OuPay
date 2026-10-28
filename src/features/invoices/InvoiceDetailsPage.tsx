@@ -15,7 +15,11 @@ import { useToast } from '@/components/common/Toaster'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { INVOICE_STATUS_DESCRIPTIONS, TAX_MODE_LABELS } from '@/constants/invoice'
+import {
+  DEMONSTRATION_INVOICE_NOTICE,
+  INVOICE_STATUS_DESCRIPTIONS,
+  TAX_MODE_LABELS,
+} from '@/constants/invoice'
 import { useCurrentRole } from '@/features/auth/permissions/usePermission'
 import { formatLongDate, formatPlainDate } from '@/lib/format'
 import { isInvoiceOverdue } from '@/lib/invoiceLifecycle'
@@ -85,6 +89,15 @@ function InvoiceDetails({ invoice }: { invoice: Invoice }) {
           </>
         }
       />
+
+      {invoice.demonstration && (
+        <p
+          role="note"
+          className="rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-sm font-medium text-warning"
+        >
+          {DEMONSTRATION_INVOICE_NOTICE}
+        </p>
+      )}
 
       {(can('edit_draft') || can('issue') || can('cancel_draft') || can('void')) && (
         <Card className="flex flex-wrap items-center gap-2 p-4">

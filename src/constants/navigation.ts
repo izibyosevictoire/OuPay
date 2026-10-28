@@ -6,6 +6,7 @@ import {
   Package,
   FileText,
   HandCoins,
+  Hash,
   ShieldCheck,
   KeyRound,
   Landmark,
@@ -46,6 +47,14 @@ export const PRIMARY_NAVIGATION: NavigationItem[] = [
     description: 'Bill an amount and show a QR code',
     permission: 'invoices:create',
     requiresMode: 'SIMPLIFIED',
+  },
+  {
+    // For people who hold a collection code (the page explains when you hold none). Both operating modes.
+    label: 'Code checkout',
+    path: '/code-checkout',
+    icon: Hash,
+    description: 'Bill an amount through your collection code',
+    permission: 'invoices:create',
   },
   {
     label: 'Invoices',

@@ -7,6 +7,7 @@ export type PaymentServiceErrorCode =
   | 'allocation_conflict'
   | 'transaction_not_confirmed'
   | 'invoice_not_payable'
+  | 'code_sale_not_payable'
   | 'exceeds_remaining'
   | 'exceeds_unapplied'
   | 'allocation_not_active'

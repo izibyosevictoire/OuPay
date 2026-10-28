@@ -149,7 +149,7 @@ A repeat of a request returns the same code; a different request under the same 
 
 ## Known limits
 
-* No real Equity integration, no bank-event attribution, no customer instructions (R6c to R6e); approval is switched off.
+* No real Equity integration and no bank-event attribution (R6d to R6e); approval is switched off. Code-based checkout (R6c) is described in [code-checkout.md](code-checkout.md): demonstration only until Equity confirms how a code takes a payment.
 * No operator console or operator authentication.
 * Staff suspension does not automatically end their assignment; eligibility ends at once and the API flags it.
 * Provider ids are the existing three; a real Equity provider id needs a reviewed constraint widening (R6e).

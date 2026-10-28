@@ -138,10 +138,15 @@ export interface Invoice extends MerchantOwned {
    * traditional invoices (read as `INVOICE`).
    */
   saleChannel?: SaleChannel
+  /**
+   * A DEMONSTRATION code sale: kept for the internal checkout demonstration, never a real invoice. It is numbered DEMO-0001..., and is
+   * excluded from invoice lists, receivables, overdue figures, reports and any outside system. Set by the server only.
+   */
+  demonstration?: boolean
 }
 
 /** `INVOICE`: a traditional manual invoice. `POS` and `SIMPLIFIED`: checkout flows. */
-export type SaleChannel = 'INVOICE' | 'POS' | 'SIMPLIFIED'
+export type SaleChannel = 'INVOICE' | 'POS' | 'SIMPLIFIED' | 'CODE'
 
 export interface InvoiceDraftInput {
   branchId: string

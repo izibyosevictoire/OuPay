@@ -66,7 +66,7 @@ class ArchitectureTest {
         // Each service that reads or writes business data must call MerchantAccess itself (not rely on controllers).
         for (String file : new String[] {"invoice/InvoiceService.java", "branch/BranchService.java", "staff/StaffService.java",
                 "merchant/MerchantService.java", "merchant/MerchantSettingsService.java", "idempotency/IdempotencyService.java", "banking/BankingService.java", "ledger/ReconciliationService.java",
-                "payment/PaymentProfileService.java", "checkout/SimplifiedCheckoutService.java", "kyc/KycService.java", "notification/NotificationService.java", "dashboard/DashboardService.java", "audit/AuditService.java"}) {
+                "payment/PaymentProfileService.java", "checkout/SimplifiedCheckoutService.java", "checkout/CodeCheckoutService.java", "kyc/KycService.java", "notification/NotificationService.java", "dashboard/DashboardService.java", "audit/AuditService.java"}) {
             String source = read(MAIN.resolve(file));
             assertThat(source).as(file).contains("MerchantAccess").containsPattern("access\\.require(Member)?\\(");
         }
@@ -141,6 +141,24 @@ class ArchitectureTest {
     }
 
     @Test
+    void theCodeCheckoutIsOneTransactionOwnedByTheIdempotencyService() throws IOException {
+        // Like the simplified checkout: not transactional itself (only two read-only queries are), no external side effect, and it
+        // creates the invoice and the payment request only through their services. It may write its own snapshot row (same transaction).
+        String checkout = code(MAIN.resolve("checkout/CodeCheckoutService.java"));
+        assertThat(checkout.split("@Transactional", -1).length - 1).isEqualTo(2);
+        for (String forbidden : new String[] {"Email", "HttpClient", "RestClient", "WebClient", "ProviderRegistry", "BankingService", "InvoiceRepository",
+                "insert into invoices", "insert into payment_requests", "idempotency_keys"}) {
+            assertThat(checkout).as("the code checkout must not use " + forbidden).doesNotContain(forbidden);
+        }
+        assertThat(checkout).contains("idempotency.executeOnce(").contains("createDraftFor").contains("createCodeSaleRequest");
+        // The customer page is anonymous and read-only: it never writes and never reaches the merchant-wide ledger.
+        String page = code(MAIN.resolve("checkout/PublicCodeSaleService.java"));
+        for (String forbidden : new String[] {"MerchantAccess", "InvoiceRepository", "BankTransactionRepository", "PaymentAllocationRepository", "insert into", "update ", "delete from"}) {
+            assertThat(page).as("the public code sale page must not use " + forbidden).doesNotContain(forbidden);
+        }
+    }
+
+    @Test
     void noWebEndpointCanRecordWhatTheBankDidWithAKycApplication() throws IOException {
         // Hand-off, requests for information and decisions exist only with evidence, in a service that has no HTTP surface.
         for (Path file : sources()) {
@@ -176,7 +194,8 @@ class ArchitectureTest {
                 String components = matcher.group(2);
                 // The simplified checkout's body carries the client's stable sale identifier (that is its contract), and nothing
                 // else of the provenance: never a channel, a source or a creator.
-                boolean mayCarryClientRequestId = file.getFileName().toString().equals("CheckoutDtos.java");
+                boolean mayCarryClientRequestId = file.getFileName().toString().equals("CheckoutDtos.java")
+                        || file.getFileName().toString().equals("CodeCheckoutDtos.java");
                 if (components.contains("SaleChannel") || (components.contains("clientRequestId") && !mayCarryClientRequestId)
                         || components.contains("PaymentRequestSource")
                         || components.contains("createdByUserId") || components.contains("saleChannel")) {

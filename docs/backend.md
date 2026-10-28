@@ -122,6 +122,7 @@ Errors are always `{ "code", "message", "fields" }` with the stable codes the fr
 | Banking | `GET /banking/providers`, `GET/POST …/bank-connections`, `POST …/bank-connections/{id}/complete|disable`, `GET …/payment-destinations` |
 | Ledger | `GET …/bank-transactions` (paged), `GET …/bank-transactions/{id}`, `GET …/payment-allocations` (paged), `GET …/payable-invoices`, `POST …/reconciliation/allocations`, `POST …/reconciliation/allocations/{id}/reverse`, `POST …/bank-transactions/{id}/review` |
 | Simplified checkout | `GET …/checkout/simple/options`, `POST …/checkout/simple` (requires `Idempotency-Key`; see [simplified-checkout.md](simplified-checkout.md)) |
+| Agent code checkout | `GET …/checkout/code-sale/options`, `POST …/checkout/code-sale` (requires `Idempotency-Key`), `GET …/checkout/code-sale/{saleId}`, anonymous `GET /public/code-sales/{reference}` (see [code-checkout.md](code-checkout.md)) |
 | Equity KYC (owner only) | `GET …/kyc/options`, `GET/POST …/kyc/applications`, `GET …/{id}`, `PUT …/{id}/answers`, `PUT …/{id}/documents/{key}`, `POST …/{id}/consent|submit`, `POST …/{id}/information-requests/{rid}/response`, `POST …/{id}/answers/{key}/reveal` (see [equity-kyc.md](equity-kyc.md)) |
 | Payment links | `GET/POST …/payment-profiles`, `GET …/{id}`, `GET …/form-options`, `PUT …/{id}/active`, `POST …/{id}/reissue`, `POST/GET …/invoices/{id}/payment-requests`, `POST …/payment-requests/{id}/cancel` |
 | Notifications | `GET …/notifications` (paged), `POST …/notifications/{id}/read`, `POST …/notifications/read-all` |
