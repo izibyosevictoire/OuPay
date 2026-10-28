@@ -61,13 +61,14 @@ public class BankEventProcessor {
     private final PaymentRequestRepository requests;
     private final InvoiceRepository invoices;
     private final LedgerOperations ledger;
+    private final AttributionRecorder attribution;
     private final NotificationService notifications;
     private final AuditService audit;
     private final FinancialMetrics metrics;
     private final Clock clock;
 
     public BankEventProcessor(JdbcClient jdbc, BankConnectionRepository connections, BankTransactionRepository transactions,
-                              PaymentRequestRepository requests, InvoiceRepository invoices, LedgerOperations ledger,
+                              PaymentRequestRepository requests, InvoiceRepository invoices, LedgerOperations ledger, AttributionRecorder attribution,
                               NotificationService notifications, AuditService audit, FinancialMetrics metrics, Clock clock) {
         this.jdbc = jdbc;
         this.connections = connections;
@@ -75,6 +76,7 @@ public class BankEventProcessor {
         this.requests = requests;
         this.invoices = invoices;
         this.ledger = ledger;
+        this.attribution = attribution;
         this.notifications = notifications;
         this.audit = audit;
         this.metrics = metrics;
@@ -137,14 +139,16 @@ public class BankEventProcessor {
         // 3. One transaction per (provider, provider transaction id).
         boolean created = jdbc.sql("insert into bank_transactions (id, merchant_id, bank_connection_id, provider_id, provider_transaction_id, "
                         + "last_provider_event_id, direction, amount_rwf, currency, payment_reference, payer_display_name, provider_occurred_at, "
-                        + "status_applied_at, received_at, status, is_simulated, review_state, created_at, updated_at, version) "
-                        + "values (:id, :m, :c, :p, :t, :e, 'INCOMING', :amount, 'RWF', :ref, :payer, :occ, :occ, :now, :status, :sim, 'NONE', :now, :now, 0) "
+                        + "status_applied_at, received_at, status, is_simulated, review_state, created_at, updated_at, version, "
+                        + "reported_code, origin_provider_event_id) "
+                        + "values (:id, :m, :c, :p, :t, :e, 'INCOMING', :amount, 'RWF', :ref, :payer, :occ, :occ, :now, :status, :sim, 'NONE', :now, :now, 0, "
+                        + ":reported, :e) "
                         + "on conflict (provider_id, provider_transaction_id) do nothing")
                 .param("id", UUID.randomUUID()).param("m", merchantId).param("c", connection.get().getId())
                 .param("p", event.providerId().name()).param("t", event.providerTransactionId()).param("e", event.providerEventId())
                 .param("amount", event.amountRwf()).param("ref", event.paymentReference()).param("payer", event.payerDisplayName())
                 .param("occ", Timestamp.from(event.occurredAt())).param("now", Timestamp.from(now))
-                .param("status", event.status().name()).param("sim", event.simulated()).update() == 1;
+                .param("status", event.status().name()).param("sim", event.simulated()).param("reported", event.reportedCode()).update() == 1;
 
         // Lock the row (waits for a concurrent creator to commit): from here on this event owns the transaction.
         BankTransaction tx = transactions.lockByProviderTransaction(event.providerId(), event.providerTransactionId()).orElseThrow();
@@ -161,6 +165,7 @@ public class BankEventProcessor {
             if (tx.getStatus() == BankTransactionStatus.CONFIRMED) {
                 reconcileConfirmed(tx);
             }
+            attribute(tx, event);
             return new Result(Outcome.APPLIED, tx.getId(), null);
         }
         return applyToKnown(event, merchantId, tx);
@@ -200,7 +205,20 @@ public class BankEventProcessor {
         if (next == BankTransactionStatus.REVERSED && previous == BankTransactionStatus.CONFIRMED) {
             ledger.reverseAllOf(tx);
         }
+        attribute(tx, event);
         return new Result(Outcome.APPLIED, tx.getId(), null);
+    }
+
+    /**
+     * Records what the bank reported about the code (R6d-A). Evidence only: it never allocates and never changes a status. Money that cannot
+     * be attributed, or whose evidence contradicts itself, is flagged for a person when it is confirmed and has not been applied anywhere.
+     */
+    private void attribute(BankTransaction tx, NormalizedBankEvent event) {
+        var result = attribution.record(tx, event.reportedCode());
+        if (result.needsReview() && tx.getStatus() == BankTransactionStatus.CONFIRMED && tx.getReviewState() == ReviewState.NONE
+                && ledger.allocatedOfTransaction(tx.getId()) == 0) {
+            ledger.flagForReview(tx, result.note());
+        }
     }
 
     /** Reference matching on a CONFIRMED transaction. Exact references only. */

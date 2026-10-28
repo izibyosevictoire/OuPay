@@ -62,11 +62,28 @@ class ArchitectureTest {
     }
 
     @Test
+    void bankAttributionIsRecordedOnlyByTheTrustedProcessorAndReadOnlyOverHttp() throws IOException {
+        // Attribution is EVIDENCE written by the bank-event processor, inside its transaction. No controller can reach the recorder, and the
+        // read-only controller has no write mapping at all.
+        for (Path file : sources()) {
+            if (file.getFileName().toString().endsWith("Controller.java")) {
+                assertThat(code(file)).as(file.getFileName().toString()).doesNotContain("AttributionRecorder");
+            }
+        }
+        List<String> callers = sources().stream().filter(p -> code(p).contains("AttributionRecorder"))
+                .map(p -> MAIN.relativize(p).toString().replace('\\', '/')).collect(Collectors.toList());
+        assertThat(callers).containsExactlyInAnyOrder("ledger/AttributionRecorder.java", "ledger/BankEventProcessor.java");
+        String controller = code(MAIN.resolve("ledger/AttributionController.java"));
+        assertThat(controller).doesNotContain("PostMapping").doesNotContain("PutMapping").doesNotContain("DeleteMapping").doesNotContain("PatchMapping");
+        assertThat(controller).doesNotContain("Repository").doesNotContain("JdbcClient");
+    }
+
+    @Test
     void everyMerchantScopedServiceAuthorisesAtTheServiceBoundary() throws IOException {
         // Each service that reads or writes business data must call MerchantAccess itself (not rely on controllers).
         for (String file : new String[] {"invoice/InvoiceService.java", "branch/BranchService.java", "staff/StaffService.java",
                 "merchant/MerchantService.java", "merchant/MerchantSettingsService.java", "idempotency/IdempotencyService.java", "banking/BankingService.java", "ledger/ReconciliationService.java",
-                "payment/PaymentProfileService.java", "checkout/SimplifiedCheckoutService.java", "checkout/CodeCheckoutService.java", "kyc/KycService.java", "notification/NotificationService.java", "dashboard/DashboardService.java", "audit/AuditService.java"}) {
+                "payment/PaymentProfileService.java", "checkout/SimplifiedCheckoutService.java", "checkout/CodeCheckoutService.java", "ledger/AttributionService.java", "kyc/KycService.java", "notification/NotificationService.java", "dashboard/DashboardService.java", "audit/AuditService.java"}) {
             String source = read(MAIN.resolve(file));
             assertThat(source).as(file).contains("MerchantAccess").containsPattern("access\\.require(Member)?\\(");
         }
