@@ -5,9 +5,10 @@ reported* and, only when that is unambiguous, *which of the merchant's own codes
 payment carries one, so the agent can be taken from that sale's immutable snapshot. See [equity-integration-architecture.md](equity-integration-architecture.md)
 (sections 6.4, 6.5 and 7) for the design this implements and [code-checkout.md](code-checkout.md) for the sales it refers to.
 
-> **Attribution is evidence, not allocation.** R6d-A never allocates money, never links a payment request, never changes a transaction status and
-> never touches an invoice. The bank ledger (transactions and allocations) stays the single source of financial truth, and a code sale is still
-> **not matched automatically** (V13 guard). Matching and auto-allocation of code sales is R6d-B and needs Equity's answers.
+> **Attribution is evidence, not allocation.** Attribution itself never allocates money, never links a payment request, never changes a transaction
+> status and never touches an invoice. The bank ledger (transactions and allocations) stays the single source of financial truth. Matching a
+> confirmed payment to a LIVE code sale, using this evidence, is a separate, trusted step: see [code-sale-reconciliation.md](code-sale-reconciliation.md)
+> (R6d-B). Until Equity confirms what it returns, nothing in production can satisfy that evidence.
 
 ## Trusted evidence available today
 
@@ -111,4 +112,6 @@ no code behave exactly as before (they gain `NOT_REPORTED` / `ACCOUNT_ONLY` meta
 * Attribution is computed from events as they arrive; it is not recomputed if a code is registered or approved *after* the money arrived
   (the transaction stays `UNRESOLVED` and flagged; a person or R6d-B reconciles it).
 * A code that the registry later deactivates still resolves for money that arrived before: attribution describes what the bank reported.
-* No frontend yet: attribution is API-only in R6d-A.
+* No frontend yet: attribution is API-only.
+* `matchedToSale` (R6d-A) was replaced in R6d-B by distinct facts (`saleReferenceNamed`, `saleReferenceMatched`, `allocatedToSaleRwf`, `saleFullyPaid`,
+  `stage`): a single "matched" flag hid the difference between a reference, a link and money.

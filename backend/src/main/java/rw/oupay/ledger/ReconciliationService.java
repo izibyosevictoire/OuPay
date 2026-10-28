@@ -118,6 +118,15 @@ public class ReconciliationService {
                 .toList();
     }
 
+    /** At least ten characters and more than a repeated character: "ok", "..........", "aaaaaaaaaa" are not reasons. */
+    static void requireMeaningfulReason(String note) {
+        String reason = note == null ? "" : note.trim();
+        if (reason.length() < 10 || reason.chars().distinct().count() < 4) {
+            throw new ApiException(org.springframework.http.HttpStatus.UNPROCESSABLE_CONTENT, "reconciliation_reason_required",
+                    "Applying money to a code sale by hand needs a reason of at least ten characters (for example what evidence you checked).");
+        }
+    }
+
     // ---- writes (authorised people only; never confirm a payment) ------------------------------
 
     /**
@@ -148,6 +157,20 @@ public class ReconciliationService {
             locked.put(id, invoices.lockByIdAndMerchantId(id, merchantId).orElseThrow(() -> ApiException.notFound("An invoice could not be found.")));
         }
 
+        // A person applying money to a CODE sale replaces the bank evidence that automatic matching would have had, so they must say why. The reason
+        // is written, with their identity, to the immutable audit trail in the SAME transaction as the allocation (no reason, no allocation).
+        // Ordinary invoices keep their existing, optional note.
+        if (locked.values().stream().anyMatch(codeSalePolicy::isCodeSale)) {
+            // What can never be allowed, whatever the reason (a demonstration, contradicting bank evidence), is refused FIRST, so a reason is
+            // never asked for something that is not available at all.
+            for (Invoice invoice : locked.values()) {
+                if (codeSalePolicy.isCodeSale(invoice)) {
+                    codeSalePolicy.requireAllowed(tx, invoice, PaymentAllocation.Origin.MANUAL);
+                }
+            }
+            requireMeaningfulReason(request.note());
+        }
+
         long unapplied = LedgerMath.unapplied(tx.getStatus(), tx.isIncoming(), tx.getAmountRwf(), ledger.allocatedOfTransaction(tx.getId()));
         long total = 0;
         for (var line : request.allocations()) {
@@ -160,7 +183,7 @@ public class ReconciliationService {
             if (invoice.getStatus() != InvoiceStatus.ISSUED) {
                 throw LedgerRuleException.invoiceNotPayable(invoice.getInvoiceNumber());
             }
-            codeSalePolicy.requireAllowed(invoice, PaymentAllocation.Origin.MANUAL);
+            codeSalePolicy.requireAllowed(tx, invoice, PaymentAllocation.Origin.MANUAL);
             if (line.amount() <= 0) {
                 throw ApiException.validation("Amounts must be positive whole numbers of francs.");
             }

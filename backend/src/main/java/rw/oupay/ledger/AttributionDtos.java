@@ -22,10 +22,20 @@ public final class AttributionDtos {
      *                          SALE_NAMED_UNCONFIRMED (the exact sale is named but the bank reported no code) or UNRESOLVED. Never inferred
      * @param agentName         only when the agent is CONFIRMED and the money is verified; a named but unconfirmed sale never names an agent
      * @param saleReference     the exact CODE sale reference the payment carries, or null. A reference is NOT a match
-     * @param matchedToSale     true only when verified money has actually been applied (allocated) to that sale
+     * @param stage             where this payment stands, from the facts below (never a status of its own): NOT_CONFIRMED, AWAITING_MATCHING
+     *                          (verified funds, nothing resolved or matched), CODE_RESOLVED, SALE_MATCHED, ALLOCATED, FULLY_PAID, or CONFLICT
+     * @param codeResolved      the reported code resolved to one of the business's own codes (attribution)
+     * @param saleReferenceNamed the payment carries the exact reference of a code sale
+     * @param saleReferenceMatched that sale's payment request is linked to this transaction (the automatic match was made)
+     * @param allocatedToSaleRwf the amount of THIS transaction actually applied (allocated) to that sale's invoice: the only fact that is money
+     * @param allocationOrigin  HOW this transaction's money was applied to that sale: AUTO_REFERENCE (matched on complete bank evidence), MANUAL
+     *                          (an authorised person, with a recorded reason; the bank evidence may be incomplete and the agent stays unconfirmed),
+     *                          MIXED, or null when nothing is applied. A sale can be financially paid while its code and agent are unconfirmed
+     * @param saleFullyPaid     the sale's invoice has no remaining balance, from all its active allocations
      */
     public record AttributionView(UUID merchantId, UUID transactionId, String providerTransactionId, BankTransactionStatus transactionStatus,
                                   long amountRwf, Instant occurredAt, String reportedCode, boolean reportedCodeMasked, CodeRef collectionCode,
                                   String attributionStatus, String attributionBasis, String agentAttribution, String agentName,
-                                  String saleReference, boolean matchedToSale, ReviewState reviewState, Instant createdAt) {}
+                                  String saleReference, String stage, boolean codeResolved, boolean saleReferenceNamed, boolean saleReferenceMatched,
+                                  long allocatedToSaleRwf, String allocationOrigin, boolean saleFullyPaid, ReviewState reviewState, Instant createdAt) {}
 }

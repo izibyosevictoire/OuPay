@@ -79,6 +79,20 @@ class ArchitectureTest {
     }
 
     @Test
+    void theCodeSaleMatcherOnlyDecidesEligibilityAndTheLedgerStaysTheOnlyWriterOfAllocations() throws IOException {
+        // The matcher is READ-ONLY: it never allocates, locks, links or saves. The allocation is the ordinary exact-reference path in the
+        // bank-event processor, through LedgerOperations, inside the processor's own transaction (no second ledger, no nested transaction).
+        String matcher = code(MAIN.resolve("ledger/CodeSaleMatcher.java"));
+        for (String forbidden : new String[] {"LedgerOperations", "allocate(", "save(", "saveAndFlush(", "linkRequest", "insert into", "update ", "delete from",
+                "REQUIRES_NEW", "TransactionTemplate", "Propagation.REQUIRED"}) {
+            assertThat(matcher).as("the matcher must not use " + forbidden).doesNotContain(forbidden);
+        }
+        List<String> callers = sources().stream().filter(p -> code(p).contains("CodeSaleMatcher"))
+                .map(p -> MAIN.relativize(p).toString().replace('\\', '/')).collect(Collectors.toList());
+        assertThat(callers).containsExactlyInAnyOrder("ledger/CodeSaleMatcher.java", "ledger/BankEventProcessor.java");
+    }
+
+    @Test
     void everyMerchantScopedServiceAuthorisesAtTheServiceBoundary() throws IOException {
         // Each service that reads or writes business data must call MerchantAccess itself (not rely on controllers).
         for (String file : new String[] {"invoice/InvoiceService.java", "branch/BranchService.java", "staff/StaffService.java",

@@ -8,6 +8,10 @@ export type PaymentServiceErrorCode =
   | 'transaction_not_confirmed'
   | 'invoice_not_payable'
   | 'code_sale_not_payable'
+  /** A live code sale: the bank evidence (code, account, reference) does not support applying this money to it. */
+  | 'code_sale_evidence_mismatch'
+  /** Applying money to a code sale by hand needs a written reason. */
+  | 'reconciliation_reason_required'
   | 'exceeds_remaining'
   | 'exceeds_unapplied'
   | 'allocation_not_active'

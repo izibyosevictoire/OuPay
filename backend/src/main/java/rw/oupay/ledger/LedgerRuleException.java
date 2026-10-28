@@ -25,6 +25,11 @@ public class LedgerRuleException extends ApiException {
                 : "Invoice " + invoiceNumber + " is a code sale. It is not matched to bank money automatically yet; an authorised person can apply it manually.");
     }
 
+    /** A code sale could not receive this money because the bank evidence does not (yet) support it. The reason says which piece. */
+    public static LedgerRuleException codeSaleEvidence(String invoiceNumber, String reason) {
+        return new LedgerRuleException("code_sale_evidence_mismatch", "Bank money can not be applied to code sale " + invoiceNumber + ": " + reason + ".");
+    }
+
     public static LedgerRuleException exceedsRemaining(String invoiceNumber, long remaining) {
         return new LedgerRuleException("exceeds_remaining", "Invoice " + invoiceNumber + " only has RWF " + remaining + " left to pay.");
     }

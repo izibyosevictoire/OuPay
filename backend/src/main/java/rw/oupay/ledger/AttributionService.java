@@ -39,8 +39,14 @@ public class AttributionService {
                    t.reported_code, t.attribution_status, t.attribution_basis, t.agent_attribution, t.collection_code_id,
                    c.display_label as code_label, c.branch_id as code_branch_id,
                    cs.sale_reference, cs.agent_name, cs.agent_user_id, cs.invoice_id, cs.branch_id as sale_branch_id,
-                   exists (select 1 from payment_allocations a where a.bank_transaction_id = t.id and a.merchant_id = t.merchant_id
-                           and a.invoice_id = cs.invoice_id and a.status = 'ACTIVE') as matched
+                   t.payment_request_id, cs.payment_request_id as sale_request_id, cs.amount_rwf as sale_amount,
+                   coalesce((select sum(a.amount_rwf) from payment_allocations a where a.bank_transaction_id = t.id and a.merchant_id = t.merchant_id
+                             and a.invoice_id = cs.invoice_id and a.status = 'ACTIVE'), 0) as allocated_to_sale,
+                   (select case when count(distinct a.origin) = 0 then null when count(distinct a.origin) > 1 then 'MIXED' else min(a.origin) end
+                      from payment_allocations a where a.bank_transaction_id = t.id and a.merchant_id = t.merchant_id
+                       and a.invoice_id = cs.invoice_id and a.status = 'ACTIVE') as allocation_origin,
+                   coalesce((select sum(a.amount_rwf) from payment_allocations a where a.merchant_id = cs.merchant_id
+                             and a.invoice_id = cs.invoice_id and a.status = 'ACTIVE'), 0) as sale_allocated_total
             from bank_transactions t
             left join collection_codes c on c.id = t.collection_code_id and c.merchant_id = t.merchant_id
             left join code_sales cs on cs.payment_request_id = t.referenced_code_sale_id and cs.merchant_id = t.merchant_id
@@ -50,7 +56,7 @@ public class AttributionService {
     private record Row(UUID id, UUID merchantId, String providerTransactionId, BankTransactionStatus status, long amount, java.time.Instant occurredAt,
                        java.time.Instant createdAt, ReviewState reviewState, String reportedCode, String attributionStatus, String basis,
                        String agentAttribution, UUID codeId, String codeLabel, UUID codeBranchId, String saleReference, String agentName,
-                       boolean matched) {}
+                       UUID paymentRequestId, UUID saleRequestId, long saleAmount, long allocatedToSale, String allocationOrigin, long saleAllocatedTotal) {}
 
     private final JdbcClient jdbc;
     private final MerchantAccess access;
@@ -128,7 +134,8 @@ public class AttributionService {
                 rs.getTimestamp("created_at").toInstant(), ReviewState.valueOf(rs.getString("review_state")), rs.getString("reported_code"),
                 rs.getString("attribution_status"), rs.getString("attribution_basis"), rs.getString("agent_attribution"),
                 rs.getObject("collection_code_id", UUID.class), rs.getString("code_label"), rs.getObject("code_branch_id", UUID.class),
-                rs.getString("sale_reference"), rs.getString("agent_name"), rs.getBoolean("matched"));
+                rs.getString("sale_reference"), rs.getString("agent_name"), rs.getObject("payment_request_id", UUID.class),
+                rs.getObject("sale_request_id", UUID.class), rs.getLong("sale_amount"), rs.getLong("allocated_to_sale"), rs.getString("allocation_origin"), rs.getLong("sale_allocated_total"));
     }
 
     private static AttributionDtos.AttributionView view(Row r, Actor actor) {
@@ -139,9 +146,31 @@ public class AttributionService {
         // The collector is named only when the evidence agrees (code, sale and account) AND the money is verified: not for pending, failed or
         // reversed money, and never for a sale that is merely named.
         boolean confirmed = "CONFIRMED_FROM_SALE_SNAPSHOT".equals(r.agentAttribution()) && r.status() == BankTransactionStatus.CONFIRMED;
+        // Five different facts, never one flag: the money is CONFIRMED; the code is RESOLVED; the sale's exact reference is MATCHED (linked) to the
+        // transaction; money is ALLOCATED to the sale; the sale is FULLY PAID. Each is read from where it lives (status, attribution, the link, the
+        // allocations), none is inferred from another.
+        boolean resolved = "RESOLVED".equals(r.attributionStatus());
+        boolean named = r.saleRequestId() != null;
+        boolean matched = named && r.saleRequestId().equals(r.paymentRequestId());
+        boolean paid = named && r.saleAllocatedTotal() >= r.saleAmount();
+        String stage;
+        if ("CONFLICT".equals(r.attributionStatus())) {
+            stage = "CONFLICT";
+        } else if (r.status() != BankTransactionStatus.CONFIRMED) {
+            stage = "NOT_CONFIRMED";
+        } else if (r.allocatedToSale() > 0) {
+            stage = paid ? "FULLY_PAID" : "ALLOCATED";
+        } else if (matched) {
+            stage = "SALE_MATCHED";
+        } else if (resolved) {
+            stage = "CODE_RESOLVED";
+        } else {
+            stage = "AWAITING_MATCHING";
+        }
         return new AttributionDtos.AttributionView(r.merchantId(), r.id(), r.providerTransactionId(), r.status(), r.amount(), r.occurredAt(), reported,
                 r.reportedCode() != null && !full, code, r.attributionStatus() == null ? "NOT_EVALUATED" : r.attributionStatus(), r.basis(),
-                r.agentAttribution(), confirmed ? r.agentName() : null, r.saleReference(), r.matched(), r.reviewState(), r.createdAt());
+                r.agentAttribution(), confirmed ? r.agentName() : null, r.saleReference(), stage, resolved, named, matched, r.allocatedToSale(), r.allocationOrigin(), paid,
+                r.reviewState(), r.createdAt());
     }
 
     /** Keeps only the last two characters of a longer value: enough to recognise it, never enough to use it. */

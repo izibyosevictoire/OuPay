@@ -71,7 +71,7 @@ public class LedgerOperations {
             throw LedgerRuleException.invoiceNotPayable(invoice.getInvoiceNumber());
         }
         // A demonstration code sale never takes bank money, and no code sale is matched automatically (the database trigger says the same).
-        codeSales.requireAllowed(invoice, origin);
+        codeSales.requireAllowed(tx, invoice, origin);
         if (amount <= 0) {
             throw new LedgerRuleException("validation", "The amount must be a positive whole number of francs.");
         }

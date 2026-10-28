@@ -62,13 +62,14 @@ public class BankEventProcessor {
     private final InvoiceRepository invoices;
     private final LedgerOperations ledger;
     private final AttributionRecorder attribution;
+    private final CodeSaleMatcher codeSales;
     private final NotificationService notifications;
     private final AuditService audit;
     private final FinancialMetrics metrics;
     private final Clock clock;
 
     public BankEventProcessor(JdbcClient jdbc, BankConnectionRepository connections, BankTransactionRepository transactions,
-                              PaymentRequestRepository requests, InvoiceRepository invoices, LedgerOperations ledger, AttributionRecorder attribution,
+                              PaymentRequestRepository requests, InvoiceRepository invoices, LedgerOperations ledger, AttributionRecorder attribution, CodeSaleMatcher codeSales,
                               NotificationService notifications, AuditService audit, FinancialMetrics metrics, Clock clock) {
         this.jdbc = jdbc;
         this.connections = connections;
@@ -77,6 +78,7 @@ public class BankEventProcessor {
         this.invoices = invoices;
         this.ledger = ledger;
         this.attribution = attribution;
+        this.codeSales = codeSales;
         this.notifications = notifications;
         this.audit = audit;
         this.metrics = metrics;
@@ -162,10 +164,12 @@ public class BankEventProcessor {
                     (event.simulated() ? "Simulated " : "") + event.status().name().toLowerCase(Locale.ROOT) + " payment of RWF "
                             + event.amountRwf() + " received.");
             finish(event, merchantId, Outcome.APPLIED, null);
+            // Order matters: the bank's evidence is RECORDED first (R6d-A), so that matching a confirmed payment to a code sale can rely on it.
+            var attributed = attribution.record(tx, event.reportedCode());
             if (tx.getStatus() == BankTransactionStatus.CONFIRMED) {
                 reconcileConfirmed(tx);
             }
-            attribute(tx, event);
+            reviewAttribution(tx, attributed);
             return new Result(Outcome.APPLIED, tx.getId(), null);
         }
         return applyToKnown(event, merchantId, tx);
@@ -199,22 +203,24 @@ public class BankEventProcessor {
         audit.recordLedger(merchantId, null, "STATUS_CHANGED", tx.getId(), null,
                 "Status changed from " + previous.name().toLowerCase(Locale.ROOT) + " to " + next.name().toLowerCase(Locale.ROOT) + ".");
         finish(event, merchantId, Outcome.APPLIED, null);
+        // A later authenticated event may COMPLETE missing evidence (a code that was not reported before) or contradict it; either is recorded
+        // before anything is matched, so a payment is matched on the evidence as it stands now, never on a stale view.
+        var attributed = attribution.record(tx, event.reportedCode());
         if (next == BankTransactionStatus.CONFIRMED) {
             reconcileConfirmed(tx);
         }
         if (next == BankTransactionStatus.REVERSED && previous == BankTransactionStatus.CONFIRMED) {
             ledger.reverseAllOf(tx);
         }
-        attribute(tx, event);
+        reviewAttribution(tx, attributed);
         return new Result(Outcome.APPLIED, tx.getId(), null);
     }
 
     /**
-     * Records what the bank reported about the code (R6d-A). Evidence only: it never allocates and never changes a status. Money that cannot
-     * be attributed, or whose evidence contradicts itself, is flagged for a person when it is confirmed and has not been applied anywhere.
+     * What the bank reported about the code was recorded by {@link AttributionRecorder} (R6d-A: evidence only, it never allocates). Money that
+     * cannot be attributed, or whose evidence contradicts itself, is flagged for a person when it is confirmed and has not been applied anywhere.
      */
-    private void attribute(BankTransaction tx, NormalizedBankEvent event) {
-        var result = attribution.record(tx, event.reportedCode());
+    private void reviewAttribution(BankTransaction tx, AttributionRecorder.Result result) {
         if (result.needsReview() && tx.getStatus() == BankTransactionStatus.CONFIRMED && tx.getReviewState() == ReviewState.NONE
                 && ledger.allocatedOfTransaction(tx.getId()) == 0) {
             ledger.flagForReview(tx, result.note());
@@ -232,15 +238,19 @@ public class BankEventProcessor {
             return;
         }
         Optional<PaymentRequest> request = requests.findByMerchantIdAndPublicReference(merchantId, reference);
-        // CODE sales are never matched here: not by their sale reference, not by their invoice number, and not by amount, time or agent either.
-        // Money that names one stays CONFIRMED and UNMATCHED and goes to review, until bank attribution (R6d) has real evidence to use.
+        // A CODE sale is matched ONLY on complete, consistent bank evidence (R6d-B): the exact OP- reference, the bank-reported code that is the
+        // sale's own, the sale's settlement account, a LIVE sale. Never by invoice number, amount, time, payer or agent. Anything less leaves the
+        // money CONFIRMED and UNMATCHED, with the missing evidence as the review reason. When everything agrees, the ordinary exact-reference
+        // allocation below runs unchanged (same locks, same cap at the remaining balance, same overpayment handling), and the database re-checks it.
         boolean codeSale = request.map(r -> r.getSource() == PaymentRequestSource.CODE).orElse(false)
                 || (request.isEmpty() && invoices.findByMerchantIdAndInvoiceNumber(merchantId, reference)
                         .map(i -> i.getSaleChannel() == SaleChannel.CODE).orElse(false));
         if (codeSale) {
-            ledger.flagForReview(tx, "The reference " + reference + " names a code sale. Code sales are not matched to bank money automatically yet, "
-                    + "so this payment stays confirmed and unmatched for review.");
-            return;
+            var verdict = codeSales.evaluate(tx);
+            if (!verdict.eligible()) {
+                ledger.flagForReview(tx, verdict.reason());
+                return;
+            }
         }
         if (request.isPresent() && !request.get().getId().equals(tx.getPaymentRequestId())) {
             tx.linkRequest(request.get().getId(), clock.instant());

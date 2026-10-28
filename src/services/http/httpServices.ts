@@ -123,6 +123,8 @@ const PAYMENT_CODES: PaymentServiceErrorCode[] = [
   'transaction_not_confirmed',
   'invoice_not_payable',
   'code_sale_not_payable',
+  'code_sale_evidence_mismatch',
+  'reconciliation_reason_required',
   'exceeds_remaining',
   'exceeds_unapplied',
   'allocation_not_active',

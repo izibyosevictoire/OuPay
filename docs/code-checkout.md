@@ -96,7 +96,8 @@ The effect on existing financial code is narrow: one early return in `BankEventP
 `CodeSaleAllocationPolicy.requireAllowed` in `LedgerOperations.allocate` and the manual validation loop, one filter on the payable-invoices list,
 and one additive trigger. No existing ledger constraint, trigger or invariant is weakened.
 
-R6d replaces the "never automatic" rule with attribution that uses authenticated bank evidence; the trigger and policy are the single place to relax.
+R6d-B replaced the "never automatic" rule for LIVE sales with matching on authenticated bank evidence (see [code-sale-reconciliation.md](code-sale-reconciliation.md));
+the policy and the V15 trigger are the single place that rule lives. A DEMONSTRATION sale still never receives money, by any route.
 
 ## Demonstration sales and the business's financial records
 

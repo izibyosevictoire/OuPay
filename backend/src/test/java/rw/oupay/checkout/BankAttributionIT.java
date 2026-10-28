@@ -96,7 +96,7 @@ class BankAttributionIT extends CodeCheckoutTestSupport {
         assertThat(view.path("collectionCode").path("id").asString()).isEqualTo(id(code));
         assertThat(view.path("collectionCode").path("label").asString()).isEqualTo("Counter");
         assertThat(view.path("reportedCode").asString()).isEqualTo(CODE_A);
-        assertThat(view.path("matchedToSale").asBoolean()).isFalse();
+        assertThat(view.path("saleReferenceMatched").asBoolean()).isFalse();
     }
 
     @Test
@@ -252,7 +252,7 @@ class BankAttributionIT extends CodeCheckoutTestSupport {
         assertThat(view.path("agentName").asString()).isEqualTo("Aline Cashier");
         assertThat(view.path("saleReference").asString()).isEqualTo(reference);
         // It is evidence only: nothing was matched or allocated (R6c policy, until the bank's evidence is confirmed).
-        assertThat(view.path("matchedToSale").asBoolean()).isFalse();
+        assertThat(view.path("saleReferenceMatched").asBoolean()).isFalse();
         assertThat(allocations()).isZero();
         assertThat(row.get("payment_request_id")).isNull();
     }
@@ -415,7 +415,7 @@ class BankAttributionIT extends CodeCheckoutTestSupport {
         assertThat(view.path("attributionStatus").asString()).isEqualTo("RESOLVED");
         assertThat(view.path("agentAttribution").asString()).isEqualTo("CONFIRMED_FROM_SALE_SNAPSHOT");
         assertThat(absent(view.path("agentName"))).isTrue();
-        assertThat(view.path("matchedToSale").asBoolean()).isFalse();
+        assertThat(view.path("saleReferenceMatched").asBoolean()).isFalse();
         assertThat(allocations()).isZero();
         assertThat(w.cashier.get(m("/bank-attributions")).json().path("items").size()).isZero();
     }
@@ -541,7 +541,7 @@ class BankAttributionIT extends CodeCheckoutTestSupport {
         assertThat(allocations()).isZero();
         assertThat(tx(delivery.transactionId()).get("payment_request_id")).isNull();
         assertThat(w.owner.get(m("/invoices/" + sale.path("invoiceId").asString())).json().path("paymentStatus").asString()).isEqualTo("UNPAID");
-        assertThat(attribution(delivery).path("matchedToSale").asBoolean()).isFalse();
+        assertThat(attribution(delivery).path("saleReferenceMatched").asBoolean()).isFalse();
     }
 
     @Test
