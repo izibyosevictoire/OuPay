@@ -18,6 +18,9 @@ export const paymentKeys = {
   transaction: (merchantId: string, id: string) =>
     ['payments', merchantId, 'transaction', id] as const,
   allocations: (merchantId: string) => ['payments', merchantId, 'allocations'] as const,
+  attributions: (merchantId: string) => ['payments', merchantId, 'attributions'] as const,
+  attribution: (merchantId: string, id: string) =>
+    ['payments', merchantId, 'attribution', id] as const,
   payableInvoices: (merchantId: string) => ['payments', merchantId, 'payable-invoices'] as const,
   providers: () => ['providers'] as const,
   connections: (merchantId: string) => ['payments', merchantId, 'connections'] as const,
@@ -64,6 +67,26 @@ export function useBankTransaction(transactionId: string) {
   return useQuery({
     queryKey: paymentKeys.transaction(merchantId, transactionId),
     queryFn: () => reconciliationService.getBankTransaction(merchantId, transactionId),
+    retry: false,
+  })
+}
+
+/** How incoming transactions relate to collection codes and code sales. Scoped by the server; a failure never hides the transactions. */
+export function useBankAttributions() {
+  const merchantId = useSelectedMerchantId()
+  return useQuery({
+    queryKey: paymentKeys.attributions(merchantId),
+    queryFn: () => reconciliationService.listBankAttributions(merchantId),
+    retry: false,
+  })
+}
+
+/** One transaction's attribution. `not_found` means it is not a code payment, or is outside what this person may see. */
+export function useBankAttribution(transactionId: string) {
+  const merchantId = useSelectedMerchantId()
+  return useQuery({
+    queryKey: paymentKeys.attribution(merchantId, transactionId),
+    queryFn: () => reconciliationService.getBankAttribution(merchantId, transactionId),
     retry: false,
   })
 }

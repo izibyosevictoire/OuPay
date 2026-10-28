@@ -54,7 +54,7 @@ interface MockCodeCheckoutOptions {
 }
 
 /** The sale as the mock remembers it: an immutable snapshot, like the server's `code_sales` row. */
-interface StoredCodeSale {
+export interface StoredCodeSale {
   saleId: string
   merchantId: string
   clientRequestId: string

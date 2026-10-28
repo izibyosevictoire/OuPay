@@ -56,7 +56,8 @@ public class AttributionService {
     private record Row(UUID id, UUID merchantId, String providerTransactionId, BankTransactionStatus status, long amount, java.time.Instant occurredAt,
                        java.time.Instant createdAt, ReviewState reviewState, String reportedCode, String attributionStatus, String basis,
                        String agentAttribution, UUID codeId, String codeLabel, UUID codeBranchId, String saleReference, String agentName,
-                       UUID paymentRequestId, UUID saleRequestId, long saleAmount, long allocatedToSale, String allocationOrigin, long saleAllocatedTotal) {}
+                       UUID paymentRequestId, UUID saleRequestId, long saleAmount, long allocatedToSale, String allocationOrigin, long saleAllocatedTotal,
+                       UUID saleInvoiceId) {}
 
     private final JdbcClient jdbc;
     private final MerchantAccess access;
@@ -135,7 +136,8 @@ public class AttributionService {
                 rs.getString("attribution_status"), rs.getString("attribution_basis"), rs.getString("agent_attribution"),
                 rs.getObject("collection_code_id", UUID.class), rs.getString("code_label"), rs.getObject("code_branch_id", UUID.class),
                 rs.getString("sale_reference"), rs.getString("agent_name"), rs.getObject("payment_request_id", UUID.class),
-                rs.getObject("sale_request_id", UUID.class), rs.getLong("sale_amount"), rs.getLong("allocated_to_sale"), rs.getString("allocation_origin"), rs.getLong("sale_allocated_total"));
+                rs.getObject("sale_request_id", UUID.class), rs.getLong("sale_amount"), rs.getLong("allocated_to_sale"), rs.getString("allocation_origin"), rs.getLong("sale_allocated_total"),
+                rs.getObject("invoice_id", UUID.class));
     }
 
     private static AttributionDtos.AttributionView view(Row r, Actor actor) {
@@ -169,7 +171,7 @@ public class AttributionService {
         }
         return new AttributionDtos.AttributionView(r.merchantId(), r.id(), r.providerTransactionId(), r.status(), r.amount(), r.occurredAt(), reported,
                 r.reportedCode() != null && !full, code, r.attributionStatus() == null ? "NOT_EVALUATED" : r.attributionStatus(), r.basis(),
-                r.agentAttribution(), confirmed ? r.agentName() : null, r.saleReference(), stage, resolved, named, matched, r.allocatedToSale(), r.allocationOrigin(), paid,
+                r.agentAttribution(), confirmed ? r.agentName() : null, r.saleReference(), r.saleInvoiceId(), stage, resolved, named, matched, r.allocatedToSale(), r.allocationOrigin(), paid,
                 r.reviewState(), r.createdAt());
     }
 

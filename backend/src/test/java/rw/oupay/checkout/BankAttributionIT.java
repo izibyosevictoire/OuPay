@@ -319,6 +319,7 @@ class BankAttributionIT extends CodeCheckoutTestSupport {
         JsonNode view = attribution(delivery);
         assertThat(view.path("agentName").asString()).isEqualTo("Aline Cashier");
         assertThat(view.path("collectionCode").path("id").asString()).isEqualTo(id(code));
+        assertThat(view.path("saleInvoiceId").asString()).isEqualTo(sale.path("invoiceId").asString());
         // Evidence and conclusion are separate facts: the reference and the reported code are recorded as they arrived.
         assertThat(row.get("reported_code")).isEqualTo(CODE_A);
         assertThat(row.get("payment_reference")).isEqualTo(sale.path("saleReference").asString());

@@ -22,6 +22,7 @@ public final class AttributionDtos {
      *                          SALE_NAMED_UNCONFIRMED (the exact sale is named but the bank reported no code) or UNRESOLVED. Never inferred
      * @param agentName         only when the agent is CONFIRMED and the money is verified; a named but unconfirmed sale never names an agent
      * @param saleReference     the exact CODE sale reference the payment carries, or null. A reference is NOT a match
+     * @param saleInvoiceId     that sale's invoice (the business's own), so a screen can link to it. Same visibility as the sale reference
      * @param stage             where this payment stands, from the facts below (never a status of its own): NOT_CONFIRMED, AWAITING_MATCHING
      *                          (verified funds, nothing resolved or matched), CODE_RESOLVED, SALE_MATCHED, ALLOCATED, FULLY_PAID, or CONFLICT
      * @param codeResolved      the reported code resolved to one of the business's own codes (attribution)
@@ -36,6 +37,6 @@ public final class AttributionDtos {
     public record AttributionView(UUID merchantId, UUID transactionId, String providerTransactionId, BankTransactionStatus transactionStatus,
                                   long amountRwf, Instant occurredAt, String reportedCode, boolean reportedCodeMasked, CodeRef collectionCode,
                                   String attributionStatus, String attributionBasis, String agentAttribution, String agentName,
-                                  String saleReference, String stage, boolean codeResolved, boolean saleReferenceNamed, boolean saleReferenceMatched,
+                                  String saleReference, UUID saleInvoiceId, String stage, boolean codeResolved, boolean saleReferenceNamed, boolean saleReferenceMatched,
                                   long allocatedToSaleRwf, String allocationOrigin, boolean saleFullyPaid, ReviewState reviewState, Instant createdAt) {}
 }

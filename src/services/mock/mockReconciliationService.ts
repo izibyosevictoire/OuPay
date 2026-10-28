@@ -9,6 +9,7 @@ import { buildAllocationViews, buildTransactionViews } from './ledger/ledgerView
 import { createLedgerStore, type LedgerStore } from './ledger/mockLedgerStore'
 import { requirePaymentActor, scopeUserId } from './mockPaymentAccess'
 import { createOperationRunner } from './mockOrganizationAccess'
+import { buildAttributionViews } from './ledger/mockAttributionViews'
 
 interface MockReconciliationServiceOptions {
   authStore?: MockAuthStore
@@ -56,7 +57,23 @@ export function createMockReconciliationService(
     throw error
   }
 
+  const attributionsOf = (merchantId: string) => {
+    const actor = requirePaymentActor(store, merchantId, 'transactions:view')
+    return buildAttributionViews(store, ledger, merchantId, actor)
+  }
+
   return {
+    listBankAttributions: (merchantId) => run(() => attributionsOf(merchantId)),
+
+    getBankAttribution: (merchantId, bankTransactionId) =>
+      run(() => {
+        const found = attributionsOf(merchantId).find((a) => a.transactionId === bankTransactionId)
+        if (!found) {
+          throw new PaymentServiceError('not_found', 'This transaction could not be found.')
+        }
+        return found
+      }),
+
     listBankTransactions: (merchantId) =>
       run(() => {
         const actor = requirePaymentActor(store, merchantId, 'transactions:view')

@@ -83,6 +83,7 @@ export const AUDIT_KIND_LABELS: Record<AuditEntryKind, string> = {
   BANK_REVERSAL: 'Bank reversal',
   FLAGGED_FOR_REVIEW: 'Flagged for review',
   MARKED_REVIEWED: 'Reviewed',
+  ATTRIBUTION_RECORDED: 'Bank evidence recorded',
   DUPLICATE_EVENT_IGNORED: 'Duplicate ignored',
   STALE_EVENT_IGNORED: 'Stale event ignored',
   REFUND_RECORDED: 'Refund recorded',

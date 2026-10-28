@@ -114,7 +114,14 @@ class CodeSaleReconciliationIT extends CodeCheckoutTestSupport {
         assertThat(view.path("allocatedToSaleRwf").asLong()).isEqualTo(12_000);
         assertThat(view.path("saleFullyPaid").asBoolean()).isTrue();
         assertThat(view.path("stage").asString()).isEqualTo("FULLY_PAID");
+        assertThat(view.path("saleInvoiceId").asString()).isEqualTo(sale.path("invoiceId").asString());
+        assertThat(view.path("allocationOrigin").asString()).isEqualTo("AUTO_REFERENCE");
         assertThat(view.path("agentName").asString()).isEqualTo("Aline Cashier");
+        // The cashier whose confirmed sale it is sees the same link; another business sees none of it.
+        var mine = w.cashier.get(m("/bank-attributions/" + tx(delivery.transactionId()).get("id")));
+        assertThat(mine.status()).isEqualTo(200);
+        assertThat(mine.json().path("saleInvoiceId").asString()).isEqualTo(sale.path("invoiceId").asString());
+        assertThat(w.cafeOwner.get("/api/v1/merchants/" + w.cafeMerchantId + "/bank-attributions/" + tx(delivery.transactionId()).get("id")).status()).isEqualTo(404);
         // The customer's page says paid, because money was applied, and the agent's sale too.
         assertThat(publicSale(ref(sale)).json().path("status").asString()).isEqualTo("PAID");
         assertThat(w.cashier.get(sale() + "/" + sale.path("saleId").asString()).json().path("status").asString()).isEqualTo("SETTLED");

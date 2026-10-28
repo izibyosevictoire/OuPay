@@ -8,6 +8,7 @@ import {
   type CodeCheckoutServiceErrorCode,
   type PublicCodeSaleService,
 } from '@/services/codeCheckoutService'
+import type { BankAttribution } from '@/types/bankAttribution'
 import type {
   CodeCheckoutOptions,
   CodePresentation,
@@ -559,8 +560,62 @@ export function createHttpDashboardService(http: HttpClient): DashboardService {
   }
 }
 
+/** The server omits null fields, so a missing field means null. Normalised once, here. */
+type RawBankAttribution = Omit<
+  BankAttribution,
+  | 'reportedCode'
+  | 'collectionCode'
+  | 'attributionBasis'
+  | 'agentAttribution'
+  | 'agentName'
+  | 'saleReference'
+  | 'saleInvoiceId'
+  | 'allocationOrigin'
+> &
+  Partial<
+    Pick<
+      BankAttribution,
+      | 'reportedCode'
+      | 'collectionCode'
+      | 'attributionBasis'
+      | 'agentAttribution'
+      | 'agentName'
+      | 'saleReference'
+      | 'saleInvoiceId'
+      | 'allocationOrigin'
+    >
+  >
+
+const attributionOf = (raw: RawBankAttribution): BankAttribution => ({
+  ...raw,
+  reportedCode: raw.reportedCode ?? null,
+  collectionCode: raw.collectionCode
+    ? { ...raw.collectionCode, branchId: raw.collectionCode.branchId ?? null }
+    : null,
+  attributionBasis: raw.attributionBasis ?? null,
+  agentAttribution: raw.agentAttribution ?? null,
+  agentName: raw.agentName ?? null,
+  saleReference: raw.saleReference ?? null,
+  saleInvoiceId: raw.saleInvoiceId ?? null,
+  allocationOrigin: raw.allocationOrigin ?? null,
+})
+
 export function createHttpReconciliationService(http: HttpClient): ReconciliationService {
   return {
+    listBankAttributions: translating(
+      async (id) =>
+        (await fetchAllPages<RawBankAttribution>(http, `${m(id)}/bank-attributions`)).map(
+          attributionOf,
+        ),
+      paymentError,
+    ),
+    getBankAttribution: translating(
+      async (id, transactionId) =>
+        attributionOf(
+          await http.get<RawBankAttribution>(`${m(id)}/bank-attributions/${transactionId}`),
+        ),
+      paymentError,
+    ),
     listBankTransactions: translating(
       (id) => fetchAllPages(http, `${m(id)}/bank-transactions`),
       paymentError,
