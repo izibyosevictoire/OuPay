@@ -1,6 +1,7 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { cleanup, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { posService } from '@/services'
+import { PosServiceError } from '@/services/posService'
 import { MOCK_STORAGE_KEYS } from '@/services/mock/mockStorageKeys'
 import {
   SAMPLE_CATALOG_ITEMS,
@@ -9,6 +10,7 @@ import {
   type StoredPriceVersion,
 } from '@/services/mock/sampleCatalog'
 import { SAMPLE_MERCHANT_ID } from '@/services/mock/sampleMerchants'
+import { SAMPLE_BRANCH_IDS } from '@/services/mock/sampleOrganization'
 import { findAccessibilityViolations } from '@/test/axe'
 import { getActiveTestBackend, useFastBackend, type DemoUserKey } from '@/test/merchantTestDouble'
 import { renderAppAt } from '@/test/renderApp'
@@ -349,5 +351,232 @@ describe('POS billing: review additions', () => {
     // The cart stays, is priced again at the new branch, and saving makes a new draft there.
     expect(await screen.findByRole('button', { name: 'Save draft' })).toBeInTheDocument()
     await cartList().findByText(/1 pc × RWF\s?3,000/)
+  })
+})
+
+/** A simulated code the cashier (Aline) holds at Remera, on the account a payment link of the sample ledger collects to. */
+async function giveCashierADemoCode(label = 'Demo counter') {
+  const backend = getActiveTestBackend()
+  backend.signInAs('owner')
+  const profile = backend.ledger.paymentProfiles
+    .load()
+    .find(
+      (p) =>
+        p.merchantId === SAMPLE_MERCHANT_ID &&
+        p.status === 'ACTIVE' &&
+        p.assignedCashierId === null,
+    )
+  const destination = backend.ledger.paymentDestinations
+    .load()
+    .find((d) => d.id === profile?.paymentDestinationId)
+  const requested = await backend.fastCollectionCodes.requestCode(SAMPLE_MERCHANT_ID, {
+    clientOperationId: crypto.randomUUID(),
+    settlementDestinationId: destination?.id ?? '',
+    displayLabel: label,
+    branchId: SAMPLE_BRANCH_IDS.remera,
+  })
+  await backend.fastCollectionCodes.assign(SAMPLE_MERCHANT_ID, requested.code.id, {
+    membershipId: 'mem-004',
+  })
+  return requested.code
+}
+
+async function cartAtRemera(
+  user: User,
+  items: [name: string, quantity: string][],
+  signedInAs: DemoUserKey = 'cashier',
+) {
+  await openPos(signedInAs)
+  // Only a person who may bill at several branches has a branch selector.
+  if (signedInAs === 'cashier') {
+    await user.selectOptions(await screen.findByLabelText(/^Branch/), 'Remera Main')
+  }
+  for (const [name, quantity] of items) {
+    await add(user, name)
+    await setQuantity(user, name, quantity)
+  }
+  await user.click(screen.getByRole('button', { name: 'Save draft' }))
+  await screen.findByText(/Draft saved/)
+  await user.click(await screen.findByRole('button', { name: 'Review and bill' }))
+  await screen.findByRole('heading', { level: 2, name: 'Review and bill' })
+}
+
+describe('POS billing: review and bill (R7b)', () => {
+  it('reviews the final price, tax and availability, then shows the outcome without claiming payment or a sale of stock', async () => {
+    const user = userEvent.setup()
+    await giveCashierADemoCode()
+    await cartAtRemera(user, [
+      ['Rice', '2'],
+      ['Haircut', '1'],
+    ])
+    const demoNotice = await screen.findByText(/This is a demonstration bill\./)
+    for (const statement of [
+      'It is not payable through a real Equity code.',
+      'No real bank payment has been made.',
+      'Physical stock has not been reserved or deducted.',
+    ]) {
+      expect(demoNotice).toHaveTextContent(statement)
+    }
+    const lines = within(screen.getByRole('list', { name: 'Lines to bill' }))
+    expect(lines.getByText(/Tax: Exempt · net RWF\s?2,400 \+ tax RWF\s?0/)).toBeInTheDocument()
+    expect(lines.getByText(/available 746\.5 kg/)).toBeInTheDocument()
+    expect(lines.getByText('Service: no stock needed')).toBeInTheDocument()
+    expect(screen.getByText('Total to bill').nextSibling).toHaveTextContent(/RWF\s?5,400/)
+    expect(
+      screen.getByText(/Billing reserves the goods; it does not sell or deduct them/),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^Bill RWF\s?5,400$/ }))
+
+    expect(await screen.findByRole('heading', { level: 2, name: /^POS sale / })).toBeInTheDocument()
+    const sale = within(screen.getByRole('list', { name: 'Billed lines' }))
+    expect(sale.getAllByText(/Tax: Exempt/).length).toBe(2)
+    // A demonstration never says reserved or fulfilled: nothing real happened to stock.
+    expect(screen.getByText('Stock not reserved or deducted (demonstration)')).toBeInTheDocument()
+    expect(screen.getAllByText(/This is a demonstration bill\./).length).toBeGreaterThan(0)
+    expect(
+      screen.queryByText(/Goods reserved|Goods fulfilled|reservation released/i),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Open invoice/ })).toHaveAttribute(
+      'href',
+      expect.stringMatching(/^\/invoices\//),
+    )
+    // The payment side is the existing code-sale view: a reference, and no "Paid" until the bank has confirmed it.
+    expect(await screen.findByText(/Sale reference/)).toBeInTheDocument()
+    expect(screen.getByText('Awaiting payment')).toBeInTheDocument()
+    expect(screen.queryByText(/^Paid$/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/stock sold|goods sold/i)).not.toBeInTheDocument()
+  })
+
+  it('blocks billing for an item with no tax classification and says where to fix it', async () => {
+    const user = userEvent.setup()
+    await giveCashierADemoCode()
+    await cartAtRemera(user, [['Cement', '10']])
+    const heading = await screen.findByText(/This cart cannot be billed yet/)
+    const alert = heading.closest('[role="alert"]') as HTMLElement
+    expect(alert).toHaveTextContent(/Cement has no tax treatment set/)
+    expect(within(alert).getByRole('link', { name: 'Open the catalog' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Bill / })).toBeDisabled()
+  })
+
+  it('retries a bill whose answer was lost with the same retry key and bills once', async () => {
+    const user = userEvent.setup()
+    await giveCashierADemoCode()
+    await cartAtRemera(user, [['Haircut', '1']])
+    const bill = vi.spyOn(posService, 'billPosDraft')
+    bill.mockRejectedValueOnce(new PosServiceError('service_unavailable', 'lost'))
+    await user.click(await screen.findByRole('button', { name: /^Bill RWF\s?3,000$/ }))
+    expect(await screen.findByText(/the same bill is never made twice/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+    await screen.findByRole('heading', { level: 2, name: /^POS sale / })
+    expect(bill).toHaveBeenCalledTimes(2)
+    expect(bill.mock.calls[1]![2].idempotencyKey).toBe(bill.mock.calls[0]![2].idempotencyKey)
+    expect(bill.mock.calls[0]![2]).toMatchObject({
+      reviewedTotalRwf: 3_000,
+      expectedDraftVersion: 0,
+    })
+    expect(JSON.stringify(bill.mock.calls[0]![2])).not.toMatch(/unitPrice|tax|stock/i)
+    expect(getActiveTestBackend().store.loadRecords(MOCK_STORAGE_KEYS.posSales, [])).toHaveLength(1)
+  })
+
+  it('reads the review again when the server says the total changed, and bills nothing', async () => {
+    const user = userEvent.setup()
+    await giveCashierADemoCode()
+    await cartAtRemera(user, [['Haircut', '1']])
+    const review = vi.spyOn(posService, 'getBillingReview')
+    vi.spyOn(posService, 'billPosDraft').mockRejectedValueOnce(
+      new PosServiceError(
+        'review_changed',
+        'The price, tax or total changed since you reviewed it (now RWF 3,500).',
+      ),
+    )
+    await user.click(await screen.findByRole('button', { name: /^Bill RWF\s?3,000$/ }))
+    expect(await screen.findByText(/changed since you reviewed it/)).toBeInTheDocument()
+    expect(screen.getByText(/The review above was read again/)).toBeInTheDocument()
+    await waitFor(() => expect(review).toHaveBeenCalled())
+    expect(getActiveTestBackend().store.loadRecords(MOCK_STORAGE_KEYS.posSales, [])).toHaveLength(0)
+  })
+
+  it('finds the sale again after a refresh, from the server', async () => {
+    const user = userEvent.setup()
+    await giveCashierADemoCode()
+    await cartAtRemera(user, [['Haircut', '1']])
+    await user.click(await screen.findByRole('button', { name: /^Bill RWF\s?3,000$/ }))
+    await screen.findByRole('heading', { level: 2, name: /^POS sale / })
+    cleanup()
+    await openPos('cashier')
+    expect(await screen.findByRole('heading', { level: 2, name: /^POS sale / })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Save draft' })).not.toBeInTheDocument()
+  })
+})
+
+describe('POS billing: code choice, missing codes and recovery (R7b review)', () => {
+  it('asks which code to bill through when the agent holds several usable ones, and bills through the chosen one', async () => {
+    const user = userEvent.setup()
+    await giveCashierADemoCode('Front counter')
+    await giveCashierADemoCode('Back counter')
+    await cartAtRemera(user, [['Haircut', '1']])
+    // The server will not guess: nothing can be billed until a code is chosen.
+    expect(
+      await screen.findByText(/Choose which of your codes you are billing through/),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Bill / })).toBeDisabled()
+    await user.selectOptions(screen.getByLabelText(/^Collect through code/), 'Back counter')
+    const bill = await screen.findByRole('button', { name: /^Bill RWF\s?3,000$/ })
+    await waitFor(() => expect(bill).toBeEnabled())
+    const spy = vi.spyOn(posService, 'billPosDraft')
+    await user.click(bill)
+    await screen.findByRole('heading', { level: 2, name: /^POS sale / })
+    expect(spy.mock.calls[0]![2].collectionCodeId).toBeTruthy()
+    expect((await screen.findAllByText(/Back counter/)).length).toBeGreaterThan(0)
+  })
+
+  it('says plainly that nothing can be billed when the person holds no collection code', async () => {
+    const user = userEvent.setup()
+    await cartAtRemera(user, [['Haircut', '1']], 'manager')
+    const alert = (await screen.findByText(/This cart cannot be billed yet/)).closest(
+      '[role="alert"]',
+    ) as HTMLElement
+    expect(alert).toHaveTextContent(/You are not assigned a collection code/)
+    expect(screen.getByRole('button', { name: /^Bill / })).toBeDisabled()
+  })
+
+  it('says plainly when the only code is not usable, with the reason', async () => {
+    const user = userEvent.setup()
+    // The sample cashier holds only a bank-approved code, and live collection is off.
+    await cartAtRemera(user, [['Haircut', '1']])
+    const alert = (await screen.findByText(/This cart cannot be billed yet/)).closest(
+      '[role="alert"]',
+    ) as HTMLElement
+    expect(alert.textContent ?? '').toMatch(/code|Live collection|not available|not approved/i)
+    expect(screen.getByRole('button', { name: /^Bill / })).toBeDisabled()
+  })
+
+  it('shows no stock reservation for a service, and a billed draft is gone from the open drafts and can not be billed again', async () => {
+    const user = userEvent.setup()
+    await giveCashierADemoCode()
+    await cartAtRemera(user, [['Haircut', '1']])
+    expect(await screen.findByText('Service: no stock needed')).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: /^Bill RWF\s?3,000$/ }))
+    await screen.findByRole('heading', { level: 2, name: /^POS sale / })
+    expect(screen.queryByText(/Goods reserved|reserved \(not sold\)/i)).not.toBeInTheDocument()
+    const sales = getActiveTestBackend().store.loadRecords<{ draftId: string }>(
+      MOCK_STORAGE_KEYS.posSales,
+      [],
+    )
+    expect(sales).toHaveLength(1)
+    // The same draft billed again is the same sale, never a second one.
+    const again = await posService
+      .billPosDraft(SAMPLE_MERCHANT_ID, sales[0]!.draftId, {
+        expectedDraftVersion: 0,
+        reviewedTotalRwf: 3_000,
+        idempotencyKey: 'a-new-retry-key-0001',
+      })
+      .catch((e: unknown) => e)
+    expect(again).toMatchObject({ draftId: sales[0]!.draftId })
+    expect(getActiveTestBackend().store.loadRecords(MOCK_STORAGE_KEYS.posSales, [])).toHaveLength(1)
+    // A new sale starts clean, and the billed draft is not offered for editing or billing again.
+    await user.click(screen.getByRole('button', { name: 'New sale' }))
+    await user.click(await screen.findByRole('button', { name: 'Yes, start a new sale' }))
+    expect(await screen.findByText('No saved drafts yet.')).toBeInTheDocument()
   })
 })

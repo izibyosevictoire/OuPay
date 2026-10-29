@@ -34,8 +34,7 @@ import rw.oupay.catalog.CatalogPriceRepository;
 import rw.oupay.common.ApiException;
 import rw.oupay.common.Pagination;
 import rw.oupay.idempotency.IdempotencyService;
-import rw.oupay.inventory.InventoryBalance;
-import rw.oupay.inventory.InventoryBalanceRepository;
+import rw.oupay.reservation.StockReservationService;
 import rw.oupay.invoice.InvoiceCalculator;
 import rw.oupay.invoice.InvoiceDtos;
 import rw.oupay.invoice.InvoiceService;
@@ -77,11 +76,11 @@ public class PosService {
     private static final String DRAFT_COLUMNS = "d.id, d.branch_id, b.name as branch_name, d.status, d.note, d.total_rwf, d.line_count, "
             + "d.created_by_user_id, u.full_name, d.created_at, d.updated_at, d.version";
 
-    private record DraftRow(UUID id, UUID branchId, String branchName, String status, String note, long total, int lineCount, UUID creatorId,
+    record DraftRow(UUID id, UUID branchId, String branchName, String status, String note, long total, int lineCount, UUID creatorId,
                             String creatorName, Instant createdAt, Instant updatedAt, long version) {}
 
     /** The outcome of pricing a cart: the lines that priced, and why the others did not. */
-    private record Priced(List<PosDtos.PricedLine> lines, List<PosDtos.Problem> problems, long total) {}
+    record Priced(List<PosDtos.PricedLine> lines, List<PosDtos.Problem> problems, long total) {}
 
     private record Resolved(CatalogItem item, CatalogPrice price, MeasuredQuantity entered, MeasuredQuantity inSaleUnit, PackageConversion packageOf,
                             CatalogPackage pack) {}
@@ -92,7 +91,7 @@ public class PosService {
     private final CatalogItemRepository items;
     private final CatalogPriceRepository prices;
     private final CatalogPackageRepository packages;
-    private final InventoryBalanceRepository balances;
+    private final StockReservationService reservations;
     private final BranchAssignmentRepository branchAssignments;
     private final MerchantSettingsService settings;
     private final MerchantAccess access;
@@ -100,7 +99,7 @@ public class PosService {
     private final Clock clock;
 
     public PosService(JdbcClient jdbc, IdempotencyService idempotency, InvoiceService invoices, CatalogItemRepository items,
-                      CatalogPriceRepository prices, CatalogPackageRepository packages, InventoryBalanceRepository balances,
+                      CatalogPriceRepository prices, CatalogPackageRepository packages, StockReservationService reservations,
                       BranchAssignmentRepository branchAssignments, MerchantSettingsService settings, MerchantAccess access, AuditService audit,
                       Clock clock) {
         this.jdbc = jdbc;
@@ -109,7 +108,7 @@ public class PosService {
         this.items = items;
         this.prices = prices;
         this.packages = packages;
-        this.balances = balances;
+        this.reservations = reservations;
         this.branchAssignments = branchAssignments;
         this.settings = settings;
         this.access = access;
@@ -295,7 +294,7 @@ public class PosService {
         return priced;
     }
 
-    private Priced price(UUID merchantId, UUID branchId, List<PosDtos.LineRequest> requested) {
+    Priced price(UUID merchantId, UUID branchId, List<PosDtos.LineRequest> requested) {
         List<PosDtos.Problem> problems = new ArrayList<>();
         List<PosDtos.PricedLine> lines = new ArrayList<>();
         long total = 0;
@@ -429,28 +428,31 @@ public class PosService {
 
     private PosDtos.StockCheck stockCheck(UUID merchantId, UUID branchId, PosDtos.PricedLine line, BigDecimal requestedForItem) {
         if (line.itemType() != CatalogItemType.GOODS) {
-            return new PosDtos.StockCheck("NOT_TRACKED", null, null, line.canonicalUnit());
+            return new PosDtos.StockCheck("NOT_TRACKED", null, null, line.canonicalUnit(), null, null);
         }
         BigDecimal requested = requestedForItem == null ? new BigDecimal(line.canonicalQuantity()) : requestedForItem;
-        Optional<InventoryBalance> balance = balances.findByMerchantIdAndBranchIdAndItemId(merchantId, branchId, line.itemId());
-        if (balance.isEmpty()) {
-            return new PosDtos.StockCheck("NO_STOCK_RECORD", "0", plain(requested), line.canonicalUnit());
+        StockReservationService.Position position = reservations.positions(merchantId, branchId, List.of(line.itemId())).get(line.itemId());
+        if (position == null) {
+            return new PosDtos.StockCheck("NO_STOCK_RECORD", "0", plain(requested), line.canonicalUnit(), "0", "0");
         }
-        BigDecimal onHand = balance.get().getQuantityOnHand();
-        return new PosDtos.StockCheck(onHand.compareTo(requested) >= 0 ? "SUFFICIENT" : "INSUFFICIENT", plain(onHand), plain(requested), line.canonicalUnit());
+        // Informational: AVAILABLE stock (physical minus what is reserved for sales already billed) against what this cart asks for.
+        return new PosDtos.StockCheck(position.available().compareTo(requested) >= 0 ? "SUFFICIENT" : "INSUFFICIENT", plain(position.physical()),
+                plain(requested), line.canonicalUnit(), plain(position.reserved()), plain(position.available()));
     }
 
     private PosDtos.StockInfo stockInfo(UUID merchantId, UUID branchId, CatalogItem item) {
         String canonicalUnit = item.getMeasurementDimension().canonicalUnit().code();
         if (item.getItemType() != CatalogItemType.GOODS) {
-            return new PosDtos.StockInfo("NOT_TRACKED", null, canonicalUnit, null);
+            return new PosDtos.StockInfo("NOT_TRACKED", null, canonicalUnit, null, null, null, null);
         }
-        Optional<InventoryBalance> balance = balances.findByMerchantIdAndBranchIdAndItemId(merchantId, branchId, item.getId());
-        if (balance.isEmpty()) {
-            return new PosDtos.StockInfo("NO_RECORD", "0", canonicalUnit, "0");
+        StockReservationService.Position position = reservations.positions(merchantId, branchId, List.of(item.getId())).get(item.getId());
+        if (position == null) {
+            return new PosDtos.StockInfo("NO_RECORD", "0", canonicalUnit, "0", "0", "0", "0");
         }
-        BigDecimal onHand = balance.get().getQuantityOnHand();
-        return new PosDtos.StockInfo("RECORDED", plain(onHand), canonicalUnit, plain(new MeasuredQuantity(onHand, item.getMeasurementDimension().canonicalUnit()).to(item.getSaleUnit()).amount()));
+        MeasurementUnit canonical = item.getMeasurementDimension().canonicalUnit();
+        return new PosDtos.StockInfo("RECORDED", plain(position.physical()), canonicalUnit,
+                plain(new MeasuredQuantity(position.physical(), canonical).to(item.getSaleUnit()).amount()), plain(position.reserved()),
+                plain(position.available()), plain(new MeasuredQuantity(position.available(), canonical).to(item.getSaleUnit()).amount()));
     }
 
     private PosDtos.PackageOption packageOption(CatalogItem item, CatalogPackage pack) {
@@ -475,7 +477,7 @@ public class PosService {
         }
     }
 
-    private PosDtos.Draft read(UUID merchantId, UUID draftId, Actor actor) {
+    PosDtos.Draft read(UUID merchantId, UUID draftId, Actor actor) {
         DraftRow row = rowOf(merchantId, draftId, false);
         requireVisible(row, actor);
         List<PosDtos.PricedLine> stored = jdbc.sql("select line_no, item_id, item_type, item_name, item_code, measurement_dimension, entered_quantity, entered_unit, package_id, "
@@ -503,7 +505,7 @@ public class PosService {
                 row.createdAt(), row.updatedAt(), row.version(), PosDtos.DRAFT_NOTICE, PosDtos.STOCK_NOTE, PosDtos.TAX_NOTE);
     }
 
-    private DraftRow rowOf(UUID merchantId, UUID draftId, boolean lock) {
+    DraftRow rowOf(UUID merchantId, UUID draftId, boolean lock) {
         return jdbc.sql("select " + DRAFT_COLUMNS + " from pos_drafts d join branches b on b.id = d.branch_id and b.merchant_id = d.merchant_id "
                         + "join users u on u.id = d.created_by_user_id where d.id = :id and d.merchant_id = :m" + (lock ? " for update of d" : ""))
                 .param("id", draftId).param("m", merchantId).query((rs, i) -> rowOf(rs)).optional().orElseThrow(PosService::draftNotFound);
@@ -518,7 +520,7 @@ public class PosService {
     // ---- rules ---------------------------------------------------------------------------------------------
 
     /** Authorises, then confirms the business works in BUSINESS mode: a SIMPLIFIED business keeps amount-only checkout. */
-    private Actor requirePos(UUID merchantId) {
+    Actor requirePos(UUID merchantId) {
         Actor actor = access.require(merchantId, Permission.INVOICES_CREATE);
         if (settings.operatingModeOf(merchantId) != OperatingMode.BUSINESS) {
             throw ApiException.invalidState("pos_unavailable", "Business POS is available to businesses in business mode.");
@@ -533,7 +535,7 @@ public class PosService {
         return form.branches().stream().filter(b -> assignedToMe.contains(b.id())).map(b -> new PosDtos.BranchChoice(b.id(), b.name(), b.code())).toList();
     }
 
-    private PosDtos.BranchChoice chooseBranch(UUID merchantId, Actor actor, UUID requested) {
+    PosDtos.BranchChoice chooseBranch(UUID merchantId, Actor actor, UUID requested) {
         List<PosDtos.BranchChoice> eligible = eligibleBranches(merchantId, actor);
         if (eligible.isEmpty()) {
             throw ApiException.invalidState("no_eligible_branch", actor.role() == Role.CASHIER
@@ -550,7 +552,7 @@ public class PosService {
     }
 
     /** Only the person who prepared a draft may change or discard it, and only while they are still assigned to its branch. */
-    private DraftRow lockOwn(UUID merchantId, UUID draftId, Actor actor) {
+    DraftRow lockOwn(UUID merchantId, UUID draftId, Actor actor) {
         DraftRow row = rowOf(merchantId, draftId, true);
         requireVisible(row, actor);
         if (!row.creatorId().equals(actor.userId())) {
@@ -559,7 +561,7 @@ public class PosService {
         return row;
     }
 
-    private void requireVisible(DraftRow row, Actor actor) {
+    void requireVisible(DraftRow row, Actor actor) {
         boolean visible = switch (actor.role()) {
             case OWNER -> true;
             case MANAGER -> assignedBranches(actor).contains(row.branchId());
@@ -570,13 +572,13 @@ public class PosService {
         }
     }
 
-    private static void requireDraftStatus(DraftRow row) {
+    static void requireDraftStatus(DraftRow row) {
         if (!"DRAFT".equals(row.status())) {
             throw ApiException.invalidState("draft_not_open", "This draft was discarded and can not be changed.");
         }
     }
 
-    private static void assertVersion(DraftRow row, long expected) {
+    static void assertVersion(DraftRow row, long expected) {
         if (row.version() != expected) {
             throw ApiException.conflict("version_conflict", "This draft was changed since you opened it. Reload it and try again.");
         }
@@ -607,7 +609,7 @@ public class PosService {
         return text == null || text.isBlank() ? null : text.trim();
     }
 
-    private static String plain(BigDecimal value) {
+    static String plain(BigDecimal value) {
         BigDecimal stripped = value.stripTrailingZeros();
         return (stripped.scale() < 0 ? stripped.setScale(0) : stripped).toPlainString();
     }

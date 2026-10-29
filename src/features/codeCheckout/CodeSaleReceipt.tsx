@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import type { CodeSaleCustomerStatus } from '@/types/codeCheckout'
 import { useCodeSale } from './codeCheckoutQueries'
 import { CodePresentationCard } from './CodePresentationCard'
+import { DemoBillNotice } from './DemoBillNotice'
 
 const STATUS_STYLES: Record<CodeSaleCustomerStatus, string> = {
   AWAITING_PAYMENT: 'border-info/30 bg-info-soft text-info',
@@ -116,6 +117,7 @@ export function CodeSaleReceipt({ saleId, onNewSale, onGone }: CodeSaleReceiptPr
   return (
     <Card>
       <CardContent className="space-y-5 p-4 sm:p-6">
+        {demo && <DemoBillNotice />}
         <section aria-labelledby="code-sale-summary" className="space-y-1 text-center">
           <h2 id="code-sale-summary" className="sr-only">
             Sale summary

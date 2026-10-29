@@ -33,6 +33,8 @@ import {
 import type { DashboardService } from '@/services/dashboardService'
 import { PosServiceError, type PosService, type PosServiceErrorCode } from '@/services/posService'
 import type {
+  PosBilledSale,
+  PosBillingReview,
   PosCatalogItem,
   PosDraft,
   PosDraftPage,
@@ -57,7 +59,7 @@ import type { PublicPaymentService } from '@/services/publicPaymentService'
 import type { ReconciliationService } from '@/services/reconciliationService'
 import type { StaffService } from '@/services/staffService'
 import type { AuthSession } from '@/types/auth'
-import type { CatalogItem, CatalogPackage, PriceVersion } from '@/types/catalog'
+import type { CatalogItem, CatalogPackage, ItemTax, PriceVersion } from '@/types/catalog'
 import type {
   CodeApproval,
   CodeAssignment,
@@ -196,13 +198,41 @@ const POS_CODES: PosServiceErrorCode[] = [
   'invalid_cart',
   'version_conflict',
   'draft_not_open',
+  'draft_already_billed',
+  'bill_conflict',
+  'review_changed',
+  'tax_not_configured',
+  'tax_not_approved',
+  'insufficient_stock',
+  'amount_out_of_range',
+  'price_zero_not_billable',
+  'no_assigned_code',
+  'code_not_available',
+  'code_not_assigned',
+  'code_required',
+  'live_collection_unavailable',
+  'too_many_lines',
+  'pricing_mismatch',
   'client_request_id_reuse',
   'idempotency_key_reuse',
   'request_in_progress',
   'service_unavailable',
 ]
 
+type RawItemTax = Omit<ItemTax, 'taxCategory' | 'taxRateBp' | 'configuredAt'> & {
+  taxCategory?: ItemTax['taxCategory']
+  taxRateBp?: number | null
+  configuredAt?: string | null
+}
+const normaliseItemTax = (raw: RawItemTax): ItemTax => ({
+  ...raw,
+  taxCategory: raw.taxCategory ?? null,
+  taxRateBp: raw.taxRateBp ?? null,
+  configuredAt: raw.configuredAt ?? null,
+})
+
 const CATALOG_CODES: CatalogServiceErrorCode[] = [
+  'invalid_tax_treatment',
   'unauthenticated',
   'not_found',
   'forbidden',
@@ -811,6 +841,102 @@ type RawPosQuote = Omit<PosQuote, 'lines' | 'problems'> & {
   problems?: RawPosProblem[]
 }
 
+/** The server omits null fields, so a missing field means null. Normalised once, here. */
+type RawReviewLine = Omit<
+  PosBillingReview['lines'][number],
+  'code' | 'enteredUnit' | 'packageLabel' | 'taxCategory' | 'taxRateBp' | 'availability'
+> & {
+  code?: string | null
+  enteredUnit?: PosBillingReview['lines'][number]['enteredUnit']
+  packageLabel?: string | null
+  taxCategory?: PosBillingReview['lines'][number]['taxCategory']
+  taxRateBp?: number | null
+  availability: Omit<
+    PosBillingReview['lines'][number]['availability'],
+    'physical' | 'reserved' | 'available' | 'requested'
+  > & {
+    physical?: string | null
+    reserved?: string | null
+    available?: string | null
+    requested?: string | null
+  }
+}
+type RawBillingReview = Omit<
+  PosBillingReview,
+  'lines' | 'problems' | 'codeLabel' | 'approvedTaxTreatments'
+> & {
+  lines?: RawReviewLine[]
+  problems?: PosBillingReview['problems']
+  codeLabel?: string | null
+  approvedTaxTreatments?: string[]
+}
+type RawSaleLine = Omit<PosBilledSale['lines'][number], 'code' | 'enteredUnit' | 'packageLabel'> & {
+  code?: string | null
+  enteredUnit?: PosBilledSale['lines'][number]['enteredUnit']
+  packageLabel?: string | null
+}
+type RawReservation = Omit<
+  PosBilledSale['reservation'],
+  'expiryReviewAt' | 'releasedAt' | 'releaseReason' | 'lines'
+> & {
+  expiryReviewAt?: string | null
+  releasedAt?: string | null
+  releaseReason?: string | null
+  lines?: (Omit<PosBilledSale['reservation']['lines'][number], 'enteredUnit' | 'packageLabel'> & {
+    enteredUnit?: PosBilledSale['reservation']['lines'][number]['enteredUnit']
+    packageLabel?: string | null
+  })[]
+}
+type RawBilledSale = Omit<PosBilledSale, 'sale' | 'lines' | 'reservation'> & {
+  sale: RawCodeSale
+  lines?: RawSaleLine[]
+  reservation: RawReservation
+}
+
+const billingReviewOf = (raw: RawBillingReview): PosBillingReview => ({
+  ...raw,
+  codeLabel: raw.codeLabel ?? null,
+  problems: raw.problems ?? [],
+  approvedTaxTreatments: raw.approvedTaxTreatments ?? [],
+  lines: (raw.lines ?? []).map((line) => ({
+    ...line,
+    code: line.code ?? null,
+    enteredUnit: line.enteredUnit ?? null,
+    packageLabel: line.packageLabel ?? null,
+    taxCategory: line.taxCategory ?? null,
+    taxRateBp: line.taxRateBp ?? null,
+    availability: {
+      ...line.availability,
+      physical: line.availability.physical ?? null,
+      reserved: line.availability.reserved ?? null,
+      available: line.availability.available ?? null,
+      requested: line.availability.requested ?? null,
+    },
+  })),
+})
+
+const billedSaleOf = (raw: RawBilledSale): PosBilledSale => ({
+  ...raw,
+  sale: codeSaleOf(raw.sale),
+  lines: (raw.lines ?? []).map((line) => ({
+    ...line,
+    code: line.code ?? null,
+    enteredUnit: line.enteredUnit ?? null,
+    packageLabel: line.packageLabel ?? null,
+  })),
+  reservation: {
+    ...raw.reservation,
+    expiryReviewAt: raw.reservation.expiryReviewAt ?? null,
+    releasedAt: raw.reservation.releasedAt ?? null,
+    releaseReason: raw.reservation.releaseReason ?? null,
+    lines: (raw.reservation.lines ?? []).map((line) => ({
+      ...line,
+      enteredUnit: line.enteredUnit ?? null,
+      packageLabel: line.packageLabel ?? null,
+    })),
+  },
+})
+
 const posLineOf = (raw: RawPosLine): PosPricedLine => ({
   ...raw,
   code: raw.code ?? null,
@@ -906,6 +1032,36 @@ export function createHttpPosService(http: HttpClient): PosService {
             query: { expectedVersion },
           }),
         ),
+      posError,
+    ),
+    getBillingReview: translating(
+      async (id, draftId, collectionCodeId) =>
+        billingReviewOf(
+          await http.get<RawBillingReview>(`${base(id)}/drafts/${draftId}/billing-review`, {
+            query: { collectionCodeId: collectionCodeId ?? undefined },
+          }),
+        ),
+      posError,
+    ),
+    // The bill names only the draft, the version and total that were reviewed and (optionally) the code. The retry key travels in the
+    // Idempotency-Key header. No price, tax or stock figure is ever sent.
+    billPosDraft: translating(
+      async (id, draftId, input) =>
+        billedSaleOf(
+          await http.post<RawBilledSale>(`${base(id)}/drafts/${draftId}/bill`, {
+            headers: { 'Idempotency-Key': input.idempotencyKey },
+            body: {
+              expectedDraftVersion: input.expectedDraftVersion,
+              reviewedTotalRwf: input.reviewedTotalRwf,
+              collectionCodeId: input.collectionCodeId ?? undefined,
+            },
+          }),
+        ),
+      posError,
+    ),
+    getPosSale: translating(
+      async (id, saleId) =>
+        billedSaleOf(await http.get<RawBilledSale>(`${base(id)}/sales/${saleId}`)),
       posError,
     ),
   }
@@ -1047,6 +1203,18 @@ export function createHttpCatalogService(http: HttpClient): CatalogService {
       async (id, itemId, input) =>
         normaliseCatalogItem(
           await http.put<RawCatalogItem>(`${itemPath(id, itemId)}/status`, { body: input }),
+        ),
+      catalogError,
+    ),
+    getItemTax: translating(
+      async (id, itemId) =>
+        normaliseItemTax(await http.get<RawItemTax>(`${itemPath(id, itemId)}/tax`)),
+      catalogError,
+    ),
+    setItemTax: translating(
+      async (id, itemId, input) =>
+        normaliseItemTax(
+          await http.put<RawItemTax>(`${itemPath(id, itemId)}/tax`, { body: input }),
         ),
       catalogError,
     ),

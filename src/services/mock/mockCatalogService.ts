@@ -17,6 +17,7 @@ import {
 import { CatalogServiceError, type CatalogService } from '@/services/catalogService'
 import { OrganizationServiceError } from '@/services/organizationService'
 import type {
+  ItemTax,
   CatalogItem,
   CatalogItemType,
   CatalogPackage,
@@ -43,6 +44,11 @@ import {
   type StoredPriceVersion,
 } from './sampleCatalog'
 import { MOCK_STORAGE_KEYS } from './mockStorageKeys'
+import {
+  MOCK_APPROVED_TAX_TREATMENTS,
+  SAMPLE_CATALOG_TAX,
+  type StoredCatalogTax,
+} from './sampleCatalogTax'
 
 interface MockCatalogServiceOptions {
   authStore: MockAuthStore
@@ -118,6 +124,25 @@ export function createMockCatalogService(options: MockCatalogServiceOptions): Ca
       )
     }
     return actor
+  }
+
+  const taxRecords = () =>
+    store.loadRecords<StoredCatalogTax>(MOCK_STORAGE_KEYS.catalogTax, SAMPLE_CATALOG_TAX)
+  const taxOf = (item: StoredCatalogItem): ItemTax => {
+    const found = taxRecords().find((t) => t.merchantId === item.merchantId && t.itemId === item.id)
+    return {
+      itemId: item.id,
+      version: item.version,
+      configured: found !== undefined,
+      taxCategory: found?.category ?? null,
+      taxRateBp: found?.rateBp ?? null,
+      approvedForPos:
+        found !== undefined &&
+        MOCK_APPROVED_TAX_TREATMENTS.some(
+          (t) => t.category === found.category && t.rateBp === found.rateBp,
+        ),
+      configuredAt: found ? item.updatedAt : null,
+    }
   }
 
   const findItem = (merchantId: string, itemId: string): StoredCatalogItem => {
@@ -451,6 +476,46 @@ export function createMockCatalogService(options: MockCatalogServiceOptions): Ca
         }
         replaceItem(updated)
         return toItem(updated)
+      }),
+
+    getItemTax: (merchantId, itemId) =>
+      run(() => {
+        authorize(merchantId, 'catalog:view')
+        const item = findItem(merchantId, itemId)
+        return taxOf(item)
+      }),
+
+    setItemTax: (merchantId, itemId, input) =>
+      run(() => {
+        authorize(merchantId, 'catalog:manage')
+        const current = findItem(merchantId, itemId)
+        assertVersion(current.version, input.expectedVersion)
+        const valid =
+          input.taxCategory === 'STANDARD'
+            ? input.taxRateBp >= 1 && input.taxRateBp <= 10_000
+            : input.taxRateBp === 0
+        if (!valid) {
+          throw fail(
+            'invalid_tax_treatment',
+            input.taxCategory === 'STANDARD'
+              ? 'A standard-rated item needs a rate above 0% and at most 100%.'
+              : 'Only a standard-rated item has a rate.',
+          )
+        }
+        const others = taxRecords().filter(
+          (t) => !(t.merchantId === merchantId && t.itemId === itemId),
+        )
+        store.saveRecords(MOCK_STORAGE_KEYS.catalogTax, [
+          ...others,
+          { merchantId, itemId, category: input.taxCategory, rateBp: input.taxRateBp },
+        ])
+        // The server counts a tax change as a change of the item.
+        replaceItem({
+          ...current,
+          updatedAt: new Date().toISOString(),
+          version: current.version + 1,
+        })
+        return taxOf(findItem(merchantId, itemId))
       }),
 
     listPriceHistory: (merchantId, itemId) =>

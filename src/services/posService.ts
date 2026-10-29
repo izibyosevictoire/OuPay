@@ -1,4 +1,7 @@
 import type {
+  PosBillInput,
+  PosBilledSale,
+  PosBillingReview,
   PosCatalogItem,
   PosDraft,
   PosDraftInput,
@@ -21,6 +24,21 @@ export type PosServiceErrorCode =
   | 'invalid_cart'
   | 'version_conflict'
   | 'draft_not_open'
+  | 'draft_already_billed'
+  | 'bill_conflict'
+  | 'review_changed'
+  | 'tax_not_configured'
+  | 'tax_not_approved'
+  | 'insufficient_stock'
+  | 'amount_out_of_range'
+  | 'price_zero_not_billable'
+  | 'no_assigned_code'
+  | 'code_not_available'
+  | 'code_not_assigned'
+  | 'code_required'
+  | 'live_collection_unavailable'
+  | 'too_many_lines'
+  | 'pricing_mismatch'
   | 'client_request_id_reuse'
   | 'idempotency_key_reuse'
   | 'request_in_progress'
@@ -54,4 +72,20 @@ export interface PosService {
   /** Replaces the whole cart of an open draft (re-priced at the current catalog prices). */
   updatePosDraft(merchantId: string, draftId: string, input: PosDraftUpdateInput): Promise<PosDraft>
   discardPosDraft(merchantId: string, draftId: string, expectedVersion: number): Promise<PosDraft>
+  /**
+   * The FINAL review of an open draft: current catalog prices, tax and availability as the server sees them now. Changes nothing.
+   * Billing is only offered for a review the server calls billable.
+   */
+  getBillingReview(
+    merchantId: string,
+    draftId: string,
+    collectionCodeId?: string | null,
+  ): Promise<PosBillingReview>
+  /**
+   * Bills a draft atomically (invoice, payment request through the cashier's code, goods reserved). Repeating the same attempt returns the
+   * original sale, never a second one. Refused with `review_changed` when price, tax or total differ from what was reviewed.
+   */
+  billPosDraft(merchantId: string, draftId: string, input: PosBillInput): Promise<PosBilledSale>
+  /** One POS sale with its lines, tax and reservation: safe recovery after a refresh. */
+  getPosSale(merchantId: string, saleId: string): Promise<PosBilledSale>
 }

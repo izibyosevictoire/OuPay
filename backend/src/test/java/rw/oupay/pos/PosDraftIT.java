@@ -405,7 +405,7 @@ class PosDraftIT extends IntegrationTest {
         JsonNode options = w.cashier.get(pos() + "/options").json();
         assertThat(options.path("readiness").asString()).isEqualTo("READY");
         assertThat(options.path("branches").size()).isEqualTo(1);
-        assertThat(options.path("maxLines").asInt()).isEqualTo(100);
+        assertThat(options.path("maxLines").asInt()).isEqualTo(50);
         UUID otherBranch = fixtures.branch(w.merchantId, "RM02", "ACTIVE");
         var elsewhere = quote(w.cashier, cart(otherBranch, line(rice, "1", "kg")));
         assertThat(elsewhere.status()).isEqualTo(422);

@@ -135,3 +135,158 @@ HTTP and mock services make the same decisions. There is no payment, QR or "bill
 * The draft keeps no link to the invoice it may become; R7b adds that link (and the invoice-line snapshot of catalog item, unit and
   price version) in its own migration.
 * Drafts are not expired or cleaned up; discarding is manual.
+
+
+---
+
+# R7b: atomic POS billing and stock reservations
+
+R7b turns a reviewed POS draft into **one issued invoice, one fixed-amount payment request through the cashier's collection code, immutable
+catalog/price/tax snapshots and a branch-scoped stock reservation**, in ONE transaction. It reuses the invoice engine, R2 idempotency, R3
+durable sale identity, the R6c code sale and the R6d ledger: **there is no second ledger**, nothing is marked paid, and **physical stock is never
+changed** (fulfilment, the SALE movement, is R7c).
+
+## Architecture assessment: what was inspected and what fits
+
+| Area | Finding | Decision |
+| --- | --- | --- |
+| Invoice engine | `createDraftFor` + `issue` are public, transactional (join the caller), and carry the R3 durable identity (unique per business). Invoice lines hold description, **thousandths** quantity, price, tax category and rate. Max 50 lines. Price must be above zero. | The POS bill uses them as they are. The draft's own `client_request_id` is the invoice identity. POS carts are now limited to **50 lines** (the invoice ceiling), so a cart that was saved can always be billed. |
+| `quantity_milli` | 3 decimals. | Unchanged. R7a already refuses any quantity that is not a whole number of thousandths of the selling unit, so nothing is rounded between the cart, the invoice and the reservation (the reservation keeps the exact canonical `NUMERIC(20,6)` quantity). |
+| Tax | The catalog has no tax classification; invoices have `NOT_APPLICABLE / EXEMPT / ZERO_RATED / STANDARD (+ rate)` and EXCLUSIVE/INCLUSIVE arithmetic. | A new explicit, nullable classification per catalog item (V17) plus a configuration-controlled approval list. See "Tax". |
+| Code sale (R6c) | `code_sales` has one immutable row per payment request/invoice, with the code, assignment, agent and branch snapshots; it is the only way a code sale exists. Its amount is `> 0`; its description is 120 characters. | **Reused, not extended.** `CodeCheckoutService` was split into `prepareSale` / `draftSale` / `finishSale` (the code-sale path now calls the same three steps), and POS billing calls them inside its own transaction. `pos_sales` links the draft to the code sale; POS provenance needs no change to `code_sales`, so the R3/R6c immutability is intact. |
+| Reconciliation (R6d) | Allocation rules for CODE invoices (evidence required, demonstrations never take bank money) are database triggers on `payment_allocations`. | Untouched. A POS sale is a CODE invoice, so every R6d-B rule applies to it unchanged. |
+| Inventory (R5c) | `apply_stock_movement` locks the balance row `FOR UPDATE` and is the only way `quantity_on_hand` changes. | Reservations take **the same lock**, so a reservation and a stock movement serialise. The ledger is not touched. |
+| Idempotency | `executeOnce` owns the transaction and refuses to run inside one. | `bill` is a non-transactional wrapper like R6c/R7a. |
+
+## Tax: the smallest explicit configuration, and what is still undecided
+
+* `catalog_items.tax_category` / `tax_rate_bp` (+ who and when): `NULL` means **not configured**, which **blocks billing**. Nothing is defaulted,
+  inferred from a name, or set to "not applicable". `PUT/GET /catalog/items/{id}/tax` (`catalog:manage` / `catalog:view`, audited, optimistic on the
+  item's version). The catalog item dialog has a "Tax treatment" section.
+* **Approval is separate from configuration**: `oupay.pos.approved-tax-treatments` (for example `EXEMPT:0,ZERO_RATED:0,STANDARD:1800`) lists the
+  treatments a business has approved for **payable POS invoices**. **The default is empty, so no POS invoice can be issued until someone approves
+  treatments.** A configured item whose treatment is not on the list is refused (`tax_not_approved`).
+* Tax is computed by the server with the invoice calculator (EXCLUSIVE, half up, once per line) and **snapshotted** on the invoice line and in
+  `pos_sale_lines`. The browser never sends a rate or an amount.
+* OuPay does not claim tax compliance or RRA EBM certification.
+
+**Outstanding decisions (not made here):** which treatments the business approves (`oupay.pos.approved-tax-treatments`), whether prices in the
+catalog are tax-exclusive (R7b bills EXCLUSIVE: tax is added to the catalog price), and the correct treatment of each real item. Until then production
+POS billing stays disabled by configuration.
+
+## Database (V17, additive)
+
+| Table / change | Purpose |
+| --- | --- |
+| `catalog_items` + tax columns | The explicit classification (nullable = not configured). |
+| `pos_drafts.status` `BILLED` | A billed draft is final and can no longer be edited or discarded. |
+| `pos_sales` | Draft → invoice → payment request (the code sale). **Unique draft** (the durable identity), unique invoice. Insert-only; a trigger checks it describes its own CODE invoice (same total, mode and request identity). A draft is `BILLED` exactly when its sale exists (deferred check). |
+| `pos_sale_lines` | The immutable snapshot of every invoice line: catalog item (id, type, name, code), entered quantity and unit or package, exact selling-unit quantity (thousandths), exact canonical quantity, price version (foreign key to `catalog_item_prices`), unit price, tax category, rate and amounts. Must equal its invoice line; never changed or deleted. |
+| `stock_reservations` | One per invoice (unique), branch-scoped. `ACTIVE → FULFILLED | RELEASED` (final), with `expiry_review_at`, release time, who and why. Never deleted. |
+| `stock_reservation_lines` | One per goods invoice line: item, canonical `NUMERIC(20,6)` quantity, what was entered. Insert-only. A trigger locks the balance row and refuses a line beyond the **available** stock. |
+| `guard_balance_not_below_reserved` | A trigger on `inventory_balances`: physical stock can never fall below the active reservations. |
+
+V1 to V16 are untouched; no historical invoice, payment or stock value changes.
+
+## Stock model
+
+```
+physical  = inventory_balances.quantity_on_hand    (only R5c movements change it)
+reserved  = sum of lines of ACTIVE reservations
+available = physical - reserved
+```
+
+Billing **never** subtracts physical stock and posts no movement. The inventory API now reports `quantityReserved` and `quantityAvailable`; the cart,
+review and sale views show physical, reserved and available apart. A stock adjustment OUT is refused with `stock_reserved` when it would take
+physical stock below what is reserved (and the database refuses it too). Receipts only add stock. **Services never reserve.** A DEMONSTRATION sale
+reserves **nothing** (it can never be paid or fulfilled, so holding stock for it could never end) and says so.
+
+## The bill, step by step (`POST /pos/drafts/{id}/bill`)
+
+One transaction (owned by `IdempotencyService.executeOnce`), in this lock order:
+
+1. the idempotency claim; 2. the **POS draft row** `FOR UPDATE` (only its creator may bill); 3. the **stock balance rows of the cart's goods, in
+ascending item id** `FOR UPDATE` (the same lock every stock movement takes); 4. the invoice sequence and the new invoice (existing engine); then the
+invoice lock the payment request and bank paths already use.
+
+Bank-event and reconciliation transactions never touch inventory or reservations, and stock movements never touch drafts or invoices, so no lock
+cycle exists. Steps: re-check branch and cashier; re-read **current catalog prices and tax**; re-validate every quantity and unit; read availability
+under the locks; refuse unless the server's total **equals the total the cashier reviewed** (`review_changed` otherwise, with the new figure);
+create the invoice under the draft's durable identity; verify the invoice engine computed exactly the reviewed money; insert the snapshots;
+issue; open the fixed-amount payment request through the cashier's eligible code; record the code sale (assignment snapshot); reserve the goods
+(LIVE only); mark the draft `BILLED` and write `pos_sales`. **Any failure rolls back everything; the draft stays editable.**
+
+Review before billing: `GET /pos/drafts/{id}/billing-review` returns the same computation with every problem explained (no tax classification,
+unapproved treatment, price changed since the draft, insufficient stock, no code...). `billable` is true only when there is none.
+
+## Idempotency and replay
+
+* Same HTTP key and bill: the stored answer (R2). Same draft, new key, same total/code: the **same sale** (the durable `pos_sales` row), even after
+  every `idempotency_keys` row is deleted. Another total or code for an already-billed draft: `409 bill_conflict`. A stale draft version:
+  `409 version_conflict`.
+* Concurrent bills of one draft make one invoice, one payment request and one reservation (draft row lock + unique draft/invoice/reservation).
+* Every replay re-checks the caller (membership, permission, creator) before answering.
+* A replay never creates a reservation: it only reads.
+
+## Reservation lifetime and release
+
+* The code payment request lives **30 minutes**. The reservation is **not** tied to that timer: it starts `ACTIVE` and records
+  `expiry_review_at = request expiry + oupay.pos.reservation-review-grace` (default 24 h). That time only says when a release **may be considered**.
+* **There is no automatic release and no worker.** An expired request does not prove that no bank payment occurred: R6d-B still applies a late
+  confirmation to the sale. Frontend timers never release anything.
+* `POST /pos/sales/{id}/release-reservation` (owner, `invoices:void`, with a written reason) is allowed only when: the reservation is `ACTIVE` and its
+  review time has passed; the payment request is **EXPIRED or CANCELLED**; **no** payment is applied to the invoice; and **no** non-failed bank
+  transaction references the sale (a verified but unmatched payment is evidence for reconciliation and keeps the reservation). Anything uncertain
+  refuses (`release_blocked_payment_evidence`, `release_too_early`, `payment_request_still_open`). The invoice itself is not voided.
+* A late payment after a release (or after nothing happens) cannot make stock negative: physical stock only changes through R5c movements, which
+  refuse to go below zero or below active reservations. **R7c must define fulfilment of a paid sale whose reservation was released** (re-reserve or
+  flag for review): that rule is deferred, not invented here.
+
+## Demonstration isolation
+
+A simulated code makes a DEMONSTRATION sale: a real internal invoice flagged `is_demonstration` (numbered `DEMO-`, excluded from every list, total and
+report), no bank money can ever be applied to it (R6c/R6d triggers), no reservation, and everything shown says DEMONSTRATION ONLY. Live collection
+stays disabled by `oupay.code-checkout.live-enabled` (and cannot be enabled outside the test profile).
+
+## Frontend
+
+The POS page now has **Review and bill** (offered only for the saved, unchanged draft): the server's final lines (current price and version, whether the
+price changed since the draft, tax treatment and amounts, physical/reserved/available stock), the subtotal, tax and total, the DEMONSTRATION/LIVE
+banner, the code choice when several are usable, and **Bill RWF x**. The retry key is remembered per bill, so "Try again" after a lost answer finds
+the same sale. After billing: the lines and tax, the reservation outcome ("Goods reserved (not sold)", "No stock reserved"), the link to the
+invoice, and the existing code-sale receipt (reference, code or demonstration notice, live status). **Paid appears only when verified money was
+applied.** The mock service bills through the mock code checkout (a demonstration only) and reserves nothing.
+
+## Not in R7b
+
+Physical fulfilment / SALE movements and the paid-after-release rule (R7c), refunds, RRA EBM, a real Equity integration, barcode scanning,
+purchasing, reporting changes, an automatic release worker.
+
+
+## R7b review addendum
+
+**Mock and server parity.** The frontend mock bills a POS cart as the cart: one invoice line per cart line (name, selling unit, quantity, price, tax category and
+rate, line total), priced by the existing invoice calculation (`calculateLine`; there is no second engine) and billed through the mock code checkout with a
+`DEMO-` number, flagged as a demonstration and excluded from invoice lists. It reserves nothing and changes no stock. A retry returns the same sale (the
+draft's own identity is the sale's `clientRequestId`). The mock-only `billCart` extension does not change the `CodeCheckoutService` interface the server
+implements. Known differences: the mock only ever bills demonstrations, and its tax classifications and approvals are fixed sample data.
+
+**Demonstration presentation.** Everywhere a demonstration bill is shown (the final review, the POS sale, the agent's receipt and the customer's page) it
+says: this is a demonstration bill; it is not payable through a real Equity code; no real bank payment has been made; and (for the business) physical stock has
+not been reserved or deducted. A demonstration never shows "Reserved", "Fulfilled" or "Released": its stock block reads "Stock not reserved or deducted
+(demonstration)".
+
+**Release is one atomic decision.** The release holds the invoice row lock (the lock every allocation takes), reads the evidence in the same transaction and
+updates the reservation with `WHERE status = 'ACTIVE'`: of any number of concurrent releases exactly one succeeds (`reservation_not_active` for the rest).
+Bank-event and ledger transactions never touch inventory or reservations (they lock the bank transaction, then the invoices), and a release never locks
+bank rows, so there is no lock cycle. **One residual window is deliberate and visible:** a bank transaction that is committed after the release read its
+evidence is not seen by that release. R6d-B then applies it to the sale as it does to any late payment, stock stays non-negative (physical stock only moves
+through R5c movements), and the sale shows up in `pos_sale_fulfilment_exceptions` (a V17 view: a sale with money applied and a RELEASED reservation).
+**R7c must treat every row of that view as a fulfilment exception** (re-check availability, re-reserve or refund), never fulfil it as usual. An expired
+payment request alone proves nothing: a pending or confirmed bank transaction naming the sale keeps the stock reserved.
+
+**Tax and invoice snapshots.** No item is billed without an explicit classification that is also on the approved list; the server calculates and snapshots tax,
+re-reads the catalog price at Bill, and refuses a total that differs from the reviewed one. The invoice's lines, quantities, prices, tax and total are tested
+line by line against the review and `pos_sale_lines`, and each reservation line equals the canonical quantity of its snapshot. **Tax-exclusive pricing
+(tax added on top of the catalog price) still needs the business's approval**, as do the approved treatments and each item's classification: until then
+production POS billing stays disabled.

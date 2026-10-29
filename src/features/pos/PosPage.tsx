@@ -46,7 +46,8 @@ import {
   type CartLine,
   type StockDescription,
 } from './posRules'
-import { attemptFor, forgetAttempt } from './posSession'
+import { PosBillingReview, PosSalePanel } from './PosBilling'
+import { attemptFor, forgetAttempt, forgetSaleId, loadSaleId, rememberSaleId } from './posSession'
 
 const linkClass = 'font-medium text-primary hover:underline'
 
@@ -431,6 +432,14 @@ function PosCart({ scope, options }: { scope: string; options: PosOptions }) {
   const [saved, setSaved] = useState<PosDraft | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [openingId, setOpeningId] = useState<string | null>(null)
+  // The cart on screen is exactly the saved draft (saved or reopened, and not changed since): only then can it be reviewed and billed.
+  const [clean, setClean] = useState(false)
+  const [reviewing, setReviewing] = useState(false)
+  const [saleId, setSaleId] = useState<string | null>(() => loadSaleId(scope))
+  const markDirty = () => {
+    setSaved(null)
+    setClean(false)
+  }
 
   const inputs = lines.map(toLineInput)
   const allValid = lines.length > 0 && lines.every((l) => quantityProblem(l) === null)
@@ -441,7 +450,7 @@ function PosCart({ scope, options }: { scope: string; options: PosOptions }) {
   const canSave = priceable && problems.length === 0 && !create.isPending && !update.isPending
 
   const addItem = (item: PosCatalogItem) => {
-    setSaved(null)
+    markDirty()
     setFailure(null)
     setNotice(null)
     setLines((current) =>
@@ -455,7 +464,7 @@ function PosCart({ scope, options }: { scope: string; options: PosOptions }) {
   }
 
   const changeLine = (key: string, next: CartLine) => {
-    setSaved(null)
+    markDirty()
     setFailure(null)
     setLines((current) => current.map((l) => (l.key === key ? next : l)))
   }
@@ -464,7 +473,7 @@ function PosCart({ scope, options }: { scope: string; options: PosOptions }) {
     setLines([])
     setNote('')
     setEditing(null)
-    setSaved(null)
+    markDirty()
     setFailure(null)
     setNotice(null)
     setShowErrors(false)
@@ -492,6 +501,7 @@ function PosCart({ scope, options }: { scope: string; options: PosOptions }) {
           })
       forgetAttempt(scope)
       setSaved(draft)
+      setClean(true)
       setEditing({ id: draft.id, version: draft.version })
       setNotice(null)
     } catch (error) {
@@ -541,7 +551,7 @@ function PosCart({ scope, options }: { scope: string; options: PosOptions }) {
       setLines(reopened)
       setNote(draft.note ?? '')
       setEditing({ id: draft.id, version: draft.version })
-      setSaved(null)
+      markDirty()
       setShowErrors(false)
       const messages: string[] = []
       if (repriced > 0) messages.push('Prices were updated to the current catalog prices.')
@@ -550,6 +560,7 @@ function PosCart({ scope, options }: { scope: string; options: PosOptions }) {
           `${dropped} ${dropped === 1 ? 'line' : 'lines'} could not be reopened because the item is no longer for sale.`,
         )
       }
+      setClean(dropped === 0)
       setNotice(messages.length > 0 ? messages.join(' ') : null)
     } catch (error) {
       setFailure(failureMessage(error))
@@ -560,6 +571,30 @@ function PosCart({ scope, options }: { scope: string; options: PosOptions }) {
 
   const branchName = options.branches.find((b) => b.id === branchId)?.name ?? ''
   const busy = create.isPending || update.isPending
+
+  const startNewSale = () => {
+    forgetSaleId(scope)
+    setSaleId(null)
+    setReviewing(false)
+    reset()
+  }
+  if (saleId) {
+    return <PosSalePanel saleId={saleId} onNewSale={startNewSale} onGone={startNewSale} />
+  }
+  if (reviewing && editing) {
+    return (
+      <PosBillingReview
+        scope={scope}
+        draftId={editing.id}
+        onBack={() => setReviewing(false)}
+        onBilled={(id) => {
+          rememberSaleId(scope, id)
+          setSaleId(id)
+          setReviewing(false)
+        }}
+      />
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -584,7 +619,7 @@ function PosCart({ scope, options }: { scope: string; options: PosOptions }) {
                 onChange={(event) => {
                   setBranchId(event.target.value)
                   setEditing(null)
-                  setSaved(null)
+                  markDirty()
                 }}
               >
                 {options.branches.map((branch) => (
@@ -643,7 +678,7 @@ function PosCart({ scope, options }: { scope: string; options: PosOptions }) {
                       showErrors={showErrors}
                       onChange={(next) => changeLine(line.key, next)}
                       onRemove={() => {
-                        setSaved(null)
+                        markDirty()
                         setLines((current) => current.filter((l) => l.key !== line.key))
                       }}
                     />
@@ -676,7 +711,7 @@ function PosCart({ scope, options }: { scope: string; options: PosOptions }) {
                   value={note}
                   maxLength={200}
                   onChange={(event) => {
-                    setSaved(null)
+                    markDirty()
                     setNote(event.target.value)
                   }}
                 />
@@ -711,13 +746,23 @@ function PosCart({ scope, options }: { scope: string; options: PosOptions }) {
                 {busy && <Loader2 className="animate-spin" aria-hidden="true" />}
                 {editing ? 'Save changes' : 'Save draft'}
               </Button>
+              {clean && editing && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setReviewing(true)}
+                  disabled={busy}
+                >
+                  Review and bill
+                </Button>
+              )}
               <Button type="button" variant="outline" onClick={reset} disabled={busy}>
                 Start a new cart
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Billing comes next: stock is checked again and the payment request is created only
-              then.
+              Billing re-reads prices, tax and stock, and reserves the goods. It does not sell or
+              deduct them, and nothing is paid until the bank confirms it.
             </p>
           </CardContent>
         </Card>

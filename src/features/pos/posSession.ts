@@ -72,3 +72,83 @@ export function forgetAttempt(scope: string, storage: Storage | undefined = brow
     // ignore
   }
 }
+
+// ---- Billing (R7b) ---------------------------------------------------------------------------------------------------
+
+const billKey = (scope: string) => `oupay.pos.bill.${scope}`
+const saleKey = (scope: string) => `oupay.pos.sale.${scope}`
+
+/** The retry key of one BILL: the same bill (same draft, version, total and code) keeps one key, so a lost answer can be retried safely. */
+export function billKeyFor(
+  scope: string,
+  payloadKey: string,
+  storage: Storage | undefined = browserStorage(),
+): string {
+  try {
+    const raw = storage?.getItem(billKey(scope))
+    const existing: unknown = raw ? JSON.parse(raw) : undefined
+    if (
+      typeof existing === 'object' &&
+      existing !== null &&
+      (existing as Record<string, unknown>).payloadKey === payloadKey &&
+      typeof (existing as Record<string, unknown>).idempotencyKey === 'string'
+    ) {
+      return (existing as { idempotencyKey: string }).idempotencyKey
+    }
+  } catch {
+    // Storage is a convenience, never a requirement.
+  }
+  const idempotencyKey = crypto.randomUUID()
+  try {
+    storage?.setItem(billKey(scope), JSON.stringify({ payloadKey, idempotencyKey }))
+  } catch {
+    // ignore
+  }
+  return idempotencyKey
+}
+
+export function forgetBillKey(scope: string, storage: Storage | undefined = browserStorage()) {
+  try {
+    storage?.removeItem(billKey(scope))
+  } catch {
+    // ignore
+  }
+}
+
+const SALE_ID = /^[A-Za-z0-9-]{6,64}$/
+
+/**
+ * The sale on screen (its id only), so a refresh finds it again. Storage is untrusted: only an id of the exact shape is accepted, and the
+ * sale itself is always READ from the server, which decides whether this person may see it.
+ */
+export function loadSaleId(
+  scope: string,
+  storage: Storage | undefined = browserStorage(),
+): string | null {
+  try {
+    const value = storage?.getItem(saleKey(scope))
+    return value && SALE_ID.test(value) ? value : null
+  } catch {
+    return null
+  }
+}
+
+export function rememberSaleId(
+  scope: string,
+  saleId: string,
+  storage: Storage | undefined = browserStorage(),
+) {
+  try {
+    storage?.setItem(saleKey(scope), saleId)
+  } catch {
+    // ignore
+  }
+}
+
+export function forgetSaleId(scope: string, storage: Storage | undefined = browserStorage()) {
+  try {
+    storage?.removeItem(saleKey(scope))
+  } catch {
+    // ignore
+  }
+}

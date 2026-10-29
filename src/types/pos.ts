@@ -1,4 +1,5 @@
 import type { CatalogItemType, MeasurementDimension, MeasurementUnitCode } from './catalog'
+import type { CodeSale } from './codeCheckout'
 
 /**
  * Business POS billing (R7a): a cart of goods and services priced from the catalog and saved as a DRAFT.
@@ -43,9 +44,14 @@ export type PosStockState = 'NOT_TRACKED' | 'RECORDED' | 'NO_RECORD'
 
 export interface PosStockInfo {
   state: PosStockState
+  /** PHYSICAL stock, in the canonical unit. */
   onHand: string | null
   canonicalUnit: MeasurementUnitCode
   onHandInSaleUnit: string | null
+  /** Stock reserved for sales already billed (R7b). Available = physical - reserved. */
+  reserved?: string | null
+  available?: string | null
+  availableInSaleUnit?: string | null
 }
 
 export interface PosCatalogItem {
@@ -100,6 +106,8 @@ export type PosStockCheckState = 'NOT_TRACKED' | 'SUFFICIENT' | 'INSUFFICIENT' |
 export interface PosStockCheck {
   state: PosStockCheckState
   onHand: string | null
+  reserved?: string | null
+  available?: string | null
   /** The total requested for this item across the whole cart, in the canonical unit. */
   requested: string | null
   canonicalUnit: MeasurementUnitCode
@@ -147,7 +155,7 @@ export interface PosQuote {
   taxNote: string
 }
 
-export type PosDraftStatus = 'DRAFT' | 'DISCARDED'
+export type PosDraftStatus = 'DRAFT' | 'DISCARDED' | 'BILLED'
 
 export interface PosDraft {
   id: string
@@ -186,4 +194,145 @@ export interface PosDraftSummary {
 export interface PosDraftPage {
   items: PosDraftSummary[]
   nextCursor: string | null
+}
+
+// ---- Billing (R7b) ------------------------------------------------------------------------------------------------
+//
+// BILLING turns a reviewed draft into an issued invoice, a fixed-amount payment request through the cashier's collection code and a
+// RESERVATION of the goods, atomically. The browser sends only the draft, the version and total it reviewed, and (optionally) the code:
+// the server re-reads prices, tax and stock and refuses the bill if what it computes is not what was reviewed. "Reserved" is not "sold",
+// and nothing here is ever "paid" until verified reconciliation says so.
+
+export type PosTaxCategory = 'NOT_APPLICABLE' | 'EXEMPT' | 'ZERO_RATED' | 'STANDARD'
+
+/** Stock for one goods line at review time: physical, reserved and available are kept apart (available = physical - reserved). */
+export interface PosAvailability {
+  state: PosStockCheckState
+  physical: string | null
+  reserved: string | null
+  available: string | null
+  requested: string | null
+  canonicalUnit: MeasurementUnitCode
+}
+
+export interface PosReviewLine {
+  lineNo: number
+  itemId: string
+  name: string
+  code: string | null
+  enteredQuantity: string
+  enteredUnit: MeasurementUnitCode | null
+  packageLabel: string | null
+  saleUnit: MeasurementUnitCode
+  quantityInSaleUnit: string
+  canonicalQuantity: string
+  canonicalUnit: MeasurementUnitCode
+  priceVersion: number
+  unitPriceRwf: number
+  /** What the draft was SAVED at, so a change is visible. */
+  draftPriceVersion: number
+  draftUnitPriceRwf: number
+  priceChangedSinceDraft: boolean
+  taxCategory: PosTaxCategory | null
+  taxRateBp: number | null
+  taxApproved: boolean
+  netRwf: number
+  taxRwf: number
+  lineTotalRwf: number
+  availability: PosAvailability
+}
+
+/** `lineNo` is 0 for a problem of the whole bill (no code, no branch...). */
+export interface PosBillingProblem {
+  lineNo: number
+  code: string
+  message: string
+}
+
+export type PosBillMode = 'LIVE' | 'DEMONSTRATION' | 'UNAVAILABLE'
+
+export interface PosBillingReview {
+  draftId: string
+  draftVersion: number
+  branchId: string
+  branchName: string
+  lines: PosReviewLine[]
+  problems: PosBillingProblem[]
+  subtotalRwf: number
+  taxRwf: number
+  totalRwf: number
+  billable: boolean
+  mode: PosBillMode
+  codeLabel: string | null
+  modeNote: string
+  stockNote: string
+  taxNote: string
+  approvedTaxTreatments: string[]
+}
+
+export interface PosBillInput {
+  /** The version of the draft that was reviewed. */
+  expectedDraftVersion: number
+  /** The total that was reviewed: the bill is refused (`review_changed`) when the server computes another. */
+  reviewedTotalRwf: number
+  collectionCodeId?: string | null
+  /** The transport retry key: reused when the SAME bill is retried after a lost answer. */
+  idempotencyKey: string
+}
+
+export interface PosSaleLine {
+  lineNo: number
+  itemId: string
+  itemType: 'GOODS' | 'SERVICE'
+  name: string
+  code: string | null
+  enteredQuantity: string
+  enteredUnit: MeasurementUnitCode | null
+  packageLabel: string | null
+  saleUnit: MeasurementUnitCode
+  quantityInSaleUnit: string
+  canonicalQuantity: string
+  canonicalUnit: MeasurementUnitCode
+  priceVersion: number
+  unitPriceRwf: number
+  taxCategory: PosTaxCategory
+  taxRateBp: number
+  netRwf: number
+  taxRwf: number
+  lineTotalRwf: number
+}
+
+export interface PosReservationLine {
+  itemId: string
+  name: string
+  quantity: string
+  canonicalUnit: MeasurementUnitCode | ''
+  enteredQuantity: string
+  enteredUnit: MeasurementUnitCode | null
+  packageLabel: string | null
+}
+
+/** RESERVED is not sold, and not paid. NOT_RESERVED: a demonstration, or a sale of services only. */
+export type PosReservationState = 'RESERVED' | 'FULFILLED' | 'RELEASED' | 'NOT_RESERVED'
+
+export interface PosReservation {
+  state: PosReservationState
+  note: string
+  expiryReviewAt: string | null
+  releasedAt: string | null
+  releaseReason: string | null
+  lines: PosReservationLine[]
+}
+
+/** The sale's payment side (reference, code, status) is the existing code-sale view: nothing is paid until verified reconciliation says so. */
+export interface PosBilledSale {
+  sale: CodeSale
+  draftId: string
+  mode: 'LIVE' | 'DEMONSTRATION'
+  lines: PosSaleLine[]
+  subtotalRwf: number
+  taxRwf: number
+  totalRwf: number
+  reservation: PosReservation
+  taxNote: string
 }

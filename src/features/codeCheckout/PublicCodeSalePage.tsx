@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import type { CodeSaleCustomerStatus } from '@/types/codeCheckout'
 import { usePublicCodeSale } from './codeCheckoutQueries'
 import { CodePresentationCard } from './CodePresentationCard'
+import { DemoBillNotice } from './DemoBillNotice'
 
 const STATUS_STYLES: Record<CodeSaleCustomerStatus, string> = {
   AWAITING_PAYMENT: 'border-info/30 bg-info-soft text-info',
@@ -60,6 +61,7 @@ export function PublicCodeSalePage() {
   return (
     <Card>
       <CardContent className="space-y-5 p-4 sm:p-6">
+        {sale.code.mode === 'DEMONSTRATION' && <DemoBillNotice showStock={false} />}
         <header className="space-y-1 text-center">
           <h1 className="text-sm font-medium text-muted-foreground">{sale.merchantDisplayName}</h1>
           <p className="text-4xl font-semibold tabular-nums">{formatRwf(sale.amountRwf)}</p>

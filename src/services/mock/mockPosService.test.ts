@@ -448,3 +448,257 @@ describe('mock POS: review additions', () => {
     expect(after.lines).toHaveLength(1)
   })
 })
+
+describe('mock POS: billing (R7b)', () => {
+  /** A simulated code the cashier (Aline) holds at Remera, on the account a payment link of the sample ledger collects to. */
+  const demoCode = async (s: ReturnType<typeof setup>) => {
+    s.signInAs('owner')
+    const profile = s.ledger.paymentProfiles
+      .load()
+      .find((p) => p.merchantId === M && p.status === 'ACTIVE' && p.assignedCashierId === null)
+    const destination = s.ledger.paymentDestinations
+      .load()
+      .find((d) => d.id === profile?.paymentDestinationId)
+    const requested = await s.fastCollectionCodes.requestCode(M, {
+      clientOperationId: crypto.randomUUID(),
+      settlementDestinationId: destination?.id ?? '',
+      displayLabel: 'Demo counter',
+      branchId: REMERA,
+    })
+    await s.fastCollectionCodes.assign(M, requested.code.id, { membershipId: 'mem-004' })
+    s.signInAs('cashier')
+    return requested.code.id
+  }
+
+  const draftOf = async (s: ReturnType<typeof setup>, lines: PosLineInput[], branchId = REMERA) =>
+    s.pos.createPosDraft(M, { ...ids(), branchId, lines })
+
+  const billInput = (
+    draftVersion: number,
+    total: number,
+    codeId: string,
+    key = `bill-key-${++counter}`,
+  ) => ({
+    expectedDraftVersion: draftVersion,
+    reviewedTotalRwf: total,
+    collectionCodeId: codeId,
+    idempotencyKey: key,
+  })
+
+  it('reviews current price, tax and availability, with every figure from the server side', async () => {
+    const s = setup()
+    const code = await demoCode(s)
+    const draft = await draftOf(s, [line('cat-rice', '2'), line('cat-phone', '1', 'pc')])
+    const review = await s.pos.getBillingReview(M, draft.id, code)
+    expect(review.problems).toEqual([])
+    expect(review.billable).toBe(true)
+    expect(review.mode).toBe('DEMONSTRATION')
+    expect(
+      review.lines.map((l) => [l.taxCategory, l.taxRateBp, l.netRwf, l.taxRwf, l.lineTotalRwf]),
+    ).toEqual([
+      ['EXEMPT', 0, 2_400, 0, 2_400],
+      ['STANDARD', 1_800, 85_000, 15_300, 100_300],
+    ])
+    expect(review.subtotalRwf).toBe(87_400)
+    expect(review.taxRwf).toBe(15_300)
+    expect(review.totalRwf).toBe(102_700)
+    expect(review.approvedTaxTreatments).toContain('STANDARD 18.00%')
+    expect(review.taxNote).toMatch(/Provisional total/)
+    expect(review.lines[0]?.availability).toMatchObject({ state: 'SUFFICIENT', reserved: '0' })
+  })
+
+  it('never guesses tax: an item with no classification blocks the bill and nothing is created', async () => {
+    const s = setup()
+    const code = await demoCode(s)
+    const draft = await draftOf(s, [line('cat-cement', '10')])
+    const review = await s.pos.getBillingReview(M, draft.id, code)
+    expect(review.billable).toBe(false)
+    expect(review.problems[0]).toMatchObject({ code: 'tax_not_configured', lineNo: 1 })
+    expect(review.lines[0]?.taxCategory).toBeNull()
+    expect(await codeOf(s.pos.billPosDraft(M, draft.id, billInput(0, 2_900, code)))).toBe(
+      'tax_not_configured',
+    )
+    expect((await s.pos.getPosDraft(M, draft.id)).status).toBe('DRAFT')
+    expect(s.authStore.loadRecords(MOCK_STORAGE_KEYS.posSales, [])).toEqual([])
+  })
+
+  it('bills what was reviewed: a demonstration sale, a BILLED draft, no stock reserved or deducted', async () => {
+    const s = setup()
+    const code = await demoCode(s)
+    const stockBefore = s.authStore.loadRecords(MOCK_STORAGE_KEYS.inventoryBalances, [])
+    const draft = await draftOf(s, [line('cat-rice', '2'), line('cat-haircut', '1', 'pc')])
+    const review = await s.pos.getBillingReview(M, draft.id, code)
+    const sale = await s.pos.billPosDraft(
+      M,
+      draft.id,
+      billInput(draft.version, review.totalRwf, code),
+    )
+    expect(sale.mode).toBe('DEMONSTRATION')
+    expect(sale.sale.amountRwf).toBe(5_400)
+    expect(sale.sale.code.mode).toBe('DEMONSTRATION')
+    expect(sale.sale.saleReference).toMatch(/^OP-/)
+    expect(sale.lines.map((l) => [l.name, l.taxCategory, l.lineTotalRwf, l.priceVersion])).toEqual([
+      ['Rice', 'EXEMPT', 2_400, 2],
+      ['Haircut', 'EXEMPT', 3_000, 1],
+    ])
+    expect(sale.reservation.state).toBe('NOT_RESERVED')
+    expect(sale.reservation.note).toMatch(/DEMONSTRATION/)
+    expect((await s.pos.getPosDraft(M, draft.id)).status).toBe('BILLED')
+    expect(
+      await codeOf(
+        s.pos.updatePosDraft(M, draft.id, { expectedVersion: 1, lines: [line('cat-rice', '1')] }),
+      ),
+    ).toBe('draft_not_open')
+    expect(s.authStore.loadRecords(MOCK_STORAGE_KEYS.inventoryBalances, [])).toEqual(stockBefore)
+    // The sale reads back the same, and is never "paid".
+    const again = await s.pos.getPosSale(M, sale.sale.saleId)
+    expect(again.sale.saleReference).toBe(sale.sale.saleReference)
+    expect(again.sale.status).not.toBe('SETTLED')
+  })
+
+  it('refuses a bill whose reviewed total or draft version is out of date', async () => {
+    const s = setup()
+    const code = await demoCode(s)
+    const draft = await draftOf(s, [line('cat-rice', '2')])
+    expect(await codeOf(s.pos.billPosDraft(M, draft.id, billInput(0, 1, code)))).toBe(
+      'review_changed',
+    )
+    expect(await codeOf(s.pos.billPosDraft(M, draft.id, billInput(9, 2_400, code)))).toBe(
+      'version_conflict',
+    )
+    expect((await s.pos.getPosDraft(M, draft.id)).status).toBe('DRAFT')
+  })
+
+  it('answers a repeat with the same sale and refuses another total for the same draft', async () => {
+    const s = setup()
+    const code = await demoCode(s)
+    const draft = await draftOf(s, [line('cat-haircut', '1', 'pc')])
+    const key = 'bill-key-repeat-1'
+    const first = await s.pos.billPosDraft(M, draft.id, billInput(0, 3_000, code, key))
+    const again = await s.pos.billPosDraft(M, draft.id, billInput(0, 3_000, code, key))
+    const newKey = await s.pos.billPosDraft(M, draft.id, billInput(0, 3_000, code))
+    expect(again.sale.saleId).toBe(first.sale.saleId)
+    expect(newKey.sale.saleId).toBe(first.sale.saleId)
+    expect(await codeOf(s.pos.billPosDraft(M, draft.id, billInput(0, 9_999, code)))).toBe(
+      'bill_conflict',
+    )
+    expect(s.authStore.loadRecords(MOCK_STORAGE_KEYS.posSales, [])).toHaveLength(1)
+  })
+
+  it('lets only the person who prepared a draft review or bill it', async () => {
+    const s = setup()
+    const code = await demoCode(s)
+    const draft = await draftOf(s, [line('cat-haircut', '1', 'pc')])
+    s.signInAs('manager')
+    expect(await codeOf(s.pos.getBillingReview(M, draft.id, code))).toBe('not_found')
+    expect(await codeOf(s.pos.billPosDraft(M, draft.id, billInput(0, 3_000, code)))).toBe(
+      'not_found',
+    )
+  })
+})
+
+describe('mock POS: a mixed cart is billed as the cart, not as an amount (R7b review)', () => {
+  const demoCode = async (s: ReturnType<typeof setup>) => {
+    s.signInAs('owner')
+    const profile = s.ledger.paymentProfiles
+      .load()
+      .find((p) => p.merchantId === M && p.status === 'ACTIVE' && p.assignedCashierId === null)
+    const destination = s.ledger.paymentDestinations
+      .load()
+      .find((d) => d.id === profile?.paymentDestinationId)
+    const requested = await s.fastCollectionCodes.requestCode(M, {
+      clientOperationId: crypto.randomUUID(),
+      settlementDestinationId: destination?.id ?? '',
+      displayLabel: 'Demo counter',
+      branchId: REMERA,
+    })
+    await s.fastCollectionCodes.assign(M, requested.code.id, { membershipId: 'mem-004' })
+    s.signInAs('cashier')
+    return requested.code.id
+  }
+
+  it('keeps every line, unit, price version, tax and total on the invoice, with a DEMO number and no stock effect', async () => {
+    const s = setup()
+    const code = await demoCode(s)
+    const stockBefore = s.authStore.loadRecords(MOCK_STORAGE_KEYS.inventoryBalances, [])
+    const draft = await s.pos.createPosDraft(M, {
+      ...ids(),
+      branchId: REMERA,
+      lines: [line('cat-rice', '2'), line('cat-phone', '1', 'pc'), line('cat-haircut', '1', 'pc')],
+    })
+    const review = await s.pos.getBillingReview(M, draft.id, code)
+    expect(review.problems).toEqual([])
+    // Rice 2 kg exempt; smartphone 85,000 + 18% = 15,300; haircut exempt.
+    expect(review.lines.map((l) => l.lineTotalRwf)).toEqual([2_400, 100_300, 3_000])
+    expect(review.totalRwf).toBe(105_700)
+
+    const sale = await s.pos.billPosDraft(M, draft.id, {
+      expectedDraftVersion: draft.version,
+      reviewedTotalRwf: review.totalRwf,
+      collectionCodeId: code,
+      idempotencyKey: 'bill-key-mixed-0001',
+    })
+    // The invoice IS the cart: three lines, the reviewed total, a DEMO number, flagged as a demonstration.
+    const invoice = await s.fastInvoices.getInvoice(M, sale.sale.invoiceId)
+    expect(invoice.items).toHaveLength(3)
+    expect(invoice.items.map((i) => i.description)).toEqual([
+      'Rice (per kg)',
+      'Smartphone (per pc)',
+      'Haircut',
+    ])
+    expect(invoice.items.map((i) => i.quantity)).toEqual([2, 1, 1])
+    expect(invoice.items.map((i) => i.unitPrice)).toEqual([1_200, 85_000, 3_000])
+    expect(invoice.items.map((i) => i.taxRate.category)).toEqual(['EXEMPT', 'STANDARD', 'EXEMPT'])
+    expect(invoice.items.map((i) => i.lineTotal)).toEqual([2_400, 100_300, 3_000])
+    expect(invoice.items.map((i) => i.taxAmount)).toEqual([0, 15_300, 0])
+    expect(invoice.grandTotal).toBe(105_700)
+    expect(invoice.taxTotal).toBe(15_300)
+    expect(invoice.invoiceNumber).toMatch(/^DEMO-\d{4}$/)
+    expect(invoice.demonstration).toBe(true)
+    expect(invoice.saleChannel).toBe('CODE')
+    // The sale and its snapshot say the same.
+    expect(sale.sale.amountRwf).toBe(105_700)
+    expect(sale.totalRwf).toBe(105_700)
+    expect(
+      sale.lines.map((l) => [
+        l.name,
+        l.quantityInSaleUnit,
+        l.saleUnit,
+        l.priceVersion,
+        l.taxCategory,
+        l.lineTotalRwf,
+      ]),
+    ).toEqual([
+      ['Rice', '2', 'kg', 2, 'EXEMPT', 2_400],
+      ['Smartphone', '1', 'pc', 1, 'STANDARD', 100_300],
+      ['Haircut', '1', 'pc', 1, 'EXEMPT', 3_000],
+    ])
+    // A demonstration moves no stock and reserves nothing; and it never takes a real INV- number.
+    expect(s.authStore.loadRecords(MOCK_STORAGE_KEYS.inventoryBalances, [])).toEqual(stockBefore)
+    expect(sale.reservation.state).toBe('NOT_RESERVED')
+    s.signInAs('owner')
+    const listed = await s.fastInvoices.listInvoices(M)
+    expect(listed.items.some((i) => i.id === sale.sale.invoiceId)).toBe(false)
+  })
+
+  it('stays one sale, one invoice and one total across retries with new keys', async () => {
+    const s = setup()
+    const code = await demoCode(s)
+    const draft = await s.pos.createPosDraft(M, {
+      ...ids(),
+      branchId: REMERA,
+      lines: [line('cat-rice', '2'), line('cat-phone', '1', 'pc'), line('cat-haircut', '1', 'pc')],
+    })
+    const input = (key: string) => ({
+      expectedDraftVersion: 0,
+      reviewedTotalRwf: 105_700,
+      collectionCodeId: code,
+      idempotencyKey: key,
+    })
+    const first = await s.pos.billPosDraft(M, draft.id, input('bill-key-retry-0001'))
+    const again = await s.pos.billPosDraft(M, draft.id, input('bill-key-retry-0002'))
+    expect(again.sale.invoiceId).toBe(first.sale.invoiceId)
+    expect(s.authStore.loadInvoices().filter((i) => i.demonstration)).toHaveLength(1)
+    expect(s.authStore.loadRecords(MOCK_STORAGE_KEYS.posSales, [])).toHaveLength(1)
+  })
+})

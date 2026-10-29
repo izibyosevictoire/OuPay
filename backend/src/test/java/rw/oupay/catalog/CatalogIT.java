@@ -600,7 +600,7 @@ class CatalogIT extends IntegrationTest {
         assertThat(jdbc.queryForList("select tc.table_name from information_schema.table_constraints tc "
                 + "join information_schema.constraint_column_usage ccu on ccu.constraint_name = tc.constraint_name "
                 + "where tc.constraint_type = 'FOREIGN KEY' and ccu.table_name like 'catalog\\_%' and tc.table_name not like 'catalog\\_%'",
-                String.class)).containsOnly("inventory_balances", "pos_draft_lines")
+                String.class)).containsOnly("inventory_balances", "pos_draft_lines", "pos_sale_lines", "stock_reservation_lines")
                 .doesNotContain("invoices", "invoice_items", "payment_requests", "payment_profiles", "bank_transactions", "payment_allocations");
     }
 

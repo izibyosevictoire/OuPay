@@ -177,30 +177,62 @@ public class CodeCheckoutService {
         }
 
         // 2. A new sale: only through a code the caller holds NOW and that may be used.
-        CollectionCodeService.HeldCode held = choose(merchantId, sale.codeId());
-        String mode = modeOf(held);
-        if ("UNAVAILABLE".equals(mode)) {
-            throw refusal(held);
-        }
-        CollectionCode code = held.code();
-        CollectionCodeAssignment assignment = held.assignment();
-        UUID branchId = branchFor(merchantId, actor, held, sale.branchId());
-
-        InvoiceDtos.DraftRequest draft = new InvoiceDtos.DraftRequest(branchId, actor.userId(),
-                new InvoiceDtos.Customer("Walk-in customer", null, null, null, null),
-                List.of(new InvoiceDtos.ItemInput(sale.description(), BigDecimal.ONE, sale.amount(), 0,
-                        new InvoiceDtos.TaxRate(InvoiceCalculator.TaxCategory.NOT_APPLICABLE, 0))),
-                InvoiceCalculator.TaxMode.EXCLUSIVE, LocalDate.now(clock.withZone(KIGALI)).toString(),
-                // Part of what makes two requests the same sale (R3's fingerprint): the same identifier through another code is a conflict.
-                "Collection code " + code.getInternalRef());
-        InvoiceService.DraftOutcome drafted = invoices.createDraftFor(merchantId, draft, new InvoiceCreation(SaleChannel.CODE, sale.clientRequestId(), "DEMONSTRATION".equals(mode)));
+        PreparedSale prepared = prepareSale(merchantId, actor, sale.codeId(), sale.branchId());
+        InvoiceService.DraftOutcome drafted = draftSale(merchantId, actor, prepared, sale.clientRequestId(), List.of(new InvoiceDtos.ItemInput(sale.description(),
+                BigDecimal.ONE, sale.amount(), 0, new InvoiceDtos.TaxRate(InvoiceCalculator.TaxCategory.NOT_APPLICABLE, 0))));
         if (!drafted.created()) {
             // Lost a race with an identical request: its sale is committed (we waited for it), so this is a repeat.
             Stored other = storedByInvoice(merchantId, drafted.invoice().id()).orElseThrow(() -> ApiException.conflict("client_request_id_reuse",
                     "This request identifier was already used for a different sale."));
             return new IdempotencyService.Created<>(new CodeCheckoutDtos.Billed(repeatOf(merchantId, actor, other, sale), false), "invoice", other.invoiceId());
         }
-        InvoiceDtos.InvoiceDto invoice = drafted.invoice();
+        CompletedSale completed = finishSale(merchantId, actor, prepared, drafted.invoice(), sale.description());
+        Stored stored = storedByInvoice(merchantId, completed.invoice().id()).orElseThrow();
+        return new IdempotencyService.Created<>(new CodeCheckoutDtos.Billed(toDto(merchantId, stored), true), "invoice", completed.invoice().id());
+    }
+
+    // ---- the reusable steps of a code sale (also used by POS billing, R7b) ---------------------
+
+    /** The code a sale goes through, how it presents (LIVE or DEMONSTRATION) and the branch it is made at: decided by the server, from the registry. */
+    public record PreparedSale(CollectionCodeService.HeldCode held, String mode, UUID branchId) {}
+
+    /** What a finished sale consists of: its issued invoice and its fixed-amount payment request (the sale IS that request). */
+    public record CompletedSale(InvoiceDtos.InvoiceDto invoice, PaymentDtos.RequestDto request, PreparedSale prepared) {}
+
+    /**
+     * Chooses the code the caller holds NOW and may use, and the branch. Refuses with the reason when nothing can be sold through it.
+     * Authorisation ({@code invoices:create}) is the caller's, already checked.
+     */
+    public PreparedSale prepareSale(UUID merchantId, Actor actor, UUID requestedCodeId, UUID requestedBranchId) {
+        CollectionCodeService.HeldCode held = choose(merchantId, requestedCodeId);
+        String mode = modeOf(held);
+        if ("UNAVAILABLE".equals(mode)) {
+            throw refusal(held);
+        }
+        return new PreparedSale(held, mode, branchFor(merchantId, actor, held, requestedBranchId));
+    }
+
+    /**
+     * Creates the DRAFT invoice of a sale (channel CODE), with the sale's durable client request identity. Joins the caller's transaction.
+     * {@code created = false} means an invoice already exists for that identity (a repeat).
+     */
+    public InvoiceService.DraftOutcome draftSale(UUID merchantId, Actor actor, PreparedSale prepared, UUID clientRequestId, List<InvoiceDtos.ItemInput> items) {
+        InvoiceDtos.DraftRequest draft = new InvoiceDtos.DraftRequest(prepared.branchId(), actor.userId(),
+                new InvoiceDtos.Customer("Walk-in customer", null, null, null, null), items, InvoiceCalculator.TaxMode.EXCLUSIVE,
+                LocalDate.now(clock.withZone(KIGALI)).toString(),
+                // Part of what makes two requests the same sale (R3's fingerprint): the same identifier through another code is a conflict.
+                "Collection code " + prepared.held().code().getInternalRef());
+        return invoices.createDraftFor(merchantId, draft, new InvoiceCreation(SaleChannel.CODE, clientRequestId, "DEMONSTRATION".equals(prepared.mode())));
+    }
+
+    /**
+     * Issues the drafted invoice, opens its fixed-amount payment request and records the immutable code-sale snapshot. Joins the caller's
+     * transaction: everything commits or rolls back with the caller. The amount is the invoice's own grand total.
+     */
+    public CompletedSale finishSale(UUID merchantId, Actor actor, PreparedSale prepared, InvoiceDtos.InvoiceDto drafted, String description) {
+        CollectionCode code = prepared.held().code();
+        CollectionCodeAssignment assignment = prepared.held().assignment();
+        InvoiceDtos.InvoiceDto invoice = drafted;
         if (invoice.status() == InvoiceStatus.DRAFT) {
             invoice = invoices.issue(merchantId, invoice.id(), invoice.version());
         }
@@ -208,14 +240,15 @@ public class CodeCheckoutService {
                 PaymentRequestOptions.ofLifetime(SimplifiedCheckoutService.PAYMENT_LIFETIME), code.getSettlementDestinationId());
         PaymentDestination account = destinations.findByIdAndMerchantId(code.getSettlementDestinationId(), merchantId).orElseThrow();
         Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
+        String mode = prepared.mode();
         jdbc.sql("insert into code_sales (payment_request_id, merchant_id, invoice_id, branch_id, sale_reference, amount_rwf, description, presentation_mode, "
                         + "agent_user_id, agent_name, collection_code_id, assignment_id, code_provider_id, code_internal_ref, code_label, code_external_code, "
                         + "code_status, code_is_simulated, settlement_destination_id, settlement_masked_account, assignment_kind, assignee_membership_id, "
                         + "assignee_name, assignee_role, assignment_valid_from, branch_name, branch_code, created_at) "
                         + "values (:id, :m, :inv, :b, :ref, :amt, :desc, :mode, :agent, :agentName, :code, :asg, :prov, :iref, :label, :ext, :cst, :sim, :dest, "
                         + ":masked, :kind, :mem, :aname, :arole, :from, :bname, :bcode, :now)")
-                .param("id", request.id()).param("m", merchantId).param("inv", invoice.id()).param("b", branchId).param("ref", request.publicReference())
-                .param("amt", sale.amount()).param("desc", sale.description()).param("mode", mode).param("agent", actor.userId())
+                .param("id", request.id()).param("m", merchantId).param("inv", invoice.id()).param("b", prepared.branchId()).param("ref", request.publicReference())
+                .param("amt", invoice.grandTotal()).param("desc", description).param("mode", mode).param("agent", actor.userId())
                 .param("agentName", actor.user().getFullName()).param("code", code.getId()).param("asg", assignment.getId())
                 .param("prov", code.getProviderId().name()).param("iref", code.getInternalRef()).param("label", code.getDisplayLabel())
                 .param("ext", "LIVE".equals(mode) ? code.getExternalCode() : null).param("cst", code.getStatus().name()).param("sim", code.isSimulated())
@@ -224,9 +257,8 @@ public class CodeCheckoutService {
                 .param("from", Timestamp.from(assignment.getValidFrom())).param("bname", invoice.branchSnapshot().name())
                 .param("bcode", invoice.branchSnapshot().code()).param("now", Timestamp.from(now)).update();
         audit.record(merchantId, actor.userId(), "CODE_SALE_BILLED", "invoice", invoice.id(),
-                "Code sale " + invoice.invoiceNumber() + " billed for RWF " + sale.amount() + " (" + mode + ", code " + code.getInternalRef() + ").");
-        Stored stored = storedByInvoice(merchantId, invoice.id()).orElseThrow();
-        return new IdempotencyService.Created<>(new CodeCheckoutDtos.Billed(toDto(merchantId, stored), true), "invoice", invoice.id());
+                "Code sale " + invoice.invoiceNumber() + " billed for RWF " + invoice.grandTotal() + " (" + mode + ", code " + code.getInternalRef() + ").");
+        return new CompletedSale(invoice, request, prepared);
     }
 
     /** Rebuilds the answer for a stored result from CURRENT payment state, re-checking who is asking. */
@@ -244,6 +276,13 @@ public class CodeCheckoutService {
         Stored sale = jdbc.sql(STORED_SELECT + " where cs.payment_request_id = :id and cs.merchant_id = :m").param("id", saleId).param("m", merchantId)
                 .query(STORED_MAPPER).optional().orElseThrow(() -> ApiException.notFound("This sale could not be found."));
         invoices.get(merchantId, sale.invoiceId());
+        return toDto(merchantId, sale);
+    }
+
+    /** One sale as the code sale shows it NOW (payment state derived from verified bank transactions and allocations). Joins the caller's transaction. */
+    public CodeCheckoutDtos.CodeSaleDto saleView(UUID merchantId, UUID saleId) {
+        Stored sale = jdbc.sql(STORED_SELECT + " where cs.payment_request_id = :id and cs.merchant_id = :m").param("id", saleId).param("m", merchantId)
+                .query(STORED_MAPPER).optional().orElseThrow(() -> ApiException.notFound("This sale could not be found."));
         return toDto(merchantId, sale);
     }
 

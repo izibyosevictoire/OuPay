@@ -124,7 +124,11 @@ function createMockServices(): Services {
     kycService: createMockKycService({ authStore: mockAuthStore }),
     catalogService: createMockCatalogService({ authStore: mockAuthStore }),
     inventoryService: createMockInventoryService({ authStore: mockAuthStore }),
-    posService: createMockPosService({ authStore: mockAuthStore }),
+    posService: createMockPosService({
+      authStore: mockAuthStore,
+      codeCheckout: mockCodeCheckout.codeCheckoutService,
+      billCart: mockCodeCheckout.billCart,
+    }),
     collectionCodeService: createMockCollectionCodeService({ authStore: mockAuthStore }),
     reconciliationService: createMockReconciliationService(shared),
     notificationService: createMockNotificationService(shared),

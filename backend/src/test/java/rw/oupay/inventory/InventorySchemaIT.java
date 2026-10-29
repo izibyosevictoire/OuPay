@@ -123,14 +123,14 @@ class InventorySchemaIT extends IntegrationTest {
     void v10AppliedAndIsPurelyAdditive() throws java.io.IOException {
         assertThat(jdbc.queryForList("select version from flyway_schema_history where success order by installed_rank", String.class)).contains("10");
         assertThat(jdbc.queryForList("select tablename from pg_tables where schemaname = 'public' and (tablename like 'inventory\\_%' "
-                + "or tablename like 'stock\\_%') order by 1", String.class)).containsExactly("inventory_balances", "stock_movements");
+                + "or tablename like 'stock\\_%') order by 1", String.class)).containsExactly("inventory_balances", "stock_movements", "stock_reservation_lines", "stock_reservations");  // the last two arrive with V17 (R7b)
         String sql = new ClassPathResource("db/migration/V10__branch_inventory.sql").getContentAsString(java.nio.charset.StandardCharsets.UTF_8)
                 .toLowerCase(java.util.Locale.ROOT);
         assertThat(sql).doesNotContain("drop ").doesNotContain("delete from").doesNotContain("truncate").doesNotContain("insert into")
                 .doesNotContain("alter table");
         assertThat(jdbc.queryForList("select tgname from pg_trigger where not tgisinternal and tgrelid in "
                 + "('inventory_balances'::regclass, 'stock_movements'::regclass) order by 1", String.class))
-                .containsExactly("trg_inventory_balances_identity", "trg_inventory_balances_start_empty", "trg_stock_movements_apply",
+                .containsExactly("trg_inventory_balances_identity", "trg_inventory_balances_reserved", "trg_inventory_balances_start_empty", "trg_stock_movements_apply",
                         "trg_stock_movements_immutable");
     }
 

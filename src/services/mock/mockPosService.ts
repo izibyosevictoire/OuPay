@@ -10,9 +10,31 @@ import {
   type ExactDecimal,
 } from '@/lib/exactDecimal'
 import { OrganizationServiceError } from '@/services/organizationService'
-import { PosServiceError, type PosService } from '@/services/posService'
+import { CodeCheckoutServiceError, type CodeCheckoutService } from '@/services/codeCheckoutService'
+import { calculateLine } from '@/lib/invoiceCalculations'
+import type { InvoiceItemInput } from '@/types/invoice'
+import type { MockCartBilling } from './mockCodeCheckoutService'
+import { PosServiceError, type PosService, type PosServiceErrorCode } from '@/services/posService'
+import {
+  CODE_CHECKOUT_MAX_AMOUNT_RWF,
+  CODE_CHECKOUT_MIN_AMOUNT_RWF,
+} from '@/constants/codeCheckout'
+import type { CodeSale } from '@/types/codeCheckout'
+import {
+  MOCK_APPROVED_TAX_TREATMENTS,
+  SAMPLE_CATALOG_TAX,
+  approvedLabelsOf,
+  type StoredCatalogTax,
+} from './sampleCatalogTax'
 import type { MeasurementUnitCode } from '@/types/catalog'
 import type {
+  PosAvailability,
+  PosBillMode,
+  PosBilledSale,
+  PosBillingProblem,
+  PosBillingReview,
+  PosReviewLine,
+  PosSaleLine,
   PosBranchChoice,
   PosCatalogItem,
   PosDraft,
@@ -45,13 +67,19 @@ import { MOCK_STORAGE_KEYS } from './mockStorageKeys'
 
 interface MockPosServiceOptions {
   authStore: MockAuthStore
+  /** The mock code checkout a POS bill goes through (the same demonstration ledger as every other screen). */
+  codeCheckout?: CodeCheckoutService
+  /** Bills the whole cart as a multi-line invoice through that same code checkout. */
+  billCart?: MockCartBilling
   merchantStorage?: MerchantStorage
   delayInMilliseconds?: number
 }
 
-const MAX_LINES = 100
+const MAX_LINES = 50
 const STOCK_NOTE =
-  'Stock shown is informational. Nothing is reserved or deducted, and it is checked again when you bill.'
+  'Stock shown is informational (physical stock minus what is already reserved). Nothing is reserved for this cart and nothing is deducted. Availability is checked again when you bill.'
+const DEMO_RESERVATION_NOTE =
+  'DEMONSTRATION: no stock is reserved and nothing can be paid or fulfilled.'
 const TAX_NOTE =
   'Provisional total: tax is not calculated or included, and prices are rechecked when you bill. Tax treatment is applied only when an invoice is issued.'
 const DRAFT_NOTICE =
@@ -81,6 +109,19 @@ interface StoredPosDraft {
   idempotencyKeys: { key: string; fingerprint: string }[]
 }
 
+/** What the mock remembers of a billed draft: the immutable snapshot, like the server's pos_sales and pos_sale_lines. */
+interface StoredPosSale {
+  merchantId: string
+  saleId: string
+  draftId: string
+  createdByUserId: string
+  mode: 'DEMONSTRATION'
+  lines: PosSaleLine[]
+  subtotalRwf: number
+  taxRwf: number
+  totalRwf: number
+}
+
 class LineProblem extends Error {
   readonly code: string
 
@@ -97,10 +138,6 @@ const PLAIN_QUANTITY = /^[0-9]+(\.[0-9]+)?$/
 
 const isUnitCode = (value: string): value is MeasurementUnitCode => value in CATALOG_UNITS
 
-/** Half-up rounding of a non-negative ratio, exactly (BigInt): the invoice calculator's single rounding rule. */
-const roundedHalfUp = (numerator: bigint, denominator: bigint) =>
-  (numerator * 2n + denominator) / (denominator * 2n)
-
 /**
  * DEMO ONLY: an in-browser stand-in for the server's business POS. It makes the decisions the server makes: BUSINESS mode only,
  * `invoices:create`, branch eligibility, prices from the catalog's CURRENT price version (the client names only the version it saw),
@@ -109,7 +146,13 @@ const roundedHalfUp = (numerator: bigint, denominator: bigint) =>
  * proves nothing about the real server.
  */
 export function createMockPosService(options: MockPosServiceOptions): PosService {
-  const { authStore: store } = options
+  const { authStore: store, codeCheckout, billCart: billCartOption } = options
+  const billCart: MockCartBilling = (merchantId, input) => {
+    if (!billCartOption) {
+      throw new PosServiceError('service_unavailable', 'Billing is not available here.')
+    }
+    return billCartOption(merchantId, input)
+  }
   const merchantStorage = options.merchantStorage ?? resolveDefaultStorage()
   const run = createOperationRunner(options.delayInMilliseconds ?? 300)
 
@@ -316,10 +359,21 @@ export function createMockPosService(options: MockPosServiceOptions): PosService
     return { item, price, canonical, inSaleUnit, packageLabel, packageId }
   }
 
+  /** A draft line's money: the invoice calculation itself (no tax yet, so it is the net amount). */
   const lineTotalOf = (inSaleUnit: ExactDecimal, unitPrice: number): number | null => {
     const milli = shiftDecimalPoint(inSaleUnit, 3).unscaled
-    const total = roundedHalfUp(milli * BigInt(unitPrice), 1000n)
-    return total > BigInt(Number.MAX_SAFE_INTEGER) ? null : Number(total)
+    // Money that does not fit an exact integer is refused here: the calculation below works on numbers.
+    if ((milli * BigInt(unitPrice)) / 1000n > BigInt(Number.MAX_SAFE_INTEGER)) return null
+    return calculateLine(
+      {
+        description: '',
+        quantity: Number(formatExactDecimal(inSaleUnit)),
+        unitPrice,
+        discount: 0,
+        taxRate: { category: 'NOT_APPLICABLE', rateBp: 0 },
+      },
+      'EXCLUSIVE',
+    ).lineTotal
   }
 
   const stockCheck = (
@@ -539,6 +593,298 @@ export function createMockPosService(options: MockPosServiceOptions): PosService
 
   const replace = (draft: StoredPosDraft) =>
     saveDrafts(drafts().map((d) => (d.id === draft.id ? draft : d)))
+
+  // ---- billing (R7b) ----------------------------------------------------------------------------------------------------------------
+
+  const taxRecords = () =>
+    store.loadRecords<StoredCatalogTax>(MOCK_STORAGE_KEYS.catalogTax, SAMPLE_CATALOG_TAX)
+  const posSales = () => store.loadRecords<StoredPosSale>(MOCK_STORAGE_KEYS.posSales, [])
+
+  const toPosError = (error: unknown): never => {
+    if (error instanceof PosServiceError) throw error
+    if (error instanceof CodeCheckoutServiceError) {
+      const known: PosServiceErrorCode[] = [
+        'unauthenticated',
+        'not_found',
+        'forbidden',
+        'validation',
+        'no_assigned_code',
+        'code_not_assigned',
+        'code_required',
+        'code_not_available',
+        'live_collection_unavailable',
+        'no_eligible_branch',
+        'branch_not_eligible',
+        'client_request_id_reuse',
+        'idempotency_key_reuse',
+        'request_in_progress',
+      ]
+      const code = known.find((k) => k === error.code)
+      throw new PosServiceError(code ?? 'service_unavailable', error.message)
+    }
+    throw error
+  }
+
+  /** The code the sale would go through, from the caller's own codes (the mock bills demonstrations only). */
+  const codeFor = async (merchantId: string, codeId: string | null | undefined) => {
+    if (!codeCheckout) {
+      throw new PosServiceError('service_unavailable', 'Billing is not available here.')
+    }
+    try {
+      const options = await codeCheckout.getCodeCheckoutOptions(merchantId)
+      if (options.codes.length === 0) {
+        return {
+          problem: { code: 'no_assigned_code', message: 'You are not assigned a collection code.' },
+        }
+      }
+      const choice = codeId
+        ? options.codes.find((c) => c.id === codeId)
+        : options.codes.length === 1
+          ? options.codes[0]
+          : undefined
+      if (!choice) {
+        return codeId
+          ? {
+              problem: {
+                code: 'code_not_assigned',
+                message: 'Choose one of the codes assigned to you.',
+              },
+            }
+          : {
+              problem: {
+                code: 'code_required',
+                message: 'Choose which of your codes you are billing through.',
+              },
+            }
+      }
+      if (choice.mode === 'UNAVAILABLE') {
+        return {
+          problem: {
+            code: 'code_not_available',
+            message: choice.reason ?? 'This code cannot be used right now.',
+          },
+        }
+      }
+      return { choice }
+    } catch (error) {
+      return toPosError(error)
+    }
+  }
+
+  const requireCreator = (merchantId: string, draftId: string, actor: Actor) => {
+    const draft = findVisible(merchantId, draftId, actor)
+    if (draft.createdByUserId !== actor.user.id) throw draftNotFound()
+    return draft
+  }
+
+  interface ReviewBuilt {
+    draft: StoredPosDraft
+    review: PosBillingReview
+    lines: PosSaleLine[]
+    /** The invoice lines the sale is billed with: one per cart line, with the tax treatment, exactly as reviewed. */
+    invoiceLines: InvoiceItemInput[]
+  }
+
+  /** One invoice line of a priced cart line: the same description rule as the server (goods say their selling unit). */
+  const invoiceLineOf = (line: PosPricedLine, configured: StoredCatalogTax): InvoiceItemInput => ({
+    description: line.itemType === 'GOODS' ? `${line.name} (per ${line.saleUnit})` : line.name,
+    quantity: Number(line.quantityInSaleUnit),
+    unitPrice: line.unitPriceRwf,
+    discount: 0,
+    taxRate: { category: configured.category, rateBp: configured.rateBp },
+  })
+
+  const buildReview = (
+    merchantId: string,
+    actor: Actor,
+    draft: StoredPosDraft,
+    code: Awaited<ReturnType<typeof codeFor>>,
+  ): ReviewBuilt => {
+    const branch = chooseBranch(merchantId, actor, draft.branchId)
+    const inputs: PosLineInput[] = draft.lines.map((l) => {
+      const item = catalog().find((c) => c.merchantId === merchantId && c.id === l.itemId)
+      return {
+        itemId: l.itemId,
+        quantity: l.enteredQuantity,
+        unit: l.enteredUnit,
+        packageId: l.packageId,
+        expectedPriceVersion: item?.priceVersion ?? l.priceVersion,
+      }
+    })
+    const priced = price(merchantId, branch.id, inputs)
+    const problems: PosBillingProblem[] = priced.problems.map((p) => ({
+      lineNo: p.lineIndex + 1,
+      code: p.code,
+      message: p.message,
+    }))
+    const failed = new Set(priced.problems.map((p) => p.lineIndex))
+    const reviewLines: PosReviewLine[] = []
+    const saleLines: PosSaleLine[] = []
+    const invoiceLines: InvoiceItemInput[] = []
+    let subtotal = 0
+    let taxTotal = 0
+    let total = 0
+    let pricedIndex = 0
+    draft.lines.forEach((was, index) => {
+      if (failed.has(index)) return
+      const line = priced.lines[pricedIndex++]!
+      const configured = taxRecords().find(
+        (t) => t.merchantId === merchantId && t.itemId === line.itemId,
+      )
+      const approved =
+        configured !== undefined &&
+        MOCK_APPROVED_TAX_TREATMENTS.some(
+          (t) => t.category === configured.category && t.rateBp === configured.rateBp,
+        )
+      const lineNo = index + 1
+      if (!configured) {
+        problems.push({
+          lineNo,
+          code: 'tax_not_configured',
+          message: `${line.name} has no tax treatment set. Set it in the catalog before billing.`,
+        })
+      } else if (!approved) {
+        problems.push({
+          lineNo,
+          code: 'tax_not_approved',
+          message: `${line.name} has a tax treatment that has not been approved for billing.`,
+        })
+      }
+      if (line.unitPriceRwf <= 0) {
+        problems.push({
+          lineNo,
+          code: 'price_zero_not_billable',
+          message: `${line.name} has a price of zero, which an invoice cannot bill.`,
+        })
+      }
+      let net = 0
+      let tax = 0
+      if (configured) {
+        // The invoice service's own calculation prices the invoice too, so the reviewed money and the invoice's money are one.
+        const calculated = calculateLine(invoiceLineOf(line, configured), 'EXCLUSIVE')
+        net = calculated.netAmount
+        tax = calculated.taxAmount
+        subtotal += net
+        taxTotal += tax
+        total += net + tax
+      }
+      const stock = line.stock
+      const availability: PosAvailability = {
+        state: stock?.state ?? 'NOT_TRACKED',
+        physical: stock?.onHand ?? null,
+        reserved: stock ? '0' : null,
+        available: stock?.onHand ?? null,
+        requested: stock?.requested ?? null,
+        canonicalUnit: line.canonicalUnit,
+      }
+      if (availability.state === 'INSUFFICIENT' || availability.state === 'NO_STOCK_RECORD') {
+        if (
+          !problems.some((p) => p.code === 'insufficient_stock' && p.message.includes(line.name))
+        ) {
+          problems.push({
+            lineNo,
+            code: 'insufficient_stock',
+            message: `Not enough available stock of ${line.name} at this branch.`,
+          })
+        }
+      }
+      reviewLines.push({
+        lineNo,
+        itemId: line.itemId,
+        name: line.name,
+        code: line.code,
+        enteredQuantity: line.enteredQuantity,
+        enteredUnit: line.enteredUnit,
+        packageLabel: line.packageLabel,
+        saleUnit: line.saleUnit,
+        quantityInSaleUnit: line.quantityInSaleUnit,
+        canonicalQuantity: line.canonicalQuantity,
+        canonicalUnit: line.canonicalUnit,
+        priceVersion: line.priceVersion,
+        unitPriceRwf: line.unitPriceRwf,
+        draftPriceVersion: was.priceVersion,
+        draftUnitPriceRwf: was.unitPriceRwf,
+        priceChangedSinceDraft:
+          was.priceVersion !== line.priceVersion || was.unitPriceRwf !== line.unitPriceRwf,
+        taxCategory: configured?.category ?? null,
+        taxRateBp: configured?.rateBp ?? null,
+        taxApproved: approved,
+        netRwf: net,
+        taxRwf: tax,
+        lineTotalRwf: net + tax,
+        availability,
+      })
+      if (configured) {
+        invoiceLines.push(invoiceLineOf(line, configured))
+        saleLines.push({
+          lineNo,
+          itemId: line.itemId,
+          itemType: line.itemType,
+          name: line.name,
+          code: line.code,
+          enteredQuantity: line.enteredQuantity,
+          enteredUnit: line.enteredUnit,
+          packageLabel: line.packageLabel,
+          saleUnit: line.saleUnit,
+          quantityInSaleUnit: line.quantityInSaleUnit,
+          canonicalQuantity: line.canonicalQuantity,
+          canonicalUnit: line.canonicalUnit,
+          priceVersion: line.priceVersion,
+          unitPriceRwf: line.unitPriceRwf,
+          taxCategory: configured.category,
+          taxRateBp: configured.rateBp,
+          netRwf: net,
+          taxRwf: tax,
+          lineTotalRwf: net + tax,
+        })
+      }
+    })
+    if ('problem' in code && code.problem) {
+      problems.unshift({ lineNo: 0, code: code.problem.code, message: code.problem.message })
+    }
+    const choice = 'choice' in code ? code.choice : undefined
+    const mode: PosBillMode = choice ? 'DEMONSTRATION' : 'UNAVAILABLE'
+    const review: PosBillingReview = {
+      draftId: draft.id,
+      draftVersion: draft.version,
+      branchId: branch.id,
+      branchName: branch.name,
+      lines: reviewLines,
+      problems,
+      subtotalRwf: subtotal,
+      taxRwf: taxTotal,
+      totalRwf: total,
+      billable: problems.length === 0 && choice !== undefined,
+      mode,
+      codeLabel: choice?.label ?? null,
+      modeNote: choice
+        ? DEMO_RESERVATION_NOTE
+        : ('problem' in code && code.problem?.message) || 'No code is available.',
+      stockNote: STOCK_NOTE,
+      taxNote: TAX_NOTE,
+      approvedTaxTreatments: approvedLabelsOf(),
+    }
+    return { draft, review, lines: saleLines, invoiceLines }
+  }
+
+  const billedSaleOf = (stored: StoredPosSale, sale: CodeSale): PosBilledSale => ({
+    sale,
+    draftId: stored.draftId,
+    mode: stored.mode,
+    lines: stored.lines,
+    subtotalRwf: stored.subtotalRwf,
+    taxRwf: stored.taxRwf,
+    totalRwf: stored.totalRwf,
+    reservation: {
+      state: 'NOT_RESERVED',
+      note: DEMO_RESERVATION_NOTE,
+      expiryReviewAt: null,
+      releasedAt: null,
+      releaseReason: null,
+      lines: [],
+    },
+    taxNote: TAX_NOTE,
+  })
 
   return {
     getPosOptions: (merchantId) =>
@@ -761,5 +1107,137 @@ export function createMockPosService(options: MockPosServiceOptions): PosService
         replace(discarded)
         return viewOf(discarded)
       }),
+
+    getBillingReview: async (merchantId, draftId, collectionCodeId) => {
+      const code = await codeFor(merchantId, collectionCodeId)
+      return run(() => {
+        const actor = requirePos(merchantId)
+        const draft = requireCreator(merchantId, draftId, actor)
+        if (draft.status !== 'DRAFT') {
+          throw new PosServiceError('draft_not_open', 'This draft is no longer open.')
+        }
+        return buildReview(merchantId, actor, draft, code).review
+      })
+    },
+
+    billPosDraft: async (merchantId, draftId, input) => {
+      if (!codeCheckout) {
+        throw new PosServiceError('service_unavailable', 'Billing is not available here.')
+      }
+      const code = await codeFor(merchantId, input.collectionCodeId)
+      const decision = await run(() => {
+        const actor = requirePos(merchantId)
+        const draft = requireCreator(merchantId, draftId, actor)
+        // A repeat is answered from the draft's own sale, before anything about today is looked at.
+        const existing = posSales().find(
+          (s) => s.merchantId === merchantId && s.draftId === draftId,
+        )
+        if (existing) {
+          if (existing.totalRwf !== input.reviewedTotalRwf) {
+            throw new PosServiceError(
+              'bill_conflict',
+              'This draft was already billed, for a different total or through a different code.',
+            )
+          }
+          return { kind: 'repeat' as const, existing }
+        }
+        if (draft.status !== 'DRAFT') {
+          throw new PosServiceError('draft_not_open', 'This draft is no longer open.')
+        }
+        if (draft.version !== input.expectedDraftVersion) {
+          throw new PosServiceError(
+            'version_conflict',
+            'This draft was changed since you opened it. Reload it and try again.',
+          )
+        }
+        const built = buildReview(merchantId, actor, draft, code)
+        const blocking =
+          built.review.problems.find((p) => p.lineNo === 0) ?? built.review.problems[0]
+        if (blocking) {
+          const known = blocking.code as PosServiceErrorCode
+          throw new PosServiceError(
+            known,
+            (blocking.lineNo > 0 ? `Line ${blocking.lineNo}: ` : '') + blocking.message,
+          )
+        }
+        if (built.review.totalRwf !== input.reviewedTotalRwf) {
+          throw new PosServiceError(
+            'review_changed',
+            `The price, tax or total changed since you reviewed it (now RWF ${built.review.totalRwf}). Review the bill again before you continue.`,
+          )
+        }
+        if (
+          built.review.totalRwf < CODE_CHECKOUT_MIN_AMOUNT_RWF ||
+          built.review.totalRwf > CODE_CHECKOUT_MAX_AMOUNT_RWF
+        ) {
+          throw new PosServiceError(
+            'amount_out_of_range',
+            `A bill must be between RWF ${CODE_CHECKOUT_MIN_AMOUNT_RWF} and RWF ${CODE_CHECKOUT_MAX_AMOUNT_RWF}.`,
+          )
+        }
+        return { kind: 'new' as const, built, actor, draft }
+      })
+      if (decision.kind === 'repeat') {
+        const sale = await codeCheckout.getCodeSale(merchantId, decision.existing.saleId)
+        return billedSaleOf(decision.existing, sale)
+      }
+      const { built, actor, draft } = decision
+      let sale: CodeSale
+      try {
+        sale = await billCart(merchantId, {
+          // Every cart line becomes an invoice line: the bill is NOT an amount-only invoice.
+          lines: built.invoiceLines,
+          amountRwf: built.review.totalRwf,
+          description: `POS sale (${built.lines.length} ${built.lines.length === 1 ? 'line' : 'lines'})`,
+          collectionCodeId: 'choice' in code ? code.choice?.id : undefined,
+          branchId: draft.branchId,
+          // The draft's own identity: the same draft can never become two sales.
+          clientRequestId: draft.clientRequestId,
+          idempotencyKey: input.idempotencyKey,
+        })
+      } catch (error) {
+        return toPosError(error)
+      }
+      return run(() => {
+        const stored: StoredPosSale = {
+          merchantId,
+          saleId: sale.saleId,
+          draftId,
+          createdByUserId: actor.user.id,
+          mode: 'DEMONSTRATION',
+          lines: built.lines,
+          subtotalRwf: built.review.subtotalRwf,
+          taxRwf: built.review.taxRwf,
+          totalRwf: built.review.totalRwf,
+        }
+        store.saveRecords(MOCK_STORAGE_KEYS.posSales, [...posSales(), stored])
+        replace({
+          ...draft,
+          status: 'BILLED',
+          updatedAt: new Date().toISOString(),
+          version: draft.version + 1,
+        })
+        return billedSaleOf(stored, sale)
+      })
+    },
+
+    getPosSale: async (merchantId, saleId) => {
+      if (!codeCheckout) {
+        throw new PosServiceError('service_unavailable', 'Billing is not available here.')
+      }
+      const stored = await run(() => {
+        const actor = requirePos(merchantId)
+        const found = posSales().find((s) => s.merchantId === merchantId && s.saleId === saleId)
+        if (!found || found.createdByUserId !== actor.user.id) {
+          throw new PosServiceError('not_found', 'This sale could not be found.')
+        }
+        return found
+      })
+      try {
+        return billedSaleOf(stored, await codeCheckout.getCodeSale(merchantId, saleId))
+      } catch (error) {
+        return toPosError(error)
+      }
+    },
   }
 }

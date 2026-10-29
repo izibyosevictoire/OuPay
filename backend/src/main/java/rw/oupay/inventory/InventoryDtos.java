@@ -36,7 +36,9 @@ public final class InventoryDtos {
 
     public record BalanceDto(UUID id, UUID branchId, String branchName, String branchCode, UUID itemId, String itemName,
                              String itemCode, String measurementDimension, String stockUnit, String quantityOnHand, String saleUnit,
-                             String quantityInSaleUnit, Instant updatedAt, long version) {}
+                             String quantityInSaleUnit, Instant updatedAt, long version,
+                             /** R7b: stock reserved for sales already billed, and what is left to sell (physical minus reserved), both canonical. */
+                             String quantityReserved, String quantityAvailable) {}
 
     public record MovementDto(UUID id, UUID branchId, String branchName, UUID itemId, String itemName, MovementType movementType,
                               String quantityDelta, String balanceAfter, String stockUnit, String enteredAs, String reason,

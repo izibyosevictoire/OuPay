@@ -16,6 +16,7 @@ import {
   type PublicCodeSaleService,
 } from '@/services/codeCheckoutService'
 import type { InvoiceService } from '@/services/invoiceService'
+import type { InvoiceItemInput } from '@/types/invoice'
 import { OrganizationServiceError } from '@/services/organizationService'
 import type {
   CodeChoice,
@@ -43,6 +44,10 @@ import {
   type StoredCodeAssignment,
   type StoredCollectionCode,
 } from './sampleCollectionCodes'
+
+/** A code sale with every invoice line of a POS cart. `amountRwf` is the total the cashier reviewed: the invoice must equal it. */
+export type MockCartSaleInput = CodeSaleInput & { lines: InvoiceItemInput[] }
+export type MockCartBilling = (merchantId: string, input: MockCartSaleInput) => Promise<CodeSale>
 
 interface MockCodeCheckoutOptions {
   authStore: MockAuthStore
@@ -104,6 +109,8 @@ interface Held {
 export function createMockCodeCheckout(options: MockCodeCheckoutOptions): {
   codeCheckoutService: CodeCheckoutService
   publicCodeSaleService: PublicCodeSaleService
+  /** Mock-only: bills a MULTI-LINE sale (POS billing). The public service interface is the server's and has no such call. */
+  billCart: MockCartBilling
 } {
   const { authStore: store, ledger, invoiceService } = options
   const merchantStorage = options.merchantStorage ?? resolveDefaultStorage()
@@ -308,14 +315,229 @@ export function createMockCodeCheckout(options: MockCodeCheckoutOptions): {
     }
   }
 
-  const fingerprintOf = (actor: Actor, input: CodeSaleInput, description: string) =>
+  const fingerprintOf = (
+    actor: Actor,
+    input: CodeSaleInput,
+    description: string,
+    lines?: InvoiceItemInput[],
+  ) =>
     JSON.stringify([
       actor.user.id,
       input.amountRwf,
       description,
       input.collectionCodeId ?? null,
       input.branchId ?? null,
+      lines ?? null,
     ])
+
+  /**
+   * One bill. `lines` (mock-only, used by POS billing) makes it a MULTI-LINE invoice priced by the invoice service's own rules; without
+   * it the invoice is the single amount-only line of code checkout.
+   */
+  const bill = async (
+    merchantId: string,
+    input: CodeSaleInput,
+    lines?: InvoiceItemInput[],
+  ): Promise<CodeSale> => {
+    // Validation that needs no data runs first, like the server's.
+    if (
+      !Number.isInteger(input.amountRwf) ||
+      input.amountRwf < CODE_CHECKOUT_MIN_AMOUNT_RWF ||
+      input.amountRwf > CODE_CHECKOUT_MAX_AMOUNT_RWF
+    ) {
+      throw fail(
+        'validation',
+        `Enter a whole amount between RWF ${CODE_CHECKOUT_MIN_AMOUNT_RWF} and RWF ${CODE_CHECKOUT_MAX_AMOUNT_RWF}.`,
+      )
+    }
+    const description = (input.description ?? '').trim()
+    if (
+      description.length > CODE_CHECKOUT_MAX_DESCRIPTION ||
+      CONTROL_CHARACTERS.test(description)
+    ) {
+      throw fail(
+        'validation',
+        `The description can be at most ${CODE_CHECKOUT_MAX_DESCRIPTION} characters, on one line.`,
+      )
+    }
+    if (input.idempotencyKey.length < 8) throw fail('validation', 'An Idempotency-Key is required.')
+    const line = description || CODE_CHECKOUT_DEFAULT_DESCRIPTION
+
+    // Every decision is taken before anything is created, so a refusal leaves nothing behind.
+    const decision = await run(() => {
+      const actor = actorFor(merchantId)
+      const fingerprint = fingerprintOf(actor, input, line, lines)
+      const forMerchant = sales().filter((s) => s.merchantId === merchantId)
+      const keyed = forMerchant.find((s) => s.idempotencyKeys.includes(input.idempotencyKey))
+      if (keyed && (keyed.fingerprint !== fingerprint || keyed.agentUserId !== actor.user.id)) {
+        throw fail(
+          'idempotency_key_reuse',
+          'This Idempotency-Key was already used for a different request. Use a new key for a new request.',
+        )
+      }
+      const known = forMerchant.find((s) => s.clientRequestId === input.clientRequestId)
+      if (known) {
+        if (known.fingerprint !== fingerprint || known.agentUserId !== actor.user.id) {
+          throw fail(
+            'client_request_id_reuse',
+            'This request identifier was already used for a different sale.',
+          )
+        }
+        // The original sale is returned from its own record, whatever the code's eligibility is today.
+        return { kind: 'repeat' as const, sale: known }
+      }
+      const held = heldBy(merchantId, actor)
+      if (held.length === 0) {
+        throw fail(
+          'no_assigned_code',
+          'You are not assigned a collection code. Ask the business owner or a manager to assign you one.',
+        )
+      }
+      let chosen: Held | undefined
+      if (input.collectionCodeId) {
+        chosen = held.find((h) => h.code.id === input.collectionCodeId)
+        if (!chosen) throw fail('code_not_assigned', 'Choose one of the codes assigned to you.')
+      } else if (held.length === 1) {
+        chosen = held[0]
+      }
+      if (!chosen) {
+        throw fail('code_required', 'Choose which of your codes you are billing through.')
+      }
+      if (chosen.mode !== 'DEMONSTRATION') {
+        throw fail(chosen.refusal ?? 'code_not_available', chosen.reason ?? LIVE_OFF)
+      }
+      const branch = branchOf(chosen)
+      if (!branch) {
+        throw fail('no_eligible_branch', 'This code has no active branch, so you cannot bill yet.')
+      }
+      if (!collectingProfile(merchantId, chosen.code, branch.id, actor.user.id)) {
+        throw fail(
+          'no_active_profile',
+          'There is no active payment link on this code’s settlement account. Create or switch one on in Payment links.',
+        )
+      }
+      return {
+        kind: 'new' as const,
+        actor,
+        chosen,
+        branchId: branch.id,
+        branchName: branch.name,
+        fingerprint,
+      }
+    })
+
+    if (decision.kind === 'repeat') {
+      const { sale } = decision
+      return run(() => {
+        if (!sale.idempotencyKeys.includes(input.idempotencyKey)) {
+          store.saveRecords<StoredCodeSale>(
+            MOCK_STORAGE_KEYS.codeSales,
+            sales().map((s) =>
+              s.saleId === sale.saleId
+                ? { ...s, idempotencyKeys: [...s.idempotencyKeys, input.idempotencyKey] }
+                : s,
+            ),
+          )
+        }
+        return saleDto(sale)
+      })
+    }
+
+    const draft = await invoiceService.createDraft(merchantId, {
+      branchId: decision.branchId,
+      assignedToUserId: decision.actor.user.id,
+      customer: { name: WALK_IN_CUSTOMER_NAME },
+      items: lines ?? [
+        {
+          description: line,
+          quantity: 1,
+          unitPrice: input.amountRwf,
+          discount: 0,
+          taxRate: { category: 'NOT_APPLICABLE', rateBp: 0 },
+        },
+      ],
+      taxMode: 'EXCLUSIVE',
+      dueAt: todayInKigali(),
+    })
+    const issued = await invoiceService.issueInvoice(merchantId, draft.id, draft.version)
+    if (lines && issued.grandTotal !== input.amountRwf) {
+      // The invoice engine computed something else than what was reviewed: nothing is billed (the draft is left a draft).
+      throw fail(
+        'validation',
+        'The invoice could not be priced exactly as reviewed, so nothing was billed.',
+      )
+    }
+
+    return run(() => {
+      // Stamp where the sale came from (the server sets this; no screen or form can), then open the request.
+      store.saveInvoices(
+        store.loadInvoices().map((i) =>
+          i.id === issued.id
+            ? {
+                ...i,
+                saleChannel: 'CODE' as const,
+                demonstration: true,
+                // Its own series: DEMO-0001... never INV-.
+                invoiceNumber: `DEMO-${String(
+                  store.loadInvoices().filter((c) => c.merchantId === merchantId && c.demonstration)
+                    .length + 1,
+                ).padStart(4, '0')}`,
+              }
+            : i,
+        ),
+      )
+      const profile = collectingProfile(
+        merchantId,
+        decision.chosen.code,
+        decision.branchId,
+        decision.actor.user.id,
+      )
+      if (!profile) {
+        throw fail('no_active_profile', 'There is no active payment link for this sale.')
+      }
+      const now = new Date()
+      const requestId = newId('pr')
+      ledger.paymentRequests.save([
+        ...ledger.paymentRequests.load(),
+        {
+          id: requestId,
+          merchantId,
+          paymentProfileId: profile.id,
+          invoiceId: issued.id,
+          requestedAmount: issued.grandTotal,
+          currency: 'RWF',
+          publicReference: newUniquePaymentReference(ledger),
+          expiresAt: new Date(
+            now.getTime() + CODE_CHECKOUT_LIFETIME_MINUTES * 60_000,
+          ).toISOString(),
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+        },
+      ])
+      const stored: StoredCodeSale = {
+        saleId: requestId,
+        merchantId,
+        clientRequestId: input.clientRequestId,
+        idempotencyKeys: [input.idempotencyKey],
+        fingerprint: decision.fingerprint,
+        agentUserId: decision.actor.user.id,
+        agentName: decision.actor.user.fullName,
+        invoiceId: issued.id,
+        paymentRequestId: requestId,
+        branchId: decision.branchId,
+        branchName: decision.branchName,
+        description: line,
+        amountRwf: input.amountRwf,
+        mode: 'DEMONSTRATION',
+        codeId: decision.chosen.code.id,
+        codeLabel: decision.chosen.code.displayLabel,
+        codeInternalRef: decision.chosen.code.internalRef,
+        assignmentId: decision.chosen.assignment.id,
+      }
+      store.saveRecords<StoredCodeSale>(MOCK_STORAGE_KEYS.codeSales, [...sales(), stored])
+      return saleDto(stored)
+    })
+  }
 
   return {
     codeCheckoutService: {
@@ -340,204 +562,7 @@ export function createMockCodeCheckout(options: MockCodeCheckoutOptions): {
           }
         }),
 
-      billCodeSale: async (merchantId, input) => {
-        // Validation that needs no data runs first, like the server's.
-        if (
-          !Number.isInteger(input.amountRwf) ||
-          input.amountRwf < CODE_CHECKOUT_MIN_AMOUNT_RWF ||
-          input.amountRwf > CODE_CHECKOUT_MAX_AMOUNT_RWF
-        ) {
-          throw fail(
-            'validation',
-            `Enter a whole amount between RWF ${CODE_CHECKOUT_MIN_AMOUNT_RWF} and RWF ${CODE_CHECKOUT_MAX_AMOUNT_RWF}.`,
-          )
-        }
-        const description = (input.description ?? '').trim()
-        if (
-          description.length > CODE_CHECKOUT_MAX_DESCRIPTION ||
-          CONTROL_CHARACTERS.test(description)
-        ) {
-          throw fail(
-            'validation',
-            `The description can be at most ${CODE_CHECKOUT_MAX_DESCRIPTION} characters, on one line.`,
-          )
-        }
-        if (input.idempotencyKey.length < 8)
-          throw fail('validation', 'An Idempotency-Key is required.')
-        const line = description || CODE_CHECKOUT_DEFAULT_DESCRIPTION
-
-        // Every decision is taken before anything is created, so a refusal leaves nothing behind.
-        const decision = await run(() => {
-          const actor = actorFor(merchantId)
-          const fingerprint = fingerprintOf(actor, input, line)
-          const forMerchant = sales().filter((s) => s.merchantId === merchantId)
-          const keyed = forMerchant.find((s) => s.idempotencyKeys.includes(input.idempotencyKey))
-          if (keyed && (keyed.fingerprint !== fingerprint || keyed.agentUserId !== actor.user.id)) {
-            throw fail(
-              'idempotency_key_reuse',
-              'This Idempotency-Key was already used for a different request. Use a new key for a new request.',
-            )
-          }
-          const known = forMerchant.find((s) => s.clientRequestId === input.clientRequestId)
-          if (known) {
-            if (known.fingerprint !== fingerprint || known.agentUserId !== actor.user.id) {
-              throw fail(
-                'client_request_id_reuse',
-                'This request identifier was already used for a different sale.',
-              )
-            }
-            // The original sale is returned from its own record, whatever the code's eligibility is today.
-            return { kind: 'repeat' as const, sale: known }
-          }
-          const held = heldBy(merchantId, actor)
-          if (held.length === 0) {
-            throw fail(
-              'no_assigned_code',
-              'You are not assigned a collection code. Ask the business owner or a manager to assign you one.',
-            )
-          }
-          let chosen: Held | undefined
-          if (input.collectionCodeId) {
-            chosen = held.find((h) => h.code.id === input.collectionCodeId)
-            if (!chosen) throw fail('code_not_assigned', 'Choose one of the codes assigned to you.')
-          } else if (held.length === 1) {
-            chosen = held[0]
-          }
-          if (!chosen) {
-            throw fail('code_required', 'Choose which of your codes you are billing through.')
-          }
-          if (chosen.mode !== 'DEMONSTRATION') {
-            throw fail(chosen.refusal ?? 'code_not_available', chosen.reason ?? LIVE_OFF)
-          }
-          const branch = branchOf(chosen)
-          if (!branch) {
-            throw fail(
-              'no_eligible_branch',
-              'This code has no active branch, so you cannot bill yet.',
-            )
-          }
-          if (!collectingProfile(merchantId, chosen.code, branch.id, actor.user.id)) {
-            throw fail(
-              'no_active_profile',
-              'There is no active payment link on this code’s settlement account. Create or switch one on in Payment links.',
-            )
-          }
-          return {
-            kind: 'new' as const,
-            actor,
-            chosen,
-            branchId: branch.id,
-            branchName: branch.name,
-            fingerprint,
-          }
-        })
-
-        if (decision.kind === 'repeat') {
-          const { sale } = decision
-          return run(() => {
-            if (!sale.idempotencyKeys.includes(input.idempotencyKey)) {
-              store.saveRecords<StoredCodeSale>(
-                MOCK_STORAGE_KEYS.codeSales,
-                sales().map((s) =>
-                  s.saleId === sale.saleId
-                    ? { ...s, idempotencyKeys: [...s.idempotencyKeys, input.idempotencyKey] }
-                    : s,
-                ),
-              )
-            }
-            return saleDto(sale)
-          })
-        }
-
-        const draft = await invoiceService.createDraft(merchantId, {
-          branchId: decision.branchId,
-          assignedToUserId: decision.actor.user.id,
-          customer: { name: WALK_IN_CUSTOMER_NAME },
-          items: [
-            {
-              description: line,
-              quantity: 1,
-              unitPrice: input.amountRwf,
-              discount: 0,
-              taxRate: { category: 'NOT_APPLICABLE', rateBp: 0 },
-            },
-          ],
-          taxMode: 'EXCLUSIVE',
-          dueAt: todayInKigali(),
-        })
-        const issued = await invoiceService.issueInvoice(merchantId, draft.id, draft.version)
-
-        return run(() => {
-          // Stamp where the sale came from (the server sets this; no screen or form can), then open the request.
-          store.saveInvoices(
-            store.loadInvoices().map((i) =>
-              i.id === issued.id
-                ? {
-                    ...i,
-                    saleChannel: 'CODE' as const,
-                    demonstration: true,
-                    // Its own series: DEMO-0001... never INV-.
-                    invoiceNumber: `DEMO-${String(
-                      store
-                        .loadInvoices()
-                        .filter((c) => c.merchantId === merchantId && c.demonstration).length + 1,
-                    ).padStart(4, '0')}`,
-                  }
-                : i,
-            ),
-          )
-          const profile = collectingProfile(
-            merchantId,
-            decision.chosen.code,
-            decision.branchId,
-            decision.actor.user.id,
-          )
-          if (!profile) {
-            throw fail('no_active_profile', 'There is no active payment link for this sale.')
-          }
-          const now = new Date()
-          const requestId = newId('pr')
-          ledger.paymentRequests.save([
-            ...ledger.paymentRequests.load(),
-            {
-              id: requestId,
-              merchantId,
-              paymentProfileId: profile.id,
-              invoiceId: issued.id,
-              requestedAmount: issued.grandTotal,
-              currency: 'RWF',
-              publicReference: newUniquePaymentReference(ledger),
-              expiresAt: new Date(
-                now.getTime() + CODE_CHECKOUT_LIFETIME_MINUTES * 60_000,
-              ).toISOString(),
-              createdAt: now.toISOString(),
-              updatedAt: now.toISOString(),
-            },
-          ])
-          const stored: StoredCodeSale = {
-            saleId: requestId,
-            merchantId,
-            clientRequestId: input.clientRequestId,
-            idempotencyKeys: [input.idempotencyKey],
-            fingerprint: decision.fingerprint,
-            agentUserId: decision.actor.user.id,
-            agentName: decision.actor.user.fullName,
-            invoiceId: issued.id,
-            paymentRequestId: requestId,
-            branchId: decision.branchId,
-            branchName: decision.branchName,
-            description: line,
-            amountRwf: input.amountRwf,
-            mode: 'DEMONSTRATION',
-            codeId: decision.chosen.code.id,
-            codeLabel: decision.chosen.code.displayLabel,
-            codeInternalRef: decision.chosen.code.internalRef,
-            assignmentId: decision.chosen.assignment.id,
-          }
-          store.saveRecords<StoredCodeSale>(MOCK_STORAGE_KEYS.codeSales, [...sales(), stored])
-          return saleDto(stored)
-        })
-      },
+      billCodeSale: (merchantId, input) => bill(merchantId, input),
 
       getCodeSale: (merchantId, saleId) =>
         run(() => {
@@ -554,6 +579,7 @@ export function createMockCodeCheckout(options: MockCodeCheckoutOptions): {
         }),
     },
 
+    billCart: (merchantId, input) => bill(merchantId, input, input.lines),
     publicCodeSaleService: {
       getPublicCodeSale: (reference) =>
         run((): PublicCodeSale => {

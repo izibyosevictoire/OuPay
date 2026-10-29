@@ -97,7 +97,7 @@ class ArchitectureTest {
         // Each service that reads or writes business data must call MerchantAccess itself (not rely on controllers).
         for (String file : new String[] {"invoice/InvoiceService.java", "branch/BranchService.java", "staff/StaffService.java",
                 "merchant/MerchantService.java", "merchant/MerchantSettingsService.java", "idempotency/IdempotencyService.java", "banking/BankingService.java", "ledger/ReconciliationService.java",
-                "payment/PaymentProfileService.java", "checkout/SimplifiedCheckoutService.java", "checkout/CodeCheckoutService.java", "pos/PosService.java", "ledger/AttributionService.java", "kyc/KycService.java", "notification/NotificationService.java", "dashboard/DashboardService.java", "audit/AuditService.java"}) {
+                "payment/PaymentProfileService.java", "checkout/SimplifiedCheckoutService.java", "checkout/CodeCheckoutService.java", "pos/PosService.java", "pos/PosBillingService.java", "catalog/CatalogTaxService.java", "ledger/AttributionService.java", "kyc/KycService.java", "notification/NotificationService.java", "dashboard/DashboardService.java", "audit/AuditService.java"}) {
             String source = read(MAIN.resolve(file));
             assertThat(source).as(file).contains("MerchantAccess").containsPattern("access\\.require(Member)?\\(");
         }

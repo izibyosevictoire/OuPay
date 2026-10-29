@@ -45,6 +45,7 @@ import rw.oupay.measurement.PackageConversion;
 import rw.oupay.measurement.QuantityPrecision;
 import rw.oupay.membership.Actor;
 import rw.oupay.membership.MerchantAccess;
+import rw.oupay.reservation.StockReservationService;
 import rw.oupay.membership.Permission;
 import rw.oupay.merchant.MerchantSettingsService;
 import rw.oupay.merchant.OperatingMode;
@@ -99,6 +100,7 @@ public class InventoryService {
     /** A quantity the server has converted: canonical, positive, exact. */
     private record Resolved(BigDecimal canonical, String enteredAs) {}
 
+    private final StockReservationService reservations;
     private final InventoryBalanceRepository balances;
     private final StockMovementRepository movements;
     private final CatalogItemRepository items;
@@ -117,7 +119,9 @@ public class InventoryService {
     public InventoryService(InventoryBalanceRepository balances, StockMovementRepository movements, CatalogItemRepository items,
                             CatalogPackageRepository packages, BranchRepository branches, BranchAssignmentRepository assignments,
                             UserRepository users, MerchantAccess access, MerchantSettingsService settings, AuditService audit,
-                            IdempotencyService fingerprints, JdbcClient jdbc, EntityManager entityManager, Clock clock) {
+                            IdempotencyService fingerprints, JdbcClient jdbc, EntityManager entityManager, Clock clock,
+                            StockReservationService reservations) {
+        this.reservations = reservations;
         this.balances = balances;
         this.movements = movements;
         this.items = items;
@@ -178,7 +182,9 @@ public class InventoryService {
         Pagination.Page<InventoryBalance> page = Pagination.page(fetched, size, InventoryBalance::getCreatedAt, InventoryBalance::getId, null);
         Lookup lookup = lookup(page.items().stream().map(InventoryBalance::getItemId).collect(Collectors.toSet()),
                 page.items().stream().map(InventoryBalance::getBranchId).collect(Collectors.toSet()), Set.of());
-        return page.map(b -> toDto(b, lookup.item(b.getItemId()), lookup.branch(b.getBranchId())));
+        Map<String, BigDecimal> reserved = reservations.reservedFor(merchantId, page.items().stream().map(InventoryBalance::getBranchId).collect(Collectors.toSet()),
+                page.items().stream().map(InventoryBalance::getItemId).collect(Collectors.toSet()));
+        return page.map(b -> toDto(b, lookup.item(b.getItemId()), lookup.branch(b.getBranchId()), reserved.getOrDefault(b.getBranchId() + ":" + b.getItemId(), BigDecimal.ZERO)));
     }
 
     @Transactional(readOnly = true)
@@ -272,6 +278,14 @@ public class InventoryService {
         if (after.signum() < 0) {
             throw ApiException.conflict("insufficient_stock", "There is not enough stock at this branch to remove that quantity.");
         }
+        // R7b: stock reserved for sales already billed can not be removed. The balance row lock is held, so no reservation can be added
+        // meanwhile (the reservation takes the same lock); the database refuses it too (V17) if anything ever bypassed this check.
+        BigDecimal reserved = reservations.activeReserved(merchantId, branch.getId(), item.getId());
+        if (delta.signum() < 0 && after.compareTo(reserved) < 0) {
+            throw ApiException.conflict("stock_reserved", "Part of this stock is reserved for sales that were already billed. At most "
+                    + balance.getQuantityOnHand().subtract(reserved).stripTrailingZeros().toPlainString() + " " + item.getMeasurementDimension().canonicalUnit().code()
+                    + " can be removed until they are fulfilled or released.");
+        }
         QuantityPrecision.requireStorable(after);
         after = after.setScale(QuantityPrecision.SCALE, RoundingMode.UNNECESSARY);
 
@@ -293,7 +307,7 @@ public class InventoryService {
         audit.record(merchantId, actor.userId(), auditKind(type), "inventory_movement", movement.getId(),
                 abbreviate(auditMessage(type, item, branch, delta, after, reason)));
         return new Outcome(new InventoryDtos.MovementResult(toDto(movement, item, branch, actor.user().getFullName()),
-                toDto(balance, item, branch), false), true);
+                toDto(balance, item, branch, reservations.activeReserved(merchantId, branch.getId(), item.getId())), false), true);
     }
 
     private Outcome replayOf(StockMovement existing, String fingerprint, CatalogItem item, Branch branch) {
@@ -303,7 +317,8 @@ public class InventoryService {
         InventoryBalance balance = balances.findByMerchantIdAndBranchIdAndItemId(existing.getMerchantId(), existing.getBranchId(),
                 existing.getItemId()).orElseThrow();
         String actorName = users.findById(existing.getActorUserId()).map(User::getFullName).orElse("Unknown");
-        return new Outcome(new InventoryDtos.MovementResult(toDto(existing, item, branch, actorName), toDto(balance, item, branch), true), false);
+        return new Outcome(new InventoryDtos.MovementResult(toDto(existing, item, branch, actorName),
+                toDto(balance, item, branch, reservations.activeReserved(existing.getMerchantId(), branch.getId(), item.getId())), true), false);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -454,12 +469,13 @@ public class InventoryService {
         return new Lookup(itemMap, branchMap, actorMap);
     }
 
-    private static InventoryDtos.BalanceDto toDto(InventoryBalance balance, CatalogItem item, Branch branch) {
+    private static InventoryDtos.BalanceDto toDto(InventoryBalance balance, CatalogItem item, Branch branch, BigDecimal reserved) {
         MeasurementUnit stockUnit = item.getMeasurementDimension().canonicalUnit();
         MeasuredQuantity onHand = new MeasuredQuantity(balance.getQuantityOnHand(), stockUnit);
         return new InventoryDtos.BalanceDto(balance.getId(), branch.getId(), branch.getName(), branch.getCode(), item.getId(),
                 item.getName(), item.getCode(), item.getMeasurementDimension().name(), stockUnit.code(), plain(onHand.amount()),
-                item.getSaleUnit().code(), plain(onHand.to(item.getSaleUnit()).amount()), balance.getUpdatedAt(), balance.getVersion());
+                item.getSaleUnit().code(), plain(onHand.to(item.getSaleUnit()).amount()), balance.getUpdatedAt(), balance.getVersion(),
+                plain(reserved), plain(balance.getQuantityOnHand().subtract(reserved)));
     }
 
     private static InventoryDtos.MovementDto toDto(StockMovement m, CatalogItem item, Branch branch, String actorName) {

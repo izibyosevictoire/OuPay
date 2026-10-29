@@ -7,6 +7,7 @@ import type {
   CreateCatalogItemInput,
   CreateCatalogPackageInput,
   ListCatalogItemsQuery,
+  SetItemTaxInput,
   UpdateCatalogItemInput,
   UpdateCatalogPackageInput,
 } from '@/types/catalog'
@@ -19,6 +20,7 @@ export const catalogKeys = {
   item: (merchantId: string, itemId: string) => ['catalog', merchantId, 'item', itemId] as const,
   history: (merchantId: string, itemId: string) =>
     ['catalog', merchantId, 'history', itemId] as const,
+  tax: (merchantId: string, itemId: string) => ['catalog', merchantId, 'tax', itemId] as const,
 }
 
 /** The units come from the service: the browser never decides which units exist or belong together. */
@@ -118,6 +120,26 @@ export function useUpdateCatalogPackage(itemId: string) {
   return useMutation({
     mutationFn: ({ packageId, ...input }: UpdateCatalogPackageInput & { packageId: string }) =>
       catalogService.updatePackage(merchantId, itemId, packageId, input),
+    onSuccess: invalidate,
+  })
+}
+
+/** The item's tax classification. Read fresh: billing depends on it. */
+export function useItemTax(itemId: string) {
+  const merchantId = useSelectedMerchantId()
+  return useQuery({
+    queryKey: catalogKeys.tax(merchantId, itemId),
+    queryFn: () => catalogService.getItemTax(merchantId, itemId),
+    retry: false,
+    staleTime: 0,
+  })
+}
+
+export function useSetItemTax(itemId: string) {
+  const merchantId = useSelectedMerchantId()
+  const invalidate = useInvalidateCatalog()
+  return useMutation({
+    mutationFn: (input: SetItemTaxInput) => catalogService.setItemTax(merchantId, itemId, input),
     onSuccess: invalidate,
   })
 }

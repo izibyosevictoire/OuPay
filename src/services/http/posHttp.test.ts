@@ -186,3 +186,155 @@ describe('HTTP POS keeps the contract with the backend', () => {
     })
   })
 })
+
+describe('HTTP POS billing keeps the contract with the backend (R7b)', () => {
+  const review = {
+    draftId: 'd-1',
+    draftVersion: 3,
+    branchId: 'brn-1',
+    branchName: 'Main',
+    problems: [{ lineNo: 1, code: 'tax_not_configured', message: 'no tax' }],
+    subtotalRwf: 0,
+    taxRwf: 0,
+    totalRwf: 0,
+    billable: false,
+    mode: 'DEMONSTRATION',
+    modeNote: 'n',
+    stockNote: 's',
+    taxNote: 't',
+    lines: [
+      {
+        lineNo: 1,
+        itemId: 'i-1',
+        name: 'Beans',
+        enteredQuantity: '2',
+        enteredUnit: 'kg',
+        saleUnit: 'kg',
+        quantityInSaleUnit: '2',
+        canonicalQuantity: '2000',
+        canonicalUnit: 'g',
+        priceVersion: 1,
+        unitPriceRwf: 900,
+        draftPriceVersion: 1,
+        draftUnitPriceRwf: 900,
+        priceChangedSinceDraft: false,
+        taxApproved: false,
+        netRwf: 0,
+        taxRwf: 0,
+        lineTotalRwf: 0,
+        availability: { state: 'NOT_TRACKED', canonicalUnit: 'g' },
+      },
+    ],
+  }
+
+  it('reads the review (with the optional code) and fills what the server omits', async () => {
+    const { pos, calls } = setup({ body: review })
+    const result = await pos.getBillingReview(M, 'd-1', 'code-1')
+    expect(calls[0]).toMatchObject({
+      method: 'GET',
+      url: `/api/v1/merchants/${M}/pos/drafts/d-1/billing-review?collectionCodeId=code-1`,
+    })
+    expect(result.codeLabel).toBeNull()
+    expect(result.approvedTaxTreatments).toEqual([])
+    expect(result.lines[0]).toMatchObject({
+      code: null,
+      packageLabel: null,
+      taxCategory: null,
+      taxRateBp: null,
+      availability: { physical: null, reserved: null, available: null, requested: null },
+    })
+    expect(result.problems[0]?.code).toBe('tax_not_configured')
+  })
+
+  it('bills with only the reviewed version and total, the retry key in the header and no price, tax or stock figure', async () => {
+    const sale = {
+      sale: {
+        saleId: 'sale-1',
+        invoiceId: 'inv-1',
+        invoiceNumber: 'DEMO-0001',
+        saleReference: 'OP-ABC12345',
+        amountRwf: 5400,
+        currency: 'RWF',
+        description: 'POS sale (2 lines)',
+        status: 'CREATED',
+        stage: 'AWAITING_PAYMENT',
+        confirmedAmount: 0,
+        amountDue: 5400,
+        expiresAt: 't',
+        createdAt: 't',
+        merchantDisplayName: 'Shop',
+        branchName: 'Main',
+        agentName: 'A',
+        code: { mode: 'DEMONSTRATION', label: 'Counter', demoReference: 'SIM-1' },
+      },
+      draftId: 'd-1',
+      mode: 'DEMONSTRATION',
+      subtotalRwf: 5400,
+      taxRwf: 0,
+      totalRwf: 5400,
+      taxNote: 't',
+      lines: [
+        {
+          lineNo: 1,
+          name: 'Rice',
+          itemType: 'GOODS',
+          saleUnit: 'kg',
+          taxCategory: 'EXEMPT',
+          taxRateBp: 0,
+        },
+      ],
+      reservation: { state: 'NOT_RESERVED', note: 'DEMONSTRATION', lines: [] },
+    }
+    const { pos, calls } = setup({ status: 201, body: sale })
+    const billed = await pos.billPosDraft(M, 'd-1', {
+      expectedDraftVersion: 3,
+      reviewedTotalRwf: 5400,
+      collectionCodeId: 'code-1',
+      idempotencyKey: 'a-stable-bill-key-0001',
+    })
+    expect(calls[0]).toMatchObject({
+      method: 'POST',
+      url: `/api/v1/merchants/${M}/pos/drafts/d-1/bill`,
+    })
+    expect(calls[0]?.headers).toMatchObject({
+      'Idempotency-Key': 'a-stable-bill-key-0001',
+      'X-XSRF-TOKEN': 'csrf-token',
+    })
+    expect(calls[0]?.body).toEqual({
+      expectedDraftVersion: 3,
+      reviewedTotalRwf: 5400,
+      collectionCodeId: 'code-1',
+    })
+    expect(billed.sale.code).toMatchObject({ bankCode: null, notice: null })
+    expect(billed.lines[0]).toMatchObject({ code: null, enteredUnit: null, packageLabel: null })
+    expect(billed.reservation).toMatchObject({
+      expiryReviewAt: null,
+      releasedAt: null,
+      releaseReason: null,
+    })
+  })
+
+  it('reads a sale and turns the billing error codes into POS errors', async () => {
+    const { pos, calls } = setup(
+      { status: 404, body: { code: 'not_found', message: 'gone' } },
+      { status: 409, body: { code: 'review_changed', message: 'changed' } },
+      { status: 422, body: { code: 'tax_not_configured', message: 'no tax' } },
+      { status: 409, body: { code: 'insufficient_stock', message: 'short' } },
+    )
+    await expect(pos.getPosSale(M, 'sale-1')).rejects.toMatchObject({ code: 'not_found' })
+    expect(calls[0]).toMatchObject({
+      method: 'GET',
+      url: `/api/v1/merchants/${M}/pos/sales/sale-1`,
+    })
+    const input = { expectedDraftVersion: 0, reviewedTotalRwf: 1, idempotencyKey: 'k-0000000001' }
+    await expect(pos.billPosDraft(M, 'd-1', input)).rejects.toMatchObject({
+      code: 'review_changed',
+    })
+    await expect(pos.billPosDraft(M, 'd-1', input)).rejects.toMatchObject({
+      code: 'tax_not_configured',
+    })
+    await expect(pos.billPosDraft(M, 'd-1', input)).rejects.toMatchObject({
+      code: 'insufficient_stock',
+    })
+  })
+})

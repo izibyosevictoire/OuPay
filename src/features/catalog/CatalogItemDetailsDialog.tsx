@@ -26,6 +26,7 @@ import {
 } from '@/constants/catalog'
 import { formatDateTime, formatRwf } from '@/lib/format'
 import { CatalogServiceError } from '@/services/catalogService'
+import { CatalogTaxSection } from './CatalogTaxSection'
 import type { CatalogItem, CatalogPackage } from '@/types/catalog'
 import {
   catalogPackageFormSchema,
@@ -119,6 +120,7 @@ function ItemDetails({ item, canManage }: { item: CatalogItem; canManage: boolea
       ) : (
         <p className="text-sm text-muted-foreground">Services do not have packages.</p>
       )}
+      <CatalogTaxSection item={item} canManage={canManage} />
       <PriceHistorySection item={item} />
     </>
   )

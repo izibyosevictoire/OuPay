@@ -400,9 +400,9 @@ describe('Collect Payment: navigation', () => {
       requiresMode: 'SIMPLIFIED',
     })
     // Only Collect Payment (simplified), POS billing, Catalog and Inventory (business) are mode-specific; nothing existing was hidden or replaced.
-    expect(
-      PRIMARY_NAVIGATION.filter((item) => item.requiresMode).map((item) => item.path),
-    ).toEqual(['/collect', '/pos', '/catalog', '/inventory'])
+    expect(PRIMARY_NAVIGATION.filter((item) => item.requiresMode).map((item) => item.path)).toEqual(
+      ['/collect', '/pos', '/catalog', '/inventory'],
+    )
     for (const path of [
       '/',
       '/invoices',

@@ -102,6 +102,8 @@ export function createTestBackend() {
   })
   const fastPos = createMockPosService({
     authStore: store,
+    codeCheckout: fastCodeCheckout.codeCheckoutService,
+    billCart: fastCodeCheckout.billCart,
     merchantStorage,
     delayInMilliseconds: 0,
   })

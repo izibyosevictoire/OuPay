@@ -116,3 +116,27 @@ export interface UpdateCatalogPackageInput extends CreateCatalogPackageInput {
   expectedVersion: number
   active: boolean
 }
+
+/**
+ * The explicit TAX CLASSIFICATION of a catalog item (R7b). NONE is a real state and BLOCKS POS billing: nothing is defaulted or guessed.
+ * Whether a configured treatment may be BILLED is a separate approval (`approvedForPos`). OuPay makes no claim of tax compliance.
+ */
+export type ItemTaxCategory = 'NOT_APPLICABLE' | 'EXEMPT' | 'ZERO_RATED' | 'STANDARD'
+
+export interface ItemTax {
+  itemId: string
+  /** The item's version: an optimistic check for the next change. */
+  version: number
+  configured: boolean
+  taxCategory: ItemTaxCategory | null
+  taxRateBp: number | null
+  approvedForPos: boolean
+  configuredAt: string | null
+}
+
+export interface SetItemTaxInput {
+  expectedVersion: number
+  taxCategory: ItemTaxCategory
+  /** Basis points: 1800 is 18.00%. Only STANDARD has a rate. */
+  taxRateBp: number
+}

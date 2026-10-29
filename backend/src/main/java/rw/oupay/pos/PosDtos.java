@@ -19,11 +19,12 @@ public final class PosDtos {
 
     private PosDtos() {}
 
-    /** The most lines one cart can hold. */
-    public static final int MAX_LINES = 100;
+    /** The most lines one cart can hold: the invoice model holds at most 50 lines, so a cart that is billed can never be too long. */
+    public static final int MAX_LINES = 50;
 
     /** The stock figures in a cart are informational only: nothing is reserved or deducted until billing (R7b). */
-    public static final String STOCK_NOTE = "Stock shown is informational. Nothing is reserved or deducted, and it is checked again when you bill.";
+    public static final String STOCK_NOTE = "Stock shown is informational (physical stock minus what is already reserved). Nothing is reserved for this cart "
+            + "and nothing is deducted. Availability is checked again when you bill.";
 
     /** Shown on every saved draft: a draft is an intent to sell, never a sale. */
     public static final String DRAFT_NOTICE = "A POS draft is not a sale: it is not an invoice, nothing is payable and no stock is reserved or deducted.";
@@ -47,7 +48,8 @@ public final class PosDtos {
     /**
      * @param state NOT_TRACKED (a service), RECORDED (a balance exists at the branch) or NO_RECORD (no stock has ever been recorded there)
      */
-    public record StockInfo(String state, String onHand, String canonicalUnit, String onHandInSaleUnit) {}
+    public record StockInfo(String state, String onHand, String canonicalUnit, String onHandInSaleUnit, String reserved, String available,
+                            String availableInSaleUnit) {}
 
     public record CatalogItemView(UUID itemId, CatalogItemType itemType, String name, String code, String measurementDimension, String saleUnit,
                                   List<String> units, long pricePerSaleUnitRwf, int priceVersion, List<PackageOption> packages, StockInfo stock) {}
@@ -69,7 +71,7 @@ public final class PosDtos {
                                 @NotEmpty @Size(max = MAX_LINES) @Valid List<LineRequest> lines) {}
 
     /** @param state NOT_TRACKED, SUFFICIENT, INSUFFICIENT or NO_STOCK_RECORD. Informational only. */
-    public record StockCheck(String state, String onHand, String requested, String canonicalUnit) {}
+    public record StockCheck(String state, String onHand, String requested, String canonicalUnit, String reserved, String available) {}
 
     /** One priced line: an immutable snapshot once saved. */
     public record PricedLine(int lineNo, UUID itemId, CatalogItemType itemType, String name, String code, String measurementDimension,

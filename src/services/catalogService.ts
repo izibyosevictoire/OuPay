@@ -7,7 +7,9 @@ import type {
   CreateCatalogPackageInput,
   ListCatalogItemsQuery,
   MeasurementUnitOption,
+  ItemTax,
   PriceVersion,
+  SetItemTaxInput,
   UpdateCatalogItemInput,
   UpdateCatalogPackageInput,
 } from '@/types/catalog'
@@ -30,6 +32,7 @@ export type CatalogServiceErrorCode =
   /** A package name already used on that item. */
   | 'duplicate_label'
   | 'version_conflict'
+  | 'invalid_tax_treatment'
   | 'catalog_unavailable'
   | 'service_unavailable'
 
@@ -68,6 +71,10 @@ export interface CatalogService {
     input: ChangeCatalogItemStatusInput,
   ): Promise<CatalogItem>
   listPriceHistory(merchantId: string, itemId: string): Promise<PriceVersion[]>
+  /** The item's tax classification (or that it has none). Needs `catalog:view`. */
+  getItemTax(merchantId: string, itemId: string): Promise<ItemTax>
+  /** Sets the classification (audited, optimistic on the item's version). Needs `catalog:manage`. It never changes an invoice already issued. */
+  setItemTax(merchantId: string, itemId: string, input: SetItemTaxInput): Promise<ItemTax>
   createPackage(
     merchantId: string,
     itemId: string,
