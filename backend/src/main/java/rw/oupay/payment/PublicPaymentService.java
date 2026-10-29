@@ -146,7 +146,9 @@ public class PublicPaymentService {
         if (reference == null || !REFERENCE.matcher(reference).matches()) {
             throw notFound();
         }
+        // A code sale has its own page (code only): it is never served here, where the customer would be offered the profile's other methods.
         return requests.findByPublicReference(reference).filter(r -> r.getPaymentProfileId().equals(profile.getId()))
+                .filter(r -> r.getSource() != PaymentRequestSource.CODE)
                 .orElseThrow(PublicPaymentService::notFound);
     }
 

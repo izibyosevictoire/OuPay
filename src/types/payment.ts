@@ -116,6 +116,7 @@ export type AuditEntryKind =
   | 'BANK_REVERSAL'
   | 'FLAGGED_FOR_REVIEW'
   | 'MARKED_REVIEWED'
+  | 'ATTRIBUTION_RECORDED'
   | 'REFUND_RECORDED'
 
 /** Append-only history. Entries are never edited or deleted. */

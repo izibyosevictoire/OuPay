@@ -70,9 +70,12 @@ public class TestApi {
             if (body != null) {
                 request.contentType(MediaType.APPLICATION_JSON).content(body instanceof String s ? s : JSON.writeValueAsString(body));
             }
-            cookies.forEach((name, value) -> request.cookie(new Cookie(name, value)));
-            if (cookies.containsKey("XSRF-TOKEN")) {
-                request.header("X-XSRF-TOKEN", cookies.get("XSRF-TOKEN"));
+            // One consistent snapshot: the CSRF cookie and the header that echoes it must come from the same moment, or a concurrent response
+            // that rotates the token between the two reads makes a perfectly good request look forged (a test-harness race, not an application one).
+            Map<String, String> snapshot = Map.copyOf(cookies);
+            snapshot.forEach((name, value) -> request.cookie(new Cookie(name, value)));
+            if (snapshot.containsKey("XSRF-TOKEN")) {
+                request.header("X-XSRF-TOKEN", snapshot.get("XSRF-TOKEN"));
             }
             if (remoteAddr != null) {
                 request.with(r -> {

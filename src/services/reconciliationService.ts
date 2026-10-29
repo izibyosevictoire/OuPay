@@ -1,3 +1,4 @@
+import type { BankAttribution } from '@/types/bankAttribution'
 import type {
   AllocationView,
   BankTransactionDetails,
@@ -28,6 +29,13 @@ export interface ReconciliationService {
   /** Cashiers receive only transactions applied to invoices assigned to them. */
   listBankTransactions(merchantId: string): Promise<BankTransactionView[]>
   getBankTransaction(merchantId: string, bankTransactionId: string): Promise<BankTransactionDetails>
+  /**
+   * How incoming transactions were attributed to collection codes and code sales (R6d). Read-only, and scoped by the SERVER: owners see every
+   * incoming transaction, managers only attributed activity of their own branches, cashiers only money confirmed for their own sales.
+   */
+  listBankAttributions(merchantId: string): Promise<BankAttribution[]>
+  /** One transaction's attribution, or `not_found` when it does not exist or is outside what the caller may see. */
+  getBankAttribution(merchantId: string, bankTransactionId: string): Promise<BankAttribution>
   /** Allocation history, including reversed allocations. Same cashier scoping. */
   listAllocations(merchantId: string): Promise<AllocationView[]>
   /** Issued invoices with a balance, for choosing where to apply unmatched money. */

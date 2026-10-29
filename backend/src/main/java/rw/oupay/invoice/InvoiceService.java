@@ -95,7 +95,8 @@ public class InvoiceService {
         List<Invoice> fetched = everything
                 ? invoices.pageForMerchant(merchantId, position.at(), position.id(), Pagination.fetch(size))
                 : invoices.pageAssignedTo(merchantId, actor.userId(), position.at(), position.id(), Pagination.fetch(size));
-        long total = everything ? invoices.countByMerchantId(merchantId) : invoices.countByMerchantIdAndAssignedToUserId(merchantId, actor.userId());
+        long total = everything ? invoices.countByMerchantIdAndDemonstrationFalse(merchantId)
+                : invoices.countByMerchantIdAndAssignedToUserIdAndDemonstrationFalse(merchantId, actor.userId());
         var page = Pagination.page(fetched, size, Invoice::getCreatedAt, Invoice::getId, total);
         Map<UUID, Long> allocated = balances.allocatedByInvoice(page.items().stream().map(Invoice::getId).toList());
         return new InvoiceDtos.InvoicePage(page.items().stream().map(i -> toDto(i, allocated.getOrDefault(i.getId(), 0L))).toList(),
@@ -180,7 +181,7 @@ public class InvoiceService {
         }
         Prepared prepared = prepare(actor, merchantId, request);
         Instant now = clock.instant();
-        Invoice invoice = new Invoice(UUID.randomUUID(), merchantId, nextInvoiceNumber(merchantId), actor.userId(),
+        Invoice invoice = new Invoice(UUID.randomUUID(), merchantId, nextInvoiceNumber(merchantId, creation.demonstration()), actor.userId(),
                 actor.user().getFullName(), creation, fingerprint, now);
         applyContent(invoice, request, prepared, now);
         invoices.saveAndFlush(invoice);
@@ -430,8 +431,18 @@ public class InvoiceService {
         }
     }
 
-    /** Per-merchant sequence, never reused: cancelled and voided invoices keep their numbers. Atomic in SQL. */
-    private String nextInvoiceNumber(UUID merchantId) {
+    /**
+     * Per-merchant sequence, never reused: cancelled and voided invoices keep their numbers. Atomic in SQL. A demonstration sale has its OWN
+     * series (DEMO-0001...), so it can never consume or leave a gap in the business's real invoice numbers.
+     */
+    private String nextInvoiceNumber(UUID merchantId, boolean demonstration) {
+        if (demonstration) {
+            int demo = jdbc.sql("insert into demo_invoice_number_sequences (merchant_id, last_value) values (:m, 1) "
+                            + "on conflict (merchant_id) do update set last_value = demo_invoice_number_sequences.last_value + 1 "
+                            + "returning last_value")
+                    .param("m", merchantId).query(Integer.class).single();
+            return String.format("DEMO-%04d", demo);
+        }
         int next = jdbc.sql("insert into invoice_number_sequences (merchant_id, last_value) values (:m, 1) "
                         + "on conflict (merchant_id) do update set last_value = invoice_number_sequences.last_value + 1 "
                         + "returning last_value")
@@ -479,6 +490,6 @@ public class InvoiceService {
                 i.getVoidedAt(), i.getVoidReason(), i.getStatus(), payment.paymentStatus(),
                 new InvoiceDtos.PaymentDto(payment.invoiceTotal(), payment.allocatedAmount(), payment.remainingBalance(),
                         payment.unappliedAmount(), payment.paymentStatus()),
-                i.getNotes(), i.getVersion(), i.getSaleChannel());
+                i.getNotes(), i.getVersion(), i.getSaleChannel(), i.isDemonstration());
     }
 }

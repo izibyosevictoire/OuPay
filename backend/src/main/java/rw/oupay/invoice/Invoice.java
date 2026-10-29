@@ -115,6 +115,10 @@ public class Invoice {
     @Column(name = "sale_channel", updatable = false)
     private SaleChannel saleChannel;
 
+    /** A DEMONSTRATION code sale (see {@link InvoiceCreation}). Fixed at creation; the database refuses any change. */
+    @Column(name = "is_demonstration", updatable = false)
+    private boolean demonstration;
+
     /** The durable identity of the original sale-creation request, when there was one. Fixed at creation. */
     @Column(name = "client_request_id", updatable = false)
     private UUID clientRequestId;
@@ -153,6 +157,7 @@ public class Invoice {
         this.createdByUserId = createdByUserId;
         this.createdByName = createdByName;
         this.saleChannel = creation.channel();
+        this.demonstration = creation.demonstration();
         this.clientRequestId = creation.clientRequestId();
         this.clientRequestSha256 = clientRequestSha256;
         this.status = InvoiceStatus.DRAFT;
@@ -194,6 +199,8 @@ public class Invoice {
     public List<InvoiceItem> getItems() { return items; }
 
     /** The channel the invoice was created through. An invoice with no stored value predates provenance: a traditional INVOICE. */
+    public boolean isDemonstration() { return demonstration; }
+
     public SaleChannel getSaleChannel() { return saleChannel == null ? SaleChannel.INVOICE : saleChannel; }
 
     public UUID getClientRequestId() { return clientRequestId; }

@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { BRANCH_STATUS_LABELS } from '@/constants/branch'
+import { CODE_PAYMENT_STAGE_LABELS } from '@/constants/codePayment'
 import { BUSINESS_ROLE_LABELS, MEMBERSHIP_STATUS_LABELS } from '@/constants/auth'
 import { MERCHANT_STATUS_LABELS } from '@/constants/merchant'
 import { INVOICE_PAYMENT_STATUS_LABELS, INVOICE_STATUS_LABELS } from '@/constants/invoice'
@@ -28,6 +29,7 @@ import {
 } from '@/constants/payment'
 import { cn } from '@/lib/utils'
 import type { BankConnectionStatus } from '@/types/banking'
+import type { CodePaymentStage } from '@/types/bankAttribution'
 import type { BankTransactionStatus, ReconciliationStatus } from '@/types/payment'
 import type { CustomerPaymentStage, PaymentProfileStatus } from '@/types/paymentProfile'
 import type { InvoicePaymentStatus, InvoiceStatus } from '@/types/invoice'
@@ -64,6 +66,16 @@ const RECONCILIATION_APPEARANCE: Record<ReconciliationStatus, StatusAppearance> 
   PARTIALLY_ALLOCATED: { tone: 'warning', icon: CircleDollarSign },
   FULLY_ALLOCATED: { tone: 'success', icon: CheckCircle2 },
   REVERSED: { tone: 'neutral', icon: RotateCcw },
+}
+
+const CODE_PAYMENT_STAGE_APPEARANCE: Record<CodePaymentStage, StatusAppearance> = {
+  NOT_CONFIRMED: { tone: 'neutral', icon: Clock },
+  AWAITING_MATCHING: { tone: 'info', icon: HelpCircle },
+  CODE_RESOLVED: { tone: 'info', icon: ShieldCheck },
+  SALE_MATCHED: { tone: 'info', icon: CheckCircle2 },
+  ALLOCATED: { tone: 'warning', icon: CircleDollarSign },
+  FULLY_PAID: { tone: 'success', icon: CheckCircle2 },
+  CONFLICT: { tone: 'danger', icon: AlertTriangle },
 }
 
 const CONNECTION_APPEARANCE: Record<BankConnectionStatus, StatusAppearance> = {
@@ -119,6 +131,16 @@ function Badge({ label, appearance }: { label: string; appearance: StatusAppeara
       <Icon className="size-3.5" aria-hidden="true" />
       {label}
     </span>
+  )
+}
+
+/** Where a code payment stands: its own wording, so it is never mistaken for the bank status or the reconciliation status. */
+export function CodePaymentStageBadge({ stage }: { stage: CodePaymentStage }) {
+  return (
+    <Badge
+      label={CODE_PAYMENT_STAGE_LABELS[stage]}
+      appearance={CODE_PAYMENT_STAGE_APPEARANCE[stage]}
+    />
   )
 }
 

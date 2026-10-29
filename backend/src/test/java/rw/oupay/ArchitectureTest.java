@@ -62,11 +62,42 @@ class ArchitectureTest {
     }
 
     @Test
+    void bankAttributionIsRecordedOnlyByTheTrustedProcessorAndReadOnlyOverHttp() throws IOException {
+        // Attribution is EVIDENCE written by the bank-event processor, inside its transaction. No controller can reach the recorder, and the
+        // read-only controller has no write mapping at all.
+        for (Path file : sources()) {
+            if (file.getFileName().toString().endsWith("Controller.java")) {
+                assertThat(code(file)).as(file.getFileName().toString()).doesNotContain("AttributionRecorder");
+            }
+        }
+        List<String> callers = sources().stream().filter(p -> code(p).contains("AttributionRecorder"))
+                .map(p -> MAIN.relativize(p).toString().replace('\\', '/')).collect(Collectors.toList());
+        assertThat(callers).containsExactlyInAnyOrder("ledger/AttributionRecorder.java", "ledger/BankEventProcessor.java");
+        String controller = code(MAIN.resolve("ledger/AttributionController.java"));
+        assertThat(controller).doesNotContain("PostMapping").doesNotContain("PutMapping").doesNotContain("DeleteMapping").doesNotContain("PatchMapping");
+        assertThat(controller).doesNotContain("Repository").doesNotContain("JdbcClient");
+    }
+
+    @Test
+    void theCodeSaleMatcherOnlyDecidesEligibilityAndTheLedgerStaysTheOnlyWriterOfAllocations() throws IOException {
+        // The matcher is READ-ONLY: it never allocates, locks, links or saves. The allocation is the ordinary exact-reference path in the
+        // bank-event processor, through LedgerOperations, inside the processor's own transaction (no second ledger, no nested transaction).
+        String matcher = code(MAIN.resolve("ledger/CodeSaleMatcher.java"));
+        for (String forbidden : new String[] {"LedgerOperations", "allocate(", "save(", "saveAndFlush(", "linkRequest", "insert into", "update ", "delete from",
+                "REQUIRES_NEW", "TransactionTemplate", "Propagation.REQUIRED"}) {
+            assertThat(matcher).as("the matcher must not use " + forbidden).doesNotContain(forbidden);
+        }
+        List<String> callers = sources().stream().filter(p -> code(p).contains("CodeSaleMatcher"))
+                .map(p -> MAIN.relativize(p).toString().replace('\\', '/')).collect(Collectors.toList());
+        assertThat(callers).containsExactlyInAnyOrder("ledger/CodeSaleMatcher.java", "ledger/BankEventProcessor.java");
+    }
+
+    @Test
     void everyMerchantScopedServiceAuthorisesAtTheServiceBoundary() throws IOException {
         // Each service that reads or writes business data must call MerchantAccess itself (not rely on controllers).
         for (String file : new String[] {"invoice/InvoiceService.java", "branch/BranchService.java", "staff/StaffService.java",
                 "merchant/MerchantService.java", "merchant/MerchantSettingsService.java", "idempotency/IdempotencyService.java", "banking/BankingService.java", "ledger/ReconciliationService.java",
-                "payment/PaymentProfileService.java", "checkout/SimplifiedCheckoutService.java", "notification/NotificationService.java", "dashboard/DashboardService.java", "audit/AuditService.java"}) {
+                "payment/PaymentProfileService.java", "checkout/SimplifiedCheckoutService.java", "checkout/CodeCheckoutService.java", "pos/PosService.java", "pos/PosBillingService.java", "catalog/CatalogTaxService.java", "ledger/AttributionService.java", "kyc/KycService.java", "notification/NotificationService.java", "dashboard/DashboardService.java", "audit/AuditService.java"}) {
             String source = read(MAIN.resolve(file));
             assertThat(source).as(file).contains("MerchantAccess").containsPattern("access\\.require(Member)?\\(");
         }
@@ -128,7 +159,8 @@ class ArchitectureTest {
                 .filter(p -> code(p).contains("TransactionTemplate"))
                 .map(p -> MAIN.relativize(p).toString().replace('\\', '/'))
                 .collect(Collectors.toList());
-        assertThat(templates).containsExactlyInAnyOrder("idempotency/IdempotencyService.java", "email/EmailOutboxDispatcher.java");
+        // (R7c: the POS fulfilment service posts each paid sale in its own transaction, after the payment has committed.)
+        assertThat(templates).containsExactlyInAnyOrder("idempotency/IdempotencyService.java", "email/EmailOutboxDispatcher.java", "pos/PosFulfilmentService.java");
         // ...and the orchestrator itself is not transactional (executeOnce refuses to run inside a transaction), has no external
         // side effect, and creates its rows only through the invoice and payment services.
         String checkout = code(MAIN.resolve("checkout/SimplifiedCheckoutService.java"));
@@ -138,6 +170,46 @@ class ArchitectureTest {
             assertThat(checkout).as("the checkout must not use " + forbidden).doesNotContain(forbidden);
         }
         assertThat(checkout).contains("idempotency.executeOnce(");
+    }
+
+    @Test
+    void theCodeCheckoutIsOneTransactionOwnedByTheIdempotencyService() throws IOException {
+        // Like the simplified checkout: not transactional itself (only two read-only queries are), no external side effect, and it
+        // creates the invoice and the payment request only through their services. It may write its own snapshot row (same transaction).
+        String checkout = code(MAIN.resolve("checkout/CodeCheckoutService.java"));
+        assertThat(checkout.split("@Transactional", -1).length - 1).isEqualTo(2);
+        for (String forbidden : new String[] {"Email", "HttpClient", "RestClient", "WebClient", "ProviderRegistry", "BankingService", "InvoiceRepository",
+                "insert into invoices", "insert into payment_requests", "idempotency_keys"}) {
+            assertThat(checkout).as("the code checkout must not use " + forbidden).doesNotContain(forbidden);
+        }
+        assertThat(checkout).contains("idempotency.executeOnce(").contains("createDraftFor").contains("createCodeSaleRequest");
+        // The customer page is anonymous and read-only: it never writes and never reaches the merchant-wide ledger.
+        String page = code(MAIN.resolve("checkout/PublicCodeSaleService.java"));
+        for (String forbidden : new String[] {"MerchantAccess", "InvoiceRepository", "BankTransactionRepository", "PaymentAllocationRepository", "insert into", "update ", "delete from"}) {
+            assertThat(page).as("the public code sale page must not use " + forbidden).doesNotContain(forbidden);
+        }
+    }
+
+    @Test
+    void noWebEndpointCanRecordWhatTheBankDidWithAKycApplication() throws IOException {
+        // Hand-off, requests for information and decisions exist only with evidence, in a service that has no HTTP surface.
+        for (Path file : sources()) {
+            if (file.getFileName().toString().endsWith("Controller.java")) {
+                assertThat(code(file)).as(file.getFileName().toString()).doesNotContain("KycEvidenceService");
+            }
+        }
+        // And no KYC request body can carry a status, evidence or a decision.
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("record\\s+(\\w+Request)\\s*\\((.*?)\\)\\s*\\{\\}", java.util.regex.Pattern.DOTALL)
+                .matcher(code(MAIN.resolve("kyc/KycDtos.java")));
+        int seen = 0;
+        while (matcher.find()) {
+            seen++;
+            String components = matcher.group(2).toLowerCase(java.util.Locale.ROOT);
+            for (String forbidden : new String[] {"status", "evidence", "handoff", "handedoff", "decision", "approved", "rejected"}) {
+                assertThat(components).as(matcher.group(1)).doesNotContain(forbidden);
+            }
+        }
+        assertThat(seen).isGreaterThanOrEqualTo(5);
     }
 
     @Test
@@ -154,7 +226,9 @@ class ArchitectureTest {
                 String components = matcher.group(2);
                 // The simplified checkout's body carries the client's stable sale identifier (that is its contract), and nothing
                 // else of the provenance: never a channel, a source or a creator.
-                boolean mayCarryClientRequestId = file.getFileName().toString().equals("CheckoutDtos.java");
+                boolean mayCarryClientRequestId = file.getFileName().toString().equals("CheckoutDtos.java")
+                        || file.getFileName().toString().equals("CodeCheckoutDtos.java")
+                        || file.getFileName().toString().equals("PosDtos.java");
                 if (components.contains("SaleChannel") || (components.contains("clientRequestId") && !mayCarryClientRequestId)
                         || components.contains("PaymentRequestSource")
                         || components.contains("createdByUserId") || components.contains("saleChannel")) {

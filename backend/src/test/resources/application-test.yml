@@ -24,6 +24,8 @@ oupay:
       enabled: true
       shared-secret: test-simulator-secret
 oupay.housekeeping.enabled: false
+# Tests call the POS fulfilment service themselves, so every posting is deterministic.
+oupay.pos.fulfilment.enabled: false
 logging:
   level:
     root: WARN

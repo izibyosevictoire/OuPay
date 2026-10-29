@@ -4,7 +4,14 @@ import {
   bankingService,
   bankSimulator,
   branchService,
+  catalogService,
   checkoutService,
+  codeCheckoutService,
+  publicCodeSaleService,
+  kycService,
+  inventoryService,
+  posService,
+  collectionCodeService,
   notificationService,
   paymentProfileService,
   publicPaymentService,
@@ -19,7 +26,13 @@ import { createMemoryStorage, createMockAuthStore } from '@/services/mock/mockAu
 import { createMockBankingService } from '@/services/mock/mockBankingService'
 import { createMockBankSimulator } from '@/services/mock/mockBankSimulator'
 import { createMockBranchService } from '@/services/mock/mockBranchService'
+import { createMockCatalogService } from '@/services/mock/mockCatalogService'
 import { createMockCheckoutService } from '@/services/mock/mockCheckoutService'
+import { createMockCodeCheckout } from '@/services/mock/mockCodeCheckoutService'
+import { createMockKycService } from '@/services/mock/mockKycService'
+import { createMockCollectionCodeService } from '@/services/mock/mockCollectionCodeService'
+import { createMockInventoryService } from '@/services/mock/mockInventoryService'
+import { createMockPosService } from '@/services/mock/mockPosService'
 import { createBankEventProcessor } from '@/services/mock/ledger/bankEventProcessor'
 import { createLedgerStore } from '@/services/mock/ledger/mockLedgerStore'
 import { createMockNotificationService } from '@/services/mock/mockNotificationService'
@@ -70,6 +83,39 @@ export function createTestBackend() {
     merchantStorage,
     delayInMilliseconds: 0,
   })
+  const fastCodeCheckout = createMockCodeCheckout({
+    authStore: store,
+    ledger,
+    invoiceService: fastInvoices,
+    merchantStorage,
+    delayInMilliseconds: 0,
+  })
+  const fastCatalog = createMockCatalogService({
+    authStore: store,
+    merchantStorage,
+    delayInMilliseconds: 0,
+  })
+  const fastInventory = createMockInventoryService({
+    authStore: store,
+    merchantStorage,
+    delayInMilliseconds: 0,
+  })
+  const fastPos = createMockPosService({
+    authStore: store,
+    codeCheckout: fastCodeCheckout.codeCheckoutService,
+    billCart: fastCodeCheckout.billCart,
+    merchantStorage,
+    delayInMilliseconds: 0,
+  })
+  const fastCollectionCodes = createMockCollectionCodeService({
+    authStore: store,
+    delayInMilliseconds: 0,
+  })
+  const fastKyc = createMockKycService({
+    authStore: store,
+    merchantStorage,
+    delayInMilliseconds: 0,
+  })
   const fastReconciliation = createMockReconciliationService({
     authStore: store,
     ledger,
@@ -114,6 +160,12 @@ export function createTestBackend() {
     fastDashboard,
     fastInvoices,
     fastCheckout,
+    fastCodeCheckout,
+    fastCatalog,
+    fastInventory,
+    fastPos,
+    fastCollectionCodes,
+    fastKyc,
     fastAuth,
     fastMerchants,
     fastBranches,
@@ -154,6 +206,13 @@ export function useFastBackend() {
   delegateAll(bankingService, backend.fastBanking)
   delegateAll(paymentProfileService, backend.fastProfiles)
   delegateAll(checkoutService, backend.fastCheckout)
+  delegateAll(codeCheckoutService, backend.fastCodeCheckout.codeCheckoutService)
+  delegateAll(publicCodeSaleService, backend.fastCodeCheckout.publicCodeSaleService)
+  delegateAll(kycService, backend.fastKyc)
+  delegateAll(catalogService, backend.fastCatalog)
+  delegateAll(inventoryService, backend.fastInventory)
+  delegateAll(posService, backend.fastPos)
+  delegateAll(collectionCodeService, backend.fastCollectionCodes)
   delegateAll(publicPaymentService, backend.fastPublic)
   if (bankSimulator) delegateAll(bankSimulator, backend.fastSimulator)
   return {

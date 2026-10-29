@@ -88,6 +88,24 @@ export function createBankEventProcessor(
           candidate.merchantId === transaction.merchantId &&
           candidate.publicReference === reference,
       )
+    // CODE sales are never matched here: not by their sale reference, nor by their invoice number. The money stays confirmed and
+    // unmatched, for review, until bank attribution exists (R6d).
+    const referenced = request?.invoiceId
+      ? ops.invoiceById(request.invoiceId)
+      : store
+          .loadInvoices()
+          .find(
+            (candidate) =>
+              candidate.merchantId === transaction.merchantId &&
+              candidate.invoiceNumber === reference,
+          )
+    if (referenced?.saleChannel === 'CODE') {
+      ops.flagForReview(
+        transaction,
+        `The reference ${reference} names a code sale. Code sales are not matched to bank money automatically yet, so this payment stays confirmed and unmatched for review.`,
+      )
+      return
+    }
     if (request && transaction.paymentRequestId !== request.id) {
       transaction = ops.saveTransaction({ ...transaction, paymentRequestId: request.id })
       ops.audit(

@@ -9,6 +9,7 @@ import { buildAllocationViews, buildTransactionViews } from './ledger/ledgerView
 import { createLedgerStore, type LedgerStore } from './ledger/mockLedgerStore'
 import { requirePaymentActor, scopeUserId } from './mockPaymentAccess'
 import { createOperationRunner } from './mockOrganizationAccess'
+import { buildAttributionViews } from './ledger/mockAttributionViews'
 
 interface MockReconciliationServiceOptions {
   authStore?: MockAuthStore
@@ -56,7 +57,23 @@ export function createMockReconciliationService(
     throw error
   }
 
+  const attributionsOf = (merchantId: string) => {
+    const actor = requirePaymentActor(store, merchantId, 'transactions:view')
+    return buildAttributionViews(store, ledger, merchantId, actor)
+  }
+
   return {
+    listBankAttributions: (merchantId) => run(() => attributionsOf(merchantId)),
+
+    getBankAttribution: (merchantId, bankTransactionId) =>
+      run(() => {
+        const found = attributionsOf(merchantId).find((a) => a.transactionId === bankTransactionId)
+        if (!found) {
+          throw new PaymentServiceError('not_found', 'This transaction could not be found.')
+        }
+        return found
+      }),
+
     listBankTransactions: (merchantId) =>
       run(() => {
         const actor = requirePaymentActor(store, merchantId, 'transactions:view')
@@ -82,19 +99,27 @@ export function createMockReconciliationService(
     listPayableInvoices: (merchantId) =>
       run<PayableInvoice[]>(() => {
         requirePaymentActor(store, merchantId, 'payments:reconcile')
-        return store
-          .loadInvoices()
-          .filter((invoice) => invoice.merchantId === merchantId && invoice.status === 'ISSUED')
-          .map((invoice) => ops.decorate(invoice))
-          .filter((invoice) => invoice.payment!.remainingBalance > 0)
-          .map((invoice) => ({
-            invoiceId: invoice.id,
-            invoiceNumber: invoice.invoiceNumber,
-            customerName: invoice.customer.name,
-            grandTotal: invoice.grandTotal,
-            remainingBalance: invoice.payment!.remainingBalance,
-          }))
-          .sort((a, b) => a.invoiceNumber.localeCompare(b.invoiceNumber))
+        return (
+          store
+            .loadInvoices()
+            // A demonstration code sale takes no real payment, so it is never offered here.
+            .filter(
+              (invoice) =>
+                invoice.merchantId === merchantId &&
+                invoice.status === 'ISSUED' &&
+                invoice.saleChannel !== 'CODE',
+            )
+            .map((invoice) => ops.decorate(invoice))
+            .filter((invoice) => invoice.payment!.remainingBalance > 0)
+            .map((invoice) => ({
+              invoiceId: invoice.id,
+              invoiceNumber: invoice.invoiceNumber,
+              customerName: invoice.customer.name,
+              grandTotal: invoice.grandTotal,
+              remainingBalance: invoice.payment!.remainingBalance,
+            }))
+            .sort((a, b) => a.invoiceNumber.localeCompare(b.invoiceNumber))
+        )
       }),
 
     allocateManually: (merchantId, input) =>
@@ -140,6 +165,12 @@ export function createMockReconciliationService(
             throw new PaymentServiceError(
               'invoice_not_payable',
               `Invoice ${invoice.invoiceNumber} cannot receive payments.`,
+            )
+          }
+          if (invoice.saleChannel === 'CODE') {
+            throw new PaymentServiceError(
+              'code_sale_not_payable',
+              `Invoice ${invoice.invoiceNumber} is a demonstration sale. It takes no real payment, so no bank money can be applied to it.`,
             )
           }
           if (!Number.isInteger(line.amount) || line.amount <= 0) {

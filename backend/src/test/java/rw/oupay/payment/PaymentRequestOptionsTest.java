@@ -44,6 +44,6 @@ class PaymentRequestOptionsTest {
             assertThat(PaymentRequestSource.forInvoice(channel).name()).isEqualTo(channel.name());
         }
         assertThat(PaymentRequestSource.values()).extracting(Enum::name)
-                .containsExactlyInAnyOrder("OPEN", "INVOICE", "POS", "SIMPLIFIED");
+                .containsExactlyInAnyOrder("OPEN", "INVOICE", "POS", "SIMPLIFIED", "CODE");
     }
 }

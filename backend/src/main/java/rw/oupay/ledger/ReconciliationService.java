@@ -46,6 +46,7 @@ public class ReconciliationService {
     private final BankConnectionRepository connections;
     private final AuditLogRepository auditLog;
     private final LedgerOperations ledger;
+    private final CodeSaleAllocationPolicy codeSalePolicy;
     private final NotificationService notifications;
     private final MerchantAccess access;
     private final AuditService audit;
@@ -53,7 +54,7 @@ public class ReconciliationService {
 
     public ReconciliationService(BankTransactionRepository transactions, PaymentAllocationRepository allocations,
                                  InvoiceRepository invoices, BankConnectionRepository connections, AuditLogRepository auditLog,
-                                 LedgerOperations ledger, NotificationService notifications, MerchantAccess access,
+                                 LedgerOperations ledger, CodeSaleAllocationPolicy codeSalePolicy, NotificationService notifications, MerchantAccess access,
                                  AuditService audit, Clock clock) {
         this.transactions = transactions;
         this.allocations = allocations;
@@ -61,6 +62,7 @@ public class ReconciliationService {
         this.connections = connections;
         this.auditLog = auditLog;
         this.ledger = ledger;
+        this.codeSalePolicy = codeSalePolicy;
         this.notifications = notifications;
         this.access = access;
         this.audit = audit;
@@ -104,7 +106,9 @@ public class ReconciliationService {
     @Transactional(readOnly = true)
     public List<ReconciliationDtos.PayableInvoice> payableInvoices(UUID merchantId) {
         access.require(merchantId, Permission.PAYMENTS_RECONCILE);
-        List<Invoice> issued = invoices.findAllForMerchant(merchantId).stream().filter(i -> i.getStatus() == InvoiceStatus.ISSUED).toList();
+        // A demonstration code sale takes no real payment, so it is never offered as something bank money can be applied to.
+        List<Invoice> issued = invoices.findAllForMerchant(merchantId).stream().filter(i -> i.getStatus() == InvoiceStatus.ISSUED)
+                .filter(i -> !codeSalePolicy.isDemonstration(i)).toList();
         Map<UUID, Long> allocated = allocatedByInvoice(issued.stream().map(Invoice::getId).toList());
         return issued.stream()
                 .map(i -> new ReconciliationDtos.PayableInvoice(i.getId(), i.getInvoiceNumber(), i.getCustomerName(), i.getGrandTotalRwf(),
@@ -112,6 +116,15 @@ public class ReconciliationService {
                 .filter(p -> p.remainingBalance() > 0)
                 .sorted(Comparator.comparing(ReconciliationDtos.PayableInvoice::invoiceNumber))
                 .toList();
+    }
+
+    /** At least ten characters and more than a repeated character: "ok", "..........", "aaaaaaaaaa" are not reasons. */
+    static void requireMeaningfulReason(String note) {
+        String reason = note == null ? "" : note.trim();
+        if (reason.length() < 10 || reason.chars().distinct().count() < 4) {
+            throw new ApiException(org.springframework.http.HttpStatus.UNPROCESSABLE_CONTENT, "reconciliation_reason_required",
+                    "Applying money to a code sale by hand needs a reason of at least ten characters (for example what evidence you checked).");
+        }
     }
 
     // ---- writes (authorised people only; never confirm a payment) ------------------------------
@@ -144,6 +157,20 @@ public class ReconciliationService {
             locked.put(id, invoices.lockByIdAndMerchantId(id, merchantId).orElseThrow(() -> ApiException.notFound("An invoice could not be found.")));
         }
 
+        // A person applying money to a CODE sale replaces the bank evidence that automatic matching would have had, so they must say why. The reason
+        // is written, with their identity, to the immutable audit trail in the SAME transaction as the allocation (no reason, no allocation).
+        // Ordinary invoices keep their existing, optional note.
+        if (locked.values().stream().anyMatch(codeSalePolicy::isCodeSale)) {
+            // What can never be allowed, whatever the reason (a demonstration, contradicting bank evidence), is refused FIRST, so a reason is
+            // never asked for something that is not available at all.
+            for (Invoice invoice : locked.values()) {
+                if (codeSalePolicy.isCodeSale(invoice)) {
+                    codeSalePolicy.requireAllowed(tx, invoice, PaymentAllocation.Origin.MANUAL);
+                }
+            }
+            requireMeaningfulReason(request.note());
+        }
+
         long unapplied = LedgerMath.unapplied(tx.getStatus(), tx.isIncoming(), tx.getAmountRwf(), ledger.allocatedOfTransaction(tx.getId()));
         long total = 0;
         for (var line : request.allocations()) {
@@ -156,6 +183,7 @@ public class ReconciliationService {
             if (invoice.getStatus() != InvoiceStatus.ISSUED) {
                 throw LedgerRuleException.invoiceNotPayable(invoice.getInvoiceNumber());
             }
+            codeSalePolicy.requireAllowed(tx, invoice, PaymentAllocation.Origin.MANUAL);
             if (line.amount() <= 0) {
                 throw ApiException.validation("Amounts must be positive whole numbers of francs.");
             }

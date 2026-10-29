@@ -19,9 +19,11 @@ import rw.oupay.common.TokenHashing;
 import rw.oupay.invoice.Invoice;
 import rw.oupay.invoice.InvoiceRepository;
 import rw.oupay.invoice.InvoiceStatus;
+import rw.oupay.invoice.SaleChannel;
 import rw.oupay.notification.NotificationService;
 import rw.oupay.payment.PaymentRequest;
 import rw.oupay.payment.PaymentRequestRepository;
+import rw.oupay.payment.PaymentRequestSource;
 
 /**
  * THE TRUSTED BANK-EVENT PROCESSOR.
@@ -59,13 +61,15 @@ public class BankEventProcessor {
     private final PaymentRequestRepository requests;
     private final InvoiceRepository invoices;
     private final LedgerOperations ledger;
+    private final AttributionRecorder attribution;
+    private final CodeSaleMatcher codeSales;
     private final NotificationService notifications;
     private final AuditService audit;
     private final FinancialMetrics metrics;
     private final Clock clock;
 
     public BankEventProcessor(JdbcClient jdbc, BankConnectionRepository connections, BankTransactionRepository transactions,
-                              PaymentRequestRepository requests, InvoiceRepository invoices, LedgerOperations ledger,
+                              PaymentRequestRepository requests, InvoiceRepository invoices, LedgerOperations ledger, AttributionRecorder attribution, CodeSaleMatcher codeSales,
                               NotificationService notifications, AuditService audit, FinancialMetrics metrics, Clock clock) {
         this.jdbc = jdbc;
         this.connections = connections;
@@ -73,6 +77,8 @@ public class BankEventProcessor {
         this.requests = requests;
         this.invoices = invoices;
         this.ledger = ledger;
+        this.attribution = attribution;
+        this.codeSales = codeSales;
         this.notifications = notifications;
         this.audit = audit;
         this.metrics = metrics;
@@ -135,14 +141,16 @@ public class BankEventProcessor {
         // 3. One transaction per (provider, provider transaction id).
         boolean created = jdbc.sql("insert into bank_transactions (id, merchant_id, bank_connection_id, provider_id, provider_transaction_id, "
                         + "last_provider_event_id, direction, amount_rwf, currency, payment_reference, payer_display_name, provider_occurred_at, "
-                        + "status_applied_at, received_at, status, is_simulated, review_state, created_at, updated_at, version) "
-                        + "values (:id, :m, :c, :p, :t, :e, 'INCOMING', :amount, 'RWF', :ref, :payer, :occ, :occ, :now, :status, :sim, 'NONE', :now, :now, 0) "
+                        + "status_applied_at, received_at, status, is_simulated, review_state, created_at, updated_at, version, "
+                        + "reported_code, origin_provider_event_id) "
+                        + "values (:id, :m, :c, :p, :t, :e, 'INCOMING', :amount, 'RWF', :ref, :payer, :occ, :occ, :now, :status, :sim, 'NONE', :now, :now, 0, "
+                        + ":reported, :e) "
                         + "on conflict (provider_id, provider_transaction_id) do nothing")
                 .param("id", UUID.randomUUID()).param("m", merchantId).param("c", connection.get().getId())
                 .param("p", event.providerId().name()).param("t", event.providerTransactionId()).param("e", event.providerEventId())
                 .param("amount", event.amountRwf()).param("ref", event.paymentReference()).param("payer", event.payerDisplayName())
                 .param("occ", Timestamp.from(event.occurredAt())).param("now", Timestamp.from(now))
-                .param("status", event.status().name()).param("sim", event.simulated()).update() == 1;
+                .param("status", event.status().name()).param("sim", event.simulated()).param("reported", event.reportedCode()).update() == 1;
 
         // Lock the row (waits for a concurrent creator to commit): from here on this event owns the transaction.
         BankTransaction tx = transactions.lockByProviderTransaction(event.providerId(), event.providerTransactionId()).orElseThrow();
@@ -156,9 +164,12 @@ public class BankEventProcessor {
                     (event.simulated() ? "Simulated " : "") + event.status().name().toLowerCase(Locale.ROOT) + " payment of RWF "
                             + event.amountRwf() + " received.");
             finish(event, merchantId, Outcome.APPLIED, null);
+            // Order matters: the bank's evidence is RECORDED first (R6d-A), so that matching a confirmed payment to a code sale can rely on it.
+            var attributed = attribution.record(tx, event.reportedCode());
             if (tx.getStatus() == BankTransactionStatus.CONFIRMED) {
                 reconcileConfirmed(tx);
             }
+            reviewAttribution(tx, attributed);
             return new Result(Outcome.APPLIED, tx.getId(), null);
         }
         return applyToKnown(event, merchantId, tx);
@@ -192,13 +203,28 @@ public class BankEventProcessor {
         audit.recordLedger(merchantId, null, "STATUS_CHANGED", tx.getId(), null,
                 "Status changed from " + previous.name().toLowerCase(Locale.ROOT) + " to " + next.name().toLowerCase(Locale.ROOT) + ".");
         finish(event, merchantId, Outcome.APPLIED, null);
+        // A later authenticated event may COMPLETE missing evidence (a code that was not reported before) or contradict it; either is recorded
+        // before anything is matched, so a payment is matched on the evidence as it stands now, never on a stale view.
+        var attributed = attribution.record(tx, event.reportedCode());
         if (next == BankTransactionStatus.CONFIRMED) {
             reconcileConfirmed(tx);
         }
         if (next == BankTransactionStatus.REVERSED && previous == BankTransactionStatus.CONFIRMED) {
             ledger.reverseAllOf(tx);
         }
+        reviewAttribution(tx, attributed);
         return new Result(Outcome.APPLIED, tx.getId(), null);
+    }
+
+    /**
+     * What the bank reported about the code was recorded by {@link AttributionRecorder} (R6d-A: evidence only, it never allocates). Money that
+     * cannot be attributed, or whose evidence contradicts itself, is flagged for a person when it is confirmed and has not been applied anywhere.
+     */
+    private void reviewAttribution(BankTransaction tx, AttributionRecorder.Result result) {
+        if (result.needsReview() && tx.getStatus() == BankTransactionStatus.CONFIRMED && tx.getReviewState() == ReviewState.NONE
+                && ledger.allocatedOfTransaction(tx.getId()) == 0) {
+            ledger.flagForReview(tx, result.note());
+        }
     }
 
     /** Reference matching on a CONFIRMED transaction. Exact references only. */
@@ -212,6 +238,20 @@ public class BankEventProcessor {
             return;
         }
         Optional<PaymentRequest> request = requests.findByMerchantIdAndPublicReference(merchantId, reference);
+        // A CODE sale is matched ONLY on complete, consistent bank evidence (R6d-B): the exact OP- reference, the bank-reported code that is the
+        // sale's own, the sale's settlement account, a LIVE sale. Never by invoice number, amount, time, payer or agent. Anything less leaves the
+        // money CONFIRMED and UNMATCHED, with the missing evidence as the review reason. When everything agrees, the ordinary exact-reference
+        // allocation below runs unchanged (same locks, same cap at the remaining balance, same overpayment handling), and the database re-checks it.
+        boolean codeSale = request.map(r -> r.getSource() == PaymentRequestSource.CODE).orElse(false)
+                || (request.isEmpty() && invoices.findByMerchantIdAndInvoiceNumber(merchantId, reference)
+                        .map(i -> i.getSaleChannel() == SaleChannel.CODE).orElse(false));
+        if (codeSale) {
+            var verdict = codeSales.evaluate(tx);
+            if (!verdict.eligible()) {
+                ledger.flagForReview(tx, verdict.reason());
+                return;
+            }
+        }
         if (request.isPresent() && !request.get().getId().equals(tx.getPaymentRequestId())) {
             tx.linkRequest(request.get().getId(), clock.instant());
             transactions.saveAndFlush(tx);

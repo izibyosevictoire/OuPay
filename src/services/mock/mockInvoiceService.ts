@@ -250,7 +250,8 @@ export function createMockInvoiceService(options: MockInvoiceServiceOptions = {}
   const nextInvoiceNumber = (merchantId: string) => {
     const highest = store
       .loadInvoices()
-      .filter((invoice) => invoice.merchantId === merchantId)
+      // A demonstration has its own series, so it never moves the real one.
+      .filter((invoice) => invoice.merchantId === merchantId && !invoice.demonstration)
       .reduce(
         (max, invoice) => Math.max(max, Number(/(\d+)$/.exec(invoice.invoiceNumber)?.[1] ?? 0)),
         0,
@@ -312,6 +313,8 @@ export function createMockInvoiceService(options: MockInvoiceServiceOptions = {}
           .filter(
             (invoice) =>
               invoice.merchantId === merchantId &&
+              // A demonstration code sale is never a business invoice: not listed, not counted. It is reached by its id only.
+              !invoice.demonstration &&
               canPerformInvoiceAction(actor.membership.role, actor.user.id, invoice, 'view'),
           )
           .map(decorate)

@@ -18,22 +18,26 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID> {
     /** The sale created by a durable client request, if any. Unique per business (a database index). */
     Optional<Invoice> findByMerchantIdAndClientRequestId(UUID merchantId, UUID clientRequestId);
 
-    @Query("select i from Invoice i where i.merchantId = :merchantId order by i.createdAt desc")
+    /**
+     * EVERY list, page, count and total of invoices states {@code i.demonstration = false}: a demonstration code sale is a real row but
+     * never part of the business's financial invoices (lists, overdue, receivables, reports). It is reached only by its id.
+     */
+    @Query("select i from Invoice i where i.merchantId = :merchantId and i.demonstration = false order by i.createdAt desc")
     List<Invoice> findAllForMerchant(UUID merchantId);
 
-    @Query("select i from Invoice i where i.merchantId = :merchantId and i.assignedToUserId = :userId order by i.createdAt desc")
+    @Query("select i from Invoice i where i.merchantId = :merchantId and i.assignedToUserId = :userId and i.demonstration = false order by i.createdAt desc")
     List<Invoice> findAssignedTo(UUID merchantId, UUID userId);
 
     /** Keyset page, newest first, total order (created_at, id). */
-    @Query("select i from Invoice i where i.merchantId = :merchantId and (i.createdAt < :at or (i.createdAt = :at and i.id < :id)) order by i.createdAt desc, i.id desc")
+    @Query("select i from Invoice i where i.merchantId = :merchantId and i.demonstration = false and (i.createdAt < :at or (i.createdAt = :at and i.id < :id)) order by i.createdAt desc, i.id desc")
     List<Invoice> pageForMerchant(UUID merchantId, java.time.Instant at, UUID id, org.springframework.data.domain.Pageable pageable);
 
-    @Query("select i from Invoice i where i.merchantId = :merchantId and i.assignedToUserId = :userId and (i.createdAt < :at or (i.createdAt = :at and i.id < :id)) order by i.createdAt desc, i.id desc")
+    @Query("select i from Invoice i where i.merchantId = :merchantId and i.assignedToUserId = :userId and i.demonstration = false and (i.createdAt < :at or (i.createdAt = :at and i.id < :id)) order by i.createdAt desc, i.id desc")
     List<Invoice> pageAssignedTo(UUID merchantId, UUID userId, java.time.Instant at, UUID id, org.springframework.data.domain.Pageable pageable);
 
-    long countByMerchantId(UUID merchantId);
+    long countByMerchantIdAndDemonstrationFalse(UUID merchantId);
 
-    long countByMerchantIdAndAssignedToUserId(UUID merchantId, UUID assignedToUserId);
+    long countByMerchantIdAndAssignedToUserIdAndDemonstrationFalse(UUID merchantId, UUID assignedToUserId);
 
     /** Pessimistic write lock: used before allocating money, so balances cannot change underneath. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)

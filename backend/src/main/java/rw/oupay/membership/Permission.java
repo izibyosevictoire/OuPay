@@ -27,7 +27,25 @@ public enum Permission {
     CASHIERS_MANAGE("cashiers:manage", all(), all(), none()),
     MEMBERSHIP_MANAGE("membership:manage", all(), none(), none()),
     REPORTS_VIEW("reports:view", all(), all(), none()),
-    BANKING_MANAGE("banking:manage", all(), none(), none());
+    BANKING_MANAGE("banking:manage", all(), none(), none()),
+    /** Read the goods and services catalog. Cashiers get read-only access (they will sell from it). */
+    CATALOG_VIEW("catalog:view", all(), all(), all()),
+    /** Create and change catalog items, prices, availability and packages. Never granted to cashiers. */
+    CATALOG_MANAGE("catalog:manage", all(), all(), none()),
+    /** See branch stock. A cashier sees only the branches they are assigned to. */
+    INVENTORY_VIEW("inventory:view", all(), all(), limited()),
+    /** Receive stock. A manager records only at branches they are assigned to; never a cashier. */
+    INVENTORY_RECEIVE("inventory:receive", all(), limited(), none()),
+    /** Record opening stock and adjust stock (loss, damage, count differences). Same limits as receiving. */
+    INVENTORY_ADJUST("inventory:adjust", all(), limited(), none()),
+    /** See the collection-code registry (settlement account, codes, agents). Cashiers see only their own code, through no permission. */
+    COLLECTION_CODES_VIEW("collection_codes:view", all(), all(), none()),
+    /** Assign, end and reassign agents. A manager may do so only for codes of branches they are assigned to. */
+    COLLECTION_CODES_ASSIGN("collection_codes:assign", all(), limited(), none()),
+    /** Request codes, record a bank request, suspend or deactivate: provisioning is the owner's, like bank linkage. Never approves. */
+    COLLECTION_CODES_MANAGE("collection_codes:manage", all(), none(), none()),
+    /** Equity KYC onboarding: representative identity, answers, consent and documents. Owner only; never a manager or a cashier. */
+    KYC_MANAGE("kyc:manage", all(), none(), none());
 
     public enum Scope { ALL, LIMITED }
 

@@ -128,18 +128,23 @@ class DatabaseContentionIT extends IntegrationTest {
             assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
 
             AtomicInteger attempts = new AtomicInteger();
+            // Counted down by the waiting transaction itself once it has been refused the lock and is trying again.
+            CountDownLatch retried = new CountDownLatch(1);
             ConcurrentLinkedQueue<Long> transactionIds = new ConcurrentLinkedQueue<>();
             var patient = new TransactionRetry(new TransactionRetry.Policy(60, Duration.ofMillis(20), Duration.ofMillis(100)),
                     duration -> Thread.sleep(duration.toMillis()), () -> 0.5);
             Future<Integer> waiting = pool.submit(() -> patient.execute(() -> transaction.execute(status -> {
-                attempts.incrementAndGet();
+                if (attempts.incrementAndGet() >= 2) {
+                    retried.countDown();
+                }
                 transactionIds.add(currentTransactionId());
                 jdbc.execute("set local lock_timeout = '100ms'");
                 touch(w.merchantId);
                 return attempts.get();
             })));
 
-            Thread.sleep(500);
+            // Release the lock only after a lock timeout has really been seen and retried (no guessing how long that takes).
+            assertThat(retried.await(30, TimeUnit.SECONDS)).isTrue();
             release.countDown();
 
             assertThat(waiting.get(60, TimeUnit.SECONDS)).isGreaterThanOrEqualTo(2);

@@ -3,11 +3,53 @@ import { AuthServiceError, type AuthServiceErrorCode } from '@/services/authServ
 import type { BankingConfigurationService } from '@/services/bankingService'
 import type { BranchService } from '@/services/branchService'
 import {
+  CodeCheckoutServiceError,
+  type CodeCheckoutService,
+  type CodeCheckoutServiceErrorCode,
+  type PublicCodeSaleService,
+} from '@/services/codeCheckoutService'
+import type { BankAttribution } from '@/types/bankAttribution'
+import type {
+  CodeCheckoutOptions,
+  CodePresentation,
+  CodeSale,
+  PublicCodeSale,
+} from '@/types/codeCheckout'
+import {
+  CollectionCodeServiceError,
+  type CollectionCodeService,
+  type CollectionCodeServiceErrorCode,
+} from '@/services/collectionCodeService'
+import {
+  CatalogServiceError,
+  type CatalogService,
+  type CatalogServiceErrorCode,
+} from '@/services/catalogService'
+import {
   CheckoutServiceError,
   type CheckoutService,
   type CheckoutServiceErrorCode,
 } from '@/services/checkoutService'
 import type { DashboardService } from '@/services/dashboardService'
+import { PosServiceError, type PosService, type PosServiceErrorCode } from '@/services/posService'
+import type {
+  PosFulfilmentException,
+  PosBilledSale,
+  PosBillingReview,
+  PosCatalogItem,
+  PosDraft,
+  PosDraftPage,
+  PosOptions,
+  PosPricedLine,
+  PosProblem,
+  PosQuote,
+} from '@/types/pos'
+import { KycServiceError, type KycService, type KycServiceErrorCode } from '@/services/kycService'
+import {
+  InventoryServiceError,
+  type InventoryService,
+  type InventoryServiceErrorCode,
+} from '@/services/inventoryService'
 import { InvoiceServiceError, type InvoiceService } from '@/services/invoiceService'
 import { MerchantServiceError, type MerchantService } from '@/services/merchantService'
 import type { NotificationService } from '@/services/notificationService'
@@ -18,6 +60,17 @@ import type { PublicPaymentService } from '@/services/publicPaymentService'
 import type { ReconciliationService } from '@/services/reconciliationService'
 import type { StaffService } from '@/services/staffService'
 import type { AuthSession } from '@/types/auth'
+import type { CatalogItem, CatalogPackage, ItemTax, PriceVersion } from '@/types/catalog'
+import type {
+  CodeApproval,
+  CodeAssignment,
+  CollectionCode,
+  CollectionCodeOptions,
+  EligibilityIssue,
+  MyCollectionCode,
+  MyCollectionCodeSummary,
+} from '@/types/collectionCodes'
+import type { InventoryBalance, MovementResult, StockMovement } from '@/types/inventory'
 import type { InvoicePage } from '@/types/invoice'
 import { mapHttpError, translating } from './errorMapping'
 import type { ReportsService } from '@/services/reportsService'
@@ -83,6 +136,9 @@ const PAYMENT_CODES: PaymentServiceErrorCode[] = [
   'allocation_conflict',
   'transaction_not_confirmed',
   'invoice_not_payable',
+  'code_sale_not_payable',
+  'code_sale_evidence_mismatch',
+  'reconciliation_reason_required',
   'exceeds_remaining',
   'exceeds_unapplied',
   'allocation_not_active',
@@ -91,6 +147,26 @@ const PAYMENT_CODES: PaymentServiceErrorCode[] = [
   'profile_unavailable',
   'request_unavailable',
   'no_active_profile',
+  'service_unavailable',
+]
+
+const CODE_CHECKOUT_CODES: CodeCheckoutServiceErrorCode[] = [
+  'unauthenticated',
+  'not_found',
+  'forbidden',
+  'validation',
+  'no_assigned_code',
+  'code_not_assigned',
+  'code_required',
+  'code_not_available',
+  'live_collection_unavailable',
+  'no_eligible_branch',
+  'branch_required',
+  'branch_not_eligible',
+  'no_active_profile',
+  'client_request_id_reuse',
+  'idempotency_key_reuse',
+  'request_in_progress',
   'service_unavailable',
 ]
 
@@ -112,6 +188,115 @@ const CHECKOUT_CODES: CheckoutServiceErrorCode[] = [
   'service_unavailable',
 ]
 
+const POS_CODES: PosServiceErrorCode[] = [
+  'unauthenticated',
+  'not_found',
+  'forbidden',
+  'validation',
+  'pos_unavailable',
+  'no_eligible_branch',
+  'branch_not_eligible',
+  'invalid_cart',
+  'version_conflict',
+  'draft_not_open',
+  'draft_already_billed',
+  'bill_conflict',
+  'review_changed',
+  'tax_not_configured',
+  'tax_not_approved',
+  'insufficient_stock',
+  'amount_out_of_range',
+  'price_zero_not_billable',
+  'no_assigned_code',
+  'code_not_available',
+  'code_not_assigned',
+  'code_required',
+  'live_collection_unavailable',
+  'too_many_lines',
+  'pricing_mismatch',
+  'client_request_id_reuse',
+  'idempotency_key_reuse',
+  'request_in_progress',
+  'service_unavailable',
+]
+
+type RawItemTax = Omit<ItemTax, 'taxCategory' | 'taxRateBp' | 'configuredAt'> & {
+  taxCategory?: ItemTax['taxCategory']
+  taxRateBp?: number | null
+  configuredAt?: string | null
+}
+const normaliseItemTax = (raw: RawItemTax): ItemTax => ({
+  ...raw,
+  taxCategory: raw.taxCategory ?? null,
+  taxRateBp: raw.taxRateBp ?? null,
+  configuredAt: raw.configuredAt ?? null,
+})
+
+const CATALOG_CODES: CatalogServiceErrorCode[] = [
+  'invalid_tax_treatment',
+  'unauthenticated',
+  'not_found',
+  'forbidden',
+  'validation',
+  'invalid_unit_configuration',
+  'unsupported_unit',
+  'dimension_mismatch',
+  'invalid_quantity',
+  'invalid_count',
+  'precision_exceeded',
+  'quantity_out_of_range',
+  'invalid_package_conversion',
+  'duplicate_code',
+  'duplicate_label',
+  'version_conflict',
+  'catalog_unavailable',
+  'service_unavailable',
+]
+
+const INVENTORY_CODES: InventoryServiceErrorCode[] = [
+  'unauthenticated',
+  'not_found',
+  'forbidden',
+  'validation',
+  'invalid_item',
+  'package_inactive',
+  'unsupported_unit',
+  'dimension_mismatch',
+  'invalid_quantity',
+  'invalid_count',
+  'precision_exceeded',
+  'quantity_out_of_range',
+  'invalid_package_conversion',
+  'insufficient_stock',
+  'opening_already_recorded',
+  'operation_id_reuse',
+  'branch_inactive',
+  'inventory_unavailable',
+  'service_unavailable',
+]
+
+const KYC_CODES: KycServiceErrorCode[] = [
+  'unauthenticated',
+  'not_found',
+  'forbidden',
+  'validation',
+  'application_exists',
+  'application_not_editable',
+  'application_incomplete',
+  'consent_required',
+  'consent_text_changed',
+  'invalid_transition',
+  'version_conflict',
+  'client_request_id_reuse',
+  'sensitive_storage_unavailable',
+  'sensitive_value_unreadable',
+  'documents_required',
+  'not_implemented',
+  'service_unavailable',
+]
+
+const kycError = (error: unknown) =>
+  mapHttpError(error, (code, message) => new KycServiceError(code, message), KYC_CODES)
 const authError = (error: unknown) =>
   mapHttpError(error, (code, message) => new AuthServiceError(code, message), AUTH_CODES)
 const merchantError = (error: unknown) =>
@@ -124,8 +309,76 @@ const organizationError = (error: unknown) =>
   )
 const invoiceError = (error: unknown) =>
   mapHttpError(error, (code, message) => new InvoiceServiceError(code, message), INVOICE_CODES)
+const codeCheckoutError = (error: unknown) =>
+  mapHttpError(
+    error,
+    (code, message) => new CodeCheckoutServiceError(code, message),
+    CODE_CHECKOUT_CODES,
+  )
+const posError = (error: unknown) =>
+  mapHttpError(error, (code, message) => new PosServiceError(code, message), POS_CODES)
 const checkoutError = (error: unknown) =>
   mapHttpError(error, (code, message) => new CheckoutServiceError(code, message), CHECKOUT_CODES)
+/** The server omits null fields from its JSON, so a missing field means null. Normalised once, here. */
+type Nullable<T, K extends keyof T> = Omit<T, K> & { [P in K]?: T[P] | null }
+type RawCatalogItem = Omit<
+  Nullable<CatalogItem, 'description' | 'code' | 'stockUnit'>,
+  'packages'
+> & {
+  packages?: CatalogPackage[]
+}
+type RawPriceVersion = Nullable<PriceVersion, 'reason'>
+interface RawCatalogPage {
+  items?: RawCatalogItem[]
+  nextCursor?: string | null
+  totalCount?: number | null
+}
+const normaliseCatalogItem = (raw: RawCatalogItem): CatalogItem => ({
+  ...raw,
+  description: raw.description ?? null,
+  code: raw.code ?? null,
+  stockUnit: raw.stockUnit ?? null,
+  packages: raw.packages ?? [],
+})
+
+const catalogError = (error: unknown) =>
+  mapHttpError(error, (code, message) => new CatalogServiceError(code, message), CATALOG_CODES)
+const inventoryError = (error: unknown) =>
+  mapHttpError(error, (code, message) => new InventoryServiceError(code, message), INVENTORY_CODES)
+
+/** The server omits null fields from its JSON, so a missing field means null. Normalised once, here. */
+type RawInventoryBalance = Omit<InventoryBalance, 'itemCode'> & { itemCode?: string | null }
+type RawStockMovement = Omit<StockMovement, 'enteredAs' | 'reason' | 'reference'> & {
+  enteredAs?: string | null
+  reason?: string | null
+  reference?: string | null
+}
+interface RawInventoryPage<T> {
+  items?: T[]
+  nextCursor?: string | null
+  totalCount?: number | null
+}
+interface RawMovementResult {
+  movement: RawStockMovement
+  balance: RawInventoryBalance
+  replayed?: boolean
+}
+const normaliseBalance = (raw: RawInventoryBalance): InventoryBalance => ({
+  ...raw,
+  itemCode: raw.itemCode ?? null,
+})
+const normaliseMovement = (raw: RawStockMovement): StockMovement => ({
+  ...raw,
+  enteredAs: raw.enteredAs ?? null,
+  reason: raw.reason ?? null,
+  reference: raw.reference ?? null,
+})
+const normaliseResult = (raw: RawMovementResult): MovementResult => ({
+  movement: normaliseMovement(raw.movement),
+  balance: normaliseBalance(raw.balance),
+  replayed: raw.replayed ?? false,
+})
+
 const paymentError = (error: unknown) =>
   mapHttpError(error, (code, message) => new PaymentServiceError(code, message), PAYMENT_CODES)
 
@@ -367,8 +620,62 @@ export function createHttpDashboardService(http: HttpClient): DashboardService {
   }
 }
 
+/** The server omits null fields, so a missing field means null. Normalised once, here. */
+type RawBankAttribution = Omit<
+  BankAttribution,
+  | 'reportedCode'
+  | 'collectionCode'
+  | 'attributionBasis'
+  | 'agentAttribution'
+  | 'agentName'
+  | 'saleReference'
+  | 'saleInvoiceId'
+  | 'allocationOrigin'
+> &
+  Partial<
+    Pick<
+      BankAttribution,
+      | 'reportedCode'
+      | 'collectionCode'
+      | 'attributionBasis'
+      | 'agentAttribution'
+      | 'agentName'
+      | 'saleReference'
+      | 'saleInvoiceId'
+      | 'allocationOrigin'
+    >
+  >
+
+const attributionOf = (raw: RawBankAttribution): BankAttribution => ({
+  ...raw,
+  reportedCode: raw.reportedCode ?? null,
+  collectionCode: raw.collectionCode
+    ? { ...raw.collectionCode, branchId: raw.collectionCode.branchId ?? null }
+    : null,
+  attributionBasis: raw.attributionBasis ?? null,
+  agentAttribution: raw.agentAttribution ?? null,
+  agentName: raw.agentName ?? null,
+  saleReference: raw.saleReference ?? null,
+  saleInvoiceId: raw.saleInvoiceId ?? null,
+  allocationOrigin: raw.allocationOrigin ?? null,
+})
+
 export function createHttpReconciliationService(http: HttpClient): ReconciliationService {
   return {
+    listBankAttributions: translating(
+      async (id) =>
+        (await fetchAllPages<RawBankAttribution>(http, `${m(id)}/bank-attributions`)).map(
+          attributionOf,
+        ),
+      paymentError,
+    ),
+    getBankAttribution: translating(
+      async (id, transactionId) =>
+        attributionOf(
+          await http.get<RawBankAttribution>(`${m(id)}/bank-attributions/${transactionId}`),
+        ),
+      paymentError,
+    ),
     listBankTransactions: translating(
       (id) => fetchAllPages(http, `${m(id)}/bank-transactions`),
       paymentError,
@@ -501,6 +808,831 @@ export function createHttpCheckoutService(http: HttpClient): CheckoutService {
   }
 }
 
+/** The server omits null fields, so a missing field means null. Normalised once, here. */
+type RawPosLine = Omit<
+  PosPricedLine,
+  'code' | 'enteredUnit' | 'packageId' | 'packageLabel' | 'stock'
+> & {
+  code?: string | null
+  enteredUnit?: PosPricedLine['enteredUnit']
+  packageId?: string | null
+  packageLabel?: string | null
+  stock?:
+    | (Omit<NonNullable<PosPricedLine['stock']>, 'onHand' | 'requested'> & {
+        onHand?: string | null
+        requested?: string | null
+      })
+    | null
+}
+type RawPosProblem = Omit<PosProblem, 'currentPriceVersion' | 'currentPriceRwf'> & {
+  currentPriceVersion?: number | null
+  currentPriceRwf?: number | null
+}
+type RawPosItem = Omit<PosCatalogItem, 'code' | 'packages' | 'stock'> & {
+  code?: string | null
+  packages?: PosCatalogItem['packages']
+  stock: Omit<PosCatalogItem['stock'], 'onHand' | 'onHandInSaleUnit'> & {
+    onHand?: string | null
+    onHandInSaleUnit?: string | null
+  }
+}
+type RawPosDraft = Omit<PosDraft, 'note' | 'lines'> & { note?: string | null; lines: RawPosLine[] }
+type RawPosQuote = Omit<PosQuote, 'lines' | 'problems'> & {
+  lines?: RawPosLine[]
+  problems?: RawPosProblem[]
+}
+
+/** The server omits null fields, so a missing field means null. Normalised once, here. */
+type RawReviewLine = Omit<
+  PosBillingReview['lines'][number],
+  'code' | 'enteredUnit' | 'packageLabel' | 'taxCategory' | 'taxRateBp' | 'availability'
+> & {
+  code?: string | null
+  enteredUnit?: PosBillingReview['lines'][number]['enteredUnit']
+  packageLabel?: string | null
+  taxCategory?: PosBillingReview['lines'][number]['taxCategory']
+  taxRateBp?: number | null
+  availability: Omit<
+    PosBillingReview['lines'][number]['availability'],
+    'physical' | 'reserved' | 'available' | 'requested'
+  > & {
+    physical?: string | null
+    reserved?: string | null
+    available?: string | null
+    requested?: string | null
+  }
+}
+type RawBillingReview = Omit<
+  PosBillingReview,
+  'lines' | 'problems' | 'codeLabel' | 'approvedTaxTreatments'
+> & {
+  lines?: RawReviewLine[]
+  problems?: PosBillingReview['problems']
+  codeLabel?: string | null
+  approvedTaxTreatments?: string[]
+}
+type RawSaleLine = Omit<PosBilledSale['lines'][number], 'code' | 'enteredUnit' | 'packageLabel'> & {
+  code?: string | null
+  enteredUnit?: PosBilledSale['lines'][number]['enteredUnit']
+  packageLabel?: string | null
+}
+type RawReservation = Omit<
+  PosBilledSale['reservation'],
+  'expiryReviewAt' | 'releasedAt' | 'releaseReason' | 'lines'
+> & {
+  expiryReviewAt?: string | null
+  releasedAt?: string | null
+  releaseReason?: string | null
+  lines?: (Omit<PosBilledSale['reservation']['lines'][number], 'enteredUnit' | 'packageLabel'> & {
+    enteredUnit?: PosBilledSale['reservation']['lines'][number]['enteredUnit']
+    packageLabel?: string | null
+  })[]
+}
+type RawFulfilment = Omit<
+  PosBilledSale['fulfilment'],
+  'postedAt' | 'nextAttemptAt' | 'lastError' | 'lines' | 'exceptions' | 'events'
+> & {
+  postedAt?: string | null
+  nextAttemptAt?: string | null
+  lastError?: string | null
+  lines?: (Omit<PosBilledSale['fulfilment']['lines'][number], 'physicalNow' | 'availableNow'> & {
+    physicalNow?: string | null
+    availableNow?: string | null
+  })[]
+  exceptions?: RawFulfilmentException[]
+  events?: PosBilledSale['fulfilment']['events']
+}
+type RawFulfilmentException = Omit<PosFulfilmentException, 'history'> & {
+  history?: PosFulfilmentException['history']
+}
+type RawBilledSale = Omit<PosBilledSale, 'sale' | 'lines' | 'reservation' | 'fulfilment'> & {
+  sale: RawCodeSale
+  lines?: RawSaleLine[]
+  reservation: RawReservation
+  fulfilment: RawFulfilment
+}
+
+const fulfilmentExceptionOf = (raw: RawFulfilmentException): PosFulfilmentException => ({
+  ...raw,
+  history: raw.history ?? [],
+})
+
+const billingReviewOf = (raw: RawBillingReview): PosBillingReview => ({
+  ...raw,
+  codeLabel: raw.codeLabel ?? null,
+  problems: raw.problems ?? [],
+  approvedTaxTreatments: raw.approvedTaxTreatments ?? [],
+  lines: (raw.lines ?? []).map((line) => ({
+    ...line,
+    code: line.code ?? null,
+    enteredUnit: line.enteredUnit ?? null,
+    packageLabel: line.packageLabel ?? null,
+    taxCategory: line.taxCategory ?? null,
+    taxRateBp: line.taxRateBp ?? null,
+    availability: {
+      ...line.availability,
+      physical: line.availability.physical ?? null,
+      reserved: line.availability.reserved ?? null,
+      available: line.availability.available ?? null,
+      requested: line.availability.requested ?? null,
+    },
+  })),
+})
+
+const billedSaleOf = (raw: RawBilledSale): PosBilledSale => ({
+  ...raw,
+  sale: codeSaleOf(raw.sale),
+  fulfilment: {
+    ...raw.fulfilment,
+    postedAt: raw.fulfilment.postedAt ?? null,
+    nextAttemptAt: raw.fulfilment.nextAttemptAt ?? null,
+    lastError: raw.fulfilment.lastError ?? null,
+    lines: (raw.fulfilment.lines ?? []).map((line) => ({
+      ...line,
+      physicalNow: line.physicalNow ?? null,
+      availableNow: line.availableNow ?? null,
+    })),
+    exceptions: (raw.fulfilment.exceptions ?? []).map(fulfilmentExceptionOf),
+    events: raw.fulfilment.events ?? [],
+  },
+  lines: (raw.lines ?? []).map((line) => ({
+    ...line,
+    code: line.code ?? null,
+    enteredUnit: line.enteredUnit ?? null,
+    packageLabel: line.packageLabel ?? null,
+  })),
+  reservation: {
+    ...raw.reservation,
+    expiryReviewAt: raw.reservation.expiryReviewAt ?? null,
+    releasedAt: raw.reservation.releasedAt ?? null,
+    releaseReason: raw.reservation.releaseReason ?? null,
+    lines: (raw.reservation.lines ?? []).map((line) => ({
+      ...line,
+      enteredUnit: line.enteredUnit ?? null,
+      packageLabel: line.packageLabel ?? null,
+    })),
+  },
+})
+
+const posLineOf = (raw: RawPosLine): PosPricedLine => ({
+  ...raw,
+  code: raw.code ?? null,
+  enteredUnit: raw.enteredUnit ?? null,
+  packageId: raw.packageId ?? null,
+  packageLabel: raw.packageLabel ?? null,
+  stock: raw.stock
+    ? { ...raw.stock, onHand: raw.stock.onHand ?? null, requested: raw.stock.requested ?? null }
+    : null,
+})
+const posDraftOf = (raw: RawPosDraft): PosDraft => ({
+  ...raw,
+  note: raw.note ?? null,
+  lines: raw.lines.map(posLineOf),
+})
+
+/**
+ * The business POS. The draft's permanent identifier travels in the body and the retry key in the Idempotency-Key header. A line
+ * carries its quantity as a decimal STRING and never a price: the server prices from the catalog.
+ */
+export function createHttpPosService(http: HttpClient): PosService {
+  const base = (merchantId: string) => `${m(merchantId)}/pos`
+  return {
+    getPosOptions: translating(
+      (id) =>
+        http
+          .get<PosOptions>(`${base(id)}/options`)
+          .then((o) => ({ ...o, branches: o.branches ?? [] })),
+      posError,
+    ),
+    searchPosItems: translating(async (id, branchId, query) => {
+      const raw = await http.get<RawPosItem[]>(`${base(id)}/items`, {
+        query: { branchId, q: query?.trim() || undefined, limit: 50 },
+      })
+      return raw.map((item): PosCatalogItem => ({
+        ...item,
+        code: item.code ?? null,
+        packages: item.packages ?? [],
+        stock: {
+          ...item.stock,
+          onHand: item.stock.onHand ?? null,
+          onHandInSaleUnit: item.stock.onHandInSaleUnit ?? null,
+        },
+      }))
+    }, posError),
+    quotePosCart: translating(async (id, input) => {
+      const raw = await http.post<RawPosQuote>(`${base(id)}/quote`, { body: input })
+      return {
+        ...raw,
+        lines: (raw.lines ?? []).map(posLineOf),
+        problems: (raw.problems ?? []).map((p) => ({
+          ...p,
+          currentPriceVersion: p.currentPriceVersion ?? null,
+          currentPriceRwf: p.currentPriceRwf ?? null,
+        })),
+      }
+    }, posError),
+    createPosDraft: translating(
+      async (id, input) =>
+        posDraftOf(
+          await http.post<RawPosDraft>(`${base(id)}/drafts`, {
+            headers: { 'Idempotency-Key': input.idempotencyKey },
+            body: {
+              clientRequestId: input.clientRequestId,
+              branchId: input.branchId,
+              note: input.note,
+              lines: input.lines,
+            },
+          }),
+        ),
+      posError,
+    ),
+    listPosDrafts: translating(async (id, cursor) => {
+      const page = await http.get<Partial<PosDraftPage>>(`${base(id)}/drafts`, {
+        query: { limit: 20, cursor },
+      })
+      return { items: page.items ?? [], nextCursor: page.nextCursor ?? null }
+    }, posError),
+    getPosDraft: translating(
+      async (id, draftId) =>
+        posDraftOf(await http.get<RawPosDraft>(`${base(id)}/drafts/${draftId}`)),
+      posError,
+    ),
+    updatePosDraft: translating(
+      async (id, draftId, input) =>
+        posDraftOf(await http.put<RawPosDraft>(`${base(id)}/drafts/${draftId}`, { body: input })),
+      posError,
+    ),
+    discardPosDraft: translating(
+      async (id, draftId, expectedVersion) =>
+        posDraftOf(
+          await http.delete<RawPosDraft>(`${base(id)}/drafts/${draftId}`, {
+            query: { expectedVersion },
+          }),
+        ),
+      posError,
+    ),
+    getBillingReview: translating(
+      async (id, draftId, collectionCodeId) =>
+        billingReviewOf(
+          await http.get<RawBillingReview>(`${base(id)}/drafts/${draftId}/billing-review`, {
+            query: { collectionCodeId: collectionCodeId ?? undefined },
+          }),
+        ),
+      posError,
+    ),
+    // The bill names only the draft, the version and total that were reviewed and (optionally) the code. The retry key travels in the
+    // Idempotency-Key header. No price, tax or stock figure is ever sent.
+    billPosDraft: translating(
+      async (id, draftId, input) =>
+        billedSaleOf(
+          await http.post<RawBilledSale>(`${base(id)}/drafts/${draftId}/bill`, {
+            headers: { 'Idempotency-Key': input.idempotencyKey },
+            body: {
+              expectedDraftVersion: input.expectedDraftVersion,
+              reviewedTotalRwf: input.reviewedTotalRwf,
+              collectionCodeId: input.collectionCodeId ?? undefined,
+            },
+          }),
+        ),
+      posError,
+    ),
+    listFulfilmentExceptions: translating(
+      async (id) =>
+        (await http.get<RawFulfilmentException[]>(`${base(id)}/fulfilment/exceptions`)).map(
+          fulfilmentExceptionOf,
+        ),
+      posError,
+    ),
+    getPosSale: translating(
+      async (id, saleId) =>
+        billedSaleOf(await http.get<RawBilledSale>(`${base(id)}/sales/${saleId}`)),
+      posError,
+    ),
+  }
+}
+
+/** The server omits null fields, so a missing field means null. Normalised once, here. */
+type RawCodePresentation = Omit<CodePresentation, 'bankCode' | 'demoReference' | 'notice'> & {
+  bankCode?: string | null
+  demoReference?: string | null
+  notice?: string | null
+}
+
+const presentationOf = (raw: RawCodePresentation): CodePresentation => ({
+  ...raw,
+  bankCode: raw.bankCode ?? null,
+  demoReference: raw.demoReference ?? null,
+  notice: raw.notice ?? null,
+})
+
+type RawCodeSale = Omit<CodeSale, 'code'> & { code: RawCodePresentation }
+type RawPublicCodeSale = Omit<PublicCodeSale, 'code' | 'description' | 'instructions'> & {
+  code: RawCodePresentation
+  description?: string | null
+  instructions?: string[] | null
+}
+type RawCodeCheckoutOptions = Omit<CodeCheckoutOptions, 'codes' | 'note'> & {
+  codes?: (Omit<CodeCheckoutOptions['codes'][number], 'reason' | 'branchName'> & {
+    reason?: string | null
+    branchName?: string | null
+  })[]
+  note?: string | null
+}
+
+const codeSaleOf = (raw: RawCodeSale): CodeSale => ({ ...raw, code: presentationOf(raw.code) })
+
+/**
+ * Billing through a collection code. The sale's permanent identifier travels in the body and the retry key in the Idempotency-Key
+ * header; the amount goes as a JSON number and the server decides everything else (the code's mode, the status, the expiry).
+ */
+export function createHttpCodeCheckoutService(http: HttpClient): CodeCheckoutService {
+  const base = (merchantId: string) => `${m(merchantId)}/checkout/code-sale`
+  return {
+    getCodeCheckoutOptions: translating(async (id: string) => {
+      const raw = await http.get<RawCodeCheckoutOptions>(`${base(id)}/options`)
+      return {
+        ...raw,
+        note: raw.note ?? null,
+        codes: (raw.codes ?? []).map((c) => ({
+          ...c,
+          reason: c.reason ?? null,
+          branchName: c.branchName ?? null,
+        })),
+      }
+    }, codeCheckoutError),
+    billCodeSale: translating(
+      async (id, input) =>
+        codeSaleOf(
+          await http.post<RawCodeSale>(base(id), {
+            headers: { 'Idempotency-Key': input.idempotencyKey },
+            body: {
+              amountRwf: input.amountRwf,
+              description: input.description,
+              collectionCodeId: input.collectionCodeId,
+              branchId: input.branchId,
+              clientRequestId: input.clientRequestId,
+            },
+          }),
+        ),
+      codeCheckoutError,
+    ),
+    getCodeSale: translating(
+      async (id, saleId) => codeSaleOf(await http.get<RawCodeSale>(`${base(id)}/${saleId}`)),
+      codeCheckoutError,
+    ),
+  }
+}
+
+/** The customer's page of a code sale: anonymous, read-only, keyed only by the sale reference. */
+export function createHttpPublicCodeSaleService(http: HttpClient): PublicCodeSaleService {
+  return {
+    getPublicCodeSale: translating(async (reference: string) => {
+      const raw = await http.get<RawPublicCodeSale>(
+        `/public/code-sales/${encodeURIComponent(reference)}`,
+      )
+      return {
+        ...raw,
+        description: raw.description ?? null,
+        instructions: raw.instructions ?? [],
+        code: presentationOf(raw.code),
+      }
+    }, codeCheckoutError),
+  }
+}
+
+/**
+ * The goods-and-services catalog. Decimals travel as plain text and prices as whole-RWF JSON numbers; merchant identity is
+ * only ever the path, never the body. Versions are sent in the body (`expectedVersion`) for optimistic locking.
+ */
+export function createHttpCatalogService(http: HttpClient): CatalogService {
+  const base = (merchantId: string) => `${m(merchantId)}/catalog`
+  const itemPath = (merchantId: string, itemId: string) => `${base(merchantId)}/items/${itemId}`
+  return {
+    listMeasurementUnits: translating(
+      (id) => http.get(`${base(id)}/measurement-units`),
+      catalogError,
+    ),
+    listItems: translating(async (id, query) => {
+      const page = await http.get<RawCatalogPage>(`${base(id)}/items`, {
+        query: {
+          limit: query?.limit,
+          cursor: query?.cursor,
+          q: query?.q?.trim() || undefined,
+          type: query?.type,
+          active: query?.active,
+        },
+      })
+      return {
+        items: (page.items ?? []).map(normaliseCatalogItem),
+        nextCursor: page.nextCursor ?? null,
+        totalCount: page.totalCount ?? null,
+      }
+    }, catalogError),
+    getItem: translating(
+      async (id, itemId) =>
+        normaliseCatalogItem(await http.get<RawCatalogItem>(itemPath(id, itemId))),
+      catalogError,
+    ),
+    createItem: translating(
+      async (id, input) =>
+        normaliseCatalogItem(await http.post<RawCatalogItem>(`${base(id)}/items`, { body: input })),
+      catalogError,
+    ),
+    updateItem: translating(
+      async (id, itemId, input) =>
+        normaliseCatalogItem(await http.put<RawCatalogItem>(itemPath(id, itemId), { body: input })),
+      catalogError,
+    ),
+    changeItemStatus: translating(
+      async (id, itemId, input) =>
+        normaliseCatalogItem(
+          await http.put<RawCatalogItem>(`${itemPath(id, itemId)}/status`, { body: input }),
+        ),
+      catalogError,
+    ),
+    getItemTax: translating(
+      async (id, itemId) =>
+        normaliseItemTax(await http.get<RawItemTax>(`${itemPath(id, itemId)}/tax`)),
+      catalogError,
+    ),
+    setItemTax: translating(
+      async (id, itemId, input) =>
+        normaliseItemTax(
+          await http.put<RawItemTax>(`${itemPath(id, itemId)}/tax`, { body: input }),
+        ),
+      catalogError,
+    ),
+    listPriceHistory: translating(async (id, itemId) => {
+      const versions = await http.get<RawPriceVersion[]>(`${itemPath(id, itemId)}/price-history`)
+      return versions.map((v) => ({ ...v, reason: v.reason ?? null }))
+    }, catalogError),
+    createPackage: translating(
+      (id, itemId, input) => http.post(`${itemPath(id, itemId)}/packages`, { body: input }),
+      catalogError,
+    ),
+    updatePackage: translating(
+      (id, itemId, packageId, input) =>
+        http.put(`${itemPath(id, itemId)}/packages/${packageId}`, { body: input }),
+      catalogError,
+    ),
+  }
+}
+
+/**
+ * Branch-level stock of goods. Quantities travel as plain decimal text. Every write carries the client's operation id, so a
+ * retry of the same submission can never add stock twice; merchant identity is only ever the path, never the body.
+ */
+export function createHttpInventoryService(http: HttpClient): InventoryService {
+  const base = (merchantId: string) => `${m(merchantId)}/inventory`
+  return {
+    getOptions: translating((id) => http.get(`${base(id)}/options`), inventoryError),
+    listBalances: translating(async (id, query) => {
+      const page = await http.get<RawInventoryPage<RawInventoryBalance>>(`${base(id)}/balances`, {
+        query: {
+          limit: query?.limit,
+          cursor: query?.cursor,
+          branchId: query?.branchId,
+          itemId: query?.itemId,
+          q: query?.q?.trim() || undefined,
+        },
+      })
+      return {
+        items: (page.items ?? []).map(normaliseBalance),
+        nextCursor: page.nextCursor ?? null,
+        totalCount: page.totalCount ?? null,
+      }
+    }, inventoryError),
+    listMovements: translating(async (id, query) => {
+      const page = await http.get<RawInventoryPage<RawStockMovement>>(`${base(id)}/movements`, {
+        query: {
+          limit: query?.limit,
+          cursor: query?.cursor,
+          branchId: query?.branchId,
+          itemId: query?.itemId,
+          type: query?.type,
+        },
+      })
+      return {
+        items: (page.items ?? []).map(normaliseMovement),
+        nextCursor: page.nextCursor ?? null,
+        totalCount: page.totalCount ?? null,
+      }
+    }, inventoryError),
+    recordOpening: translating(
+      async (id, input) =>
+        normaliseResult(await http.post<RawMovementResult>(`${base(id)}/opening`, { body: input })),
+      inventoryError,
+    ),
+    receiveStock: translating(
+      async (id, input) =>
+        normaliseResult(await http.post<RawMovementResult>(`${base(id)}/receive`, { body: input })),
+      inventoryError,
+    ),
+    adjustStock: translating(
+      async (id, input) =>
+        normaliseResult(await http.post<RawMovementResult>(`${base(id)}/adjust`, { body: input })),
+      inventoryError,
+    ),
+  }
+}
+
+const COLLECTION_CODE_ERROR_CODES: CollectionCodeServiceErrorCode[] = [
+  'unauthenticated',
+  'not_found',
+  'forbidden',
+  'validation',
+  'code_status_invalid',
+  'assignee_not_eligible',
+  'branch_not_eligible',
+  'already_assigned',
+  'assignment_changed',
+  'no_open_assignment',
+  'client_request_id_reuse',
+  'settlement_account_unavailable',
+  'version_conflict',
+  'service_unavailable',
+]
+const collectionCodeError = (error: unknown) =>
+  mapHttpError(
+    error,
+    (code, message) => new CollectionCodeServiceError(code, message),
+    COLLECTION_CODE_ERROR_CODES,
+  )
+
+/** The server omits null fields from its JSON, so a missing field means null. Normalised once, here. */
+type RawAssignment = Omit<
+  CodeAssignment,
+  | 'membershipId'
+  | 'assigneeUserId'
+  | 'assigneeRole'
+  | 'collectionPointLabel'
+  | 'branchId'
+  | 'branchName'
+  | 'branchCode'
+  | 'validTo'
+  | 'endedByName'
+  | 'endReason'
+  | 'assigneeCurrentStatus'
+> &
+  Partial<
+    Pick<
+      CodeAssignment,
+      | 'membershipId'
+      | 'assigneeUserId'
+      | 'assigneeRole'
+      | 'collectionPointLabel'
+      | 'branchId'
+      | 'branchName'
+      | 'branchCode'
+      | 'validTo'
+      | 'endedByName'
+      | 'endReason'
+      | 'assigneeCurrentStatus'
+    >
+  >
+type RawCollectionCode = Omit<
+  CollectionCode,
+  | 'branchId'
+  | 'branchName'
+  | 'branchCode'
+  | 'statusReason'
+  | 'bankRequestRef'
+  | 'externalCode'
+  | 'approval'
+  | 'eligibilityIssues'
+  | 'currentAssignment'
+> &
+  Partial<
+    Pick<
+      CollectionCode,
+      'branchId' | 'branchName' | 'branchCode' | 'statusReason' | 'bankRequestRef' | 'externalCode'
+    >
+  > & {
+    /** The server omits the evidence reference for people who do not manage codes. */
+    approval?: (Omit<CodeApproval, 'evidenceRef'> & { evidenceRef?: string | null }) | null
+    eligibilityIssues?: EligibilityIssue[]
+    currentAssignment?: RawAssignment | null
+  }
+interface RawCollectionCodePage<T> {
+  items?: T[]
+  nextCursor?: string | null
+}
+const normaliseAssignment = (raw: RawAssignment): CodeAssignment => ({
+  ...raw,
+  membershipId: raw.membershipId ?? null,
+  assigneeUserId: raw.assigneeUserId ?? null,
+  assigneeRole: raw.assigneeRole ?? null,
+  collectionPointLabel: raw.collectionPointLabel ?? null,
+  branchId: raw.branchId ?? null,
+  branchName: raw.branchName ?? null,
+  branchCode: raw.branchCode ?? null,
+  validTo: raw.validTo ?? null,
+  endedByName: raw.endedByName ?? null,
+  endReason: raw.endReason ?? null,
+  assigneeCurrentStatus: raw.assigneeCurrentStatus ?? null,
+})
+const normaliseCollectionCode = (raw: RawCollectionCode): CollectionCode => ({
+  ...raw,
+  branchId: raw.branchId ?? null,
+  branchName: raw.branchName ?? null,
+  branchCode: raw.branchCode ?? null,
+  statusReason: raw.statusReason ?? null,
+  bankRequestRef: raw.bankRequestRef ?? null,
+  // The server sends the bank-issued code only for an approved code; anything else is "not issued", never a placeholder.
+  externalCode: raw.externalCode ?? null,
+  approval: raw.approval
+    ? { ...raw.approval, evidenceRef: raw.approval.evidenceRef ?? null }
+    : null,
+  eligibilityIssues: raw.eligibilityIssues ?? [],
+  currentAssignment: raw.currentAssignment ? normaliseAssignment(raw.currentAssignment) : null,
+})
+
+/**
+ * The registry of merchant collection codes. Merchant identity is only ever the path, never the body. There is no endpoint, and so
+ * no method here, that approves or activates a code: that is done by the bank or an evidenced operator process, not by a merchant.
+ */
+export function createHttpCollectionCodeService(http: HttpClient): CollectionCodeService {
+  const base = (merchantId: string) => `${m(merchantId)}/collection-codes`
+  const codePath = (merchantId: string, codeId: string) => `${base(merchantId)}/${codeId}`
+  return {
+    getOptions: translating(async (id) => {
+      const options = await http.get<{
+        destinations?: CollectionCodeOptions['destinations']
+        branches?: CollectionCodeOptions['branches']
+        members?: CollectionCodeOptions['members']
+      }>(`${base(id)}/options`)
+      return {
+        destinations: options.destinations ?? [],
+        branches: options.branches ?? [],
+        members: (options.members ?? []).map((member) => ({
+          ...member,
+          branchIds: member.branchIds ?? [],
+        })),
+      }
+    }, collectionCodeError),
+    listCodes: translating(async (id, query) => {
+      const page = await http.get<RawCollectionCodePage<RawCollectionCode>>(base(id), {
+        query: {
+          limit: query?.limit,
+          cursor: query?.cursor,
+          status: query?.status,
+          branchId: query?.branchId,
+          q: query?.q?.trim() || undefined,
+        },
+      })
+      return {
+        items: (page.items ?? []).map(normaliseCollectionCode),
+        nextCursor: page.nextCursor ?? null,
+      }
+    }, collectionCodeError),
+    getCode: translating(
+      async (id, codeId) =>
+        normaliseCollectionCode(await http.get<RawCollectionCode>(codePath(id, codeId))),
+      collectionCodeError,
+    ),
+    requestCode: translating(async (id, input) => {
+      const result = await http.post<{ code: RawCollectionCode; replayed?: boolean }>(base(id), {
+        body: input,
+      })
+      return { code: normaliseCollectionCode(result.code), replayed: result.replayed ?? false }
+    }, collectionCodeError),
+    listAssignments: translating(async (id, codeId, query) => {
+      const page = await http.get<RawCollectionCodePage<RawAssignment>>(
+        `${codePath(id, codeId)}/assignments`,
+        { query: { limit: query?.limit, cursor: query?.cursor } },
+      )
+      return {
+        items: (page.items ?? []).map(normaliseAssignment),
+        nextCursor: page.nextCursor ?? null,
+      }
+    }, collectionCodeError),
+    assign: translating(
+      async (id, codeId, input) =>
+        normaliseAssignment(
+          await http.post<RawAssignment>(`${codePath(id, codeId)}/assignments`, { body: input }),
+        ),
+      collectionCodeError,
+    ),
+    endAssignment: translating(
+      async (id, codeId, input) =>
+        normaliseAssignment(
+          await http.post<RawAssignment>(`${codePath(id, codeId)}/assignments/end`, {
+            body: input,
+          }),
+        ),
+      collectionCodeError,
+    ),
+    reassign: translating(
+      async (id, codeId, input) =>
+        normaliseAssignment(
+          await http.post<RawAssignment>(`${codePath(id, codeId)}/reassign`, { body: input }),
+        ),
+      collectionCodeError,
+    ),
+    declareSubmission: translating(
+      async (id, codeId, input) =>
+        normaliseCollectionCode(
+          await http.post<RawCollectionCode>(`${codePath(id, codeId)}/submission`, { body: input }),
+        ),
+      collectionCodeError,
+    ),
+    suspend: translating(
+      async (id, codeId, input) =>
+        normaliseCollectionCode(
+          await http.post<RawCollectionCode>(`${codePath(id, codeId)}/suspend`, { body: input }),
+        ),
+      collectionCodeError,
+    ),
+    deactivate: translating(
+      async (id, codeId, input) =>
+        normaliseCollectionCode(
+          await http.post<RawCollectionCode>(`${codePath(id, codeId)}/deactivate`, { body: input }),
+        ),
+      collectionCodeError,
+    ),
+    getMyCode: translating(async (id): Promise<MyCollectionCode> => {
+      const mine = await http.get<{
+        assignment?: RawAssignment | null
+        code?:
+          | (Omit<MyCollectionCodeSummary, 'branchName' | 'externalCode'> & {
+              branchName?: string | null
+              externalCode?: string | null
+            })
+          | null
+      }>(`${base(id)}/mine`)
+      return {
+        assignment: mine.assignment ? normaliseAssignment(mine.assignment) : null,
+        code: mine.code
+          ? {
+              ...mine.code,
+              branchName: mine.code.branchName ?? null,
+              // Only ever shown for a payable code; a missing value is "no code to show".
+              externalCode: mine.code.externalCode ?? null,
+            }
+          : null,
+      }
+    }, collectionCodeError),
+  }
+}
+
+/**
+ * Equity activation (KYC). The business is only ever the path. There is no endpoint, and so no method here, that sets a status, records
+ * a hand-off or records a bank decision: those need evidence and are not a merchant's to record.
+ */
+export function createHttpKycService(http: HttpClient): KycService {
+  const base = (merchantId: string) => `${m(merchantId)}/kyc`
+  const app = (merchantId: string, applicationId: string) =>
+    `${base(merchantId)}/applications/${applicationId}`
+  return {
+    getOptions: translating((id) => http.get(`${base(id)}/options`), kycError),
+    listApplications: translating((id) => http.get(`${base(id)}/applications`), kycError),
+    getApplication: translating((id, applicationId) => http.get(app(id, applicationId)), kycError),
+    startApplication: translating(
+      (id, clientOperationId) =>
+        http.post(`${base(id)}/applications`, { body: { clientOperationId } }),
+      kycError,
+    ),
+    saveAnswers: translating(
+      (id, applicationId, expectedVersion, answers) =>
+        http.put(`${app(id, applicationId)}/answers`, { body: { expectedVersion, answers } }),
+      kycError,
+    ),
+    declareDocument: translating(
+      (id, applicationId, documentKey, expectedVersion, declaredReady) =>
+        http.put(`${app(id, applicationId)}/documents/${encodeURIComponent(documentKey)}`, {
+          body: { expectedVersion, declaredReady },
+        }),
+      kycError,
+    ),
+    recordConsent: translating(
+      (id, applicationId, expectedVersion, consentTextVersion) =>
+        http.post(`${app(id, applicationId)}/consent`, {
+          body: { expectedVersion, consentTextVersion, affirmed: true },
+        }),
+      kycError,
+    ),
+    submit: translating(
+      (id, applicationId, expectedVersion, submissionRequestId) =>
+        http.post(`${app(id, applicationId)}/submit`, {
+          body: { expectedVersion, submissionRequestId },
+        }),
+      kycError,
+    ),
+    respondToInformationRequest: translating(
+      (id, applicationId, requestId, response) =>
+        http.post(`${app(id, applicationId)}/information-requests/${requestId}/response`, {
+          body: { response },
+        }),
+      kycError,
+    ),
+    revealValue: translating(
+      (id, applicationId, fieldKey) =>
+        http.post(`${app(id, applicationId)}/answers/${encodeURIComponent(fieldKey)}/reveal`),
+      kycError,
+    ),
+  }
+}
+
 /** Anonymous customer pages: only public tokens, no merchant context, no session. */
 export function createHttpPublicPaymentService(http: HttpClient): PublicPaymentService {
   const base = '/public/payment-profiles'
@@ -525,7 +1657,6 @@ export function createHttpPublicPaymentService(http: HttpClient): PublicPaymentS
     ),
   }
 }
-
 
 export function createHttpReportsService(http: HttpClient): ReportsService {
   return {

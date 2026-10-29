@@ -60,7 +60,14 @@ public interface BankingProviderAdapter {
             Instant occurredAt,
             /** Opaque ID of the merchant account the money reached. */
             String providerAccountId,
-            boolean simulated) {}
+            boolean simulated,
+            /**
+             * The collection code the BANK says received the money, exactly as it reported it, or null when the event carries none. It is
+             * evidence only when the event was authenticated, and only an unambiguous match to a code of this merchant's own settlement
+             * account attributes anything. Whether a real bank returns it at all is an open question (architecture A4); this field is
+             * OuPay's normalised shape, not any bank's schema.
+             */
+            String reportedCode) {}
 
     record AccountLinkValidation(boolean valid, String providerAccountId, String maskedAccount, String failureReason) {}
 

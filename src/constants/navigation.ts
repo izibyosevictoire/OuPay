@@ -1,13 +1,19 @@
 import {
   BarChart3,
+  Boxes,
   Building2,
   CreditCard,
+  Package,
   FileText,
   HandCoins,
+  Hash,
+  ShieldCheck,
+  KeyRound,
   Landmark,
   LayoutDashboard,
   QrCode,
   Settings,
+  ShoppingCart,
   Users,
   type LucideIcon,
 } from 'lucide-react'
@@ -44,12 +50,45 @@ export const PRIMARY_NAVIGATION: NavigationItem[] = [
     requiresMode: 'SIMPLIFIED',
   },
   {
+    // The business counterpart of Collect Payment: a cart of goods and services from the catalog, saved as a draft.
+    label: 'POS billing',
+    path: '/pos',
+    icon: ShoppingCart,
+    description: 'Build a cart from the catalog',
+    permission: 'invoices:create',
+    requiresMode: 'BUSINESS',
+  },
+  {
+    // For people who hold a collection code (the page explains when you hold none). Both operating modes.
+    label: 'Code checkout',
+    path: '/code-checkout',
+    icon: Hash,
+    description: 'Bill an amount through your collection code',
+    permission: 'invoices:create',
+  },
+  {
     label: 'Invoices',
     limitedLabel: 'Assigned invoices',
     path: '/invoices',
     icon: FileText,
     description: 'Create and track invoices',
     permission: 'invoices:view',
+  },
+  {
+    label: 'Catalog',
+    path: '/catalog',
+    icon: Package,
+    description: 'Goods and services you sell',
+    permission: 'catalog:view',
+    requiresMode: 'BUSINESS',
+  },
+  {
+    label: 'Inventory',
+    path: '/inventory',
+    icon: Boxes,
+    description: 'Stock of goods by branch',
+    permission: 'inventory:view',
+    requiresMode: 'BUSINESS',
   },
   {
     label: 'Payments',
@@ -66,6 +105,13 @@ export const PRIMARY_NAVIGATION: NavigationItem[] = [
     icon: QrCode,
     description: 'QR codes and NFC payment links',
     permission: 'payment_profiles:view',
+  },
+  {
+    // Every member gets this entry: owners and managers manage the registry, everyone else sees their own code. Both operating modes.
+    label: 'Collection codes',
+    path: '/collection-codes',
+    icon: KeyRound,
+    description: 'Payment collection codes and who holds them',
   },
   {
     label: 'Banking',
@@ -87,6 +133,13 @@ export const PRIMARY_NAVIGATION: NavigationItem[] = [
     icon: Building2,
     description: 'Manage branches',
     permission: 'branches:manage',
+  },
+  {
+    label: 'Equity activation',
+    path: '/equity-activation',
+    icon: ShieldCheck,
+    description: 'Prepare your Equity business application',
+    permission: 'kyc:manage',
   },
   {
     label: 'Reports',

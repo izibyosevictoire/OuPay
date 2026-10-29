@@ -7,12 +7,15 @@ import { QueryBoundary } from '@/components/common/QueryBoundary'
 import { SampleDataNotice } from '@/components/common/SampleDataNotice'
 import {
   BankTransactionStatusBadge,
+  CodePaymentStageBadge,
   ReconciliationStatusBadge,
   SimulatedBadge,
 } from '@/components/common/StatusBadge'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input, Select } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { CODE_PAYMENT_STAGE_LABELS, TRANSACTIONS_PAGE_SIZE } from '@/constants/codePayment'
 import {
   BANK_TRANSACTION_STATUS_LABELS,
   PROVIDER_LABELS,
@@ -20,15 +23,18 @@ import {
 } from '@/constants/payment'
 import { usePermission } from '@/features/auth/permissions/usePermission'
 import { formatDateTime, formatRwf } from '@/lib/format'
+import type { BankAttribution, CodePaymentStage } from '@/types/bankAttribution'
 import type {
   BankTransactionStatus,
   BankTransactionView,
   ReconciliationStatus,
 } from '@/types/payment'
-import { useBankTransactions } from './paymentQueries'
+import { isCodePayment } from './codePayment'
+import { useBankAttributions, useBankTransactions } from './paymentQueries'
 import { invoiceNumbersOf, referenceOf, whoOf } from './transactionHelpers'
 
 type SortKey = 'NEWEST' | 'OLDEST' | 'HIGHEST' | 'LOWEST'
+type StageFilter = 'ALL' | 'CODE' | 'NOT_CODE' | CodePaymentStage
 
 const SORTERS: Record<SortKey, (a: BankTransactionView, b: BankTransactionView) => number> = {
   NEWEST: (a, b) => b.providerOccurredAt.localeCompare(a.providerOccurredAt),
@@ -37,40 +43,71 @@ const SORTERS: Record<SortKey, (a: BankTransactionView, b: BankTransactionView) 
   LOWEST: (a, b) => a.amount - b.amount,
 }
 
-function Badges({ transaction }: { transaction: BankTransactionView }) {
+type AttributionOf = (transactionId: string) => BankAttribution | undefined
+
+/** The sale and its agent, in the words the evidence allows: an agent is named only when the bank evidence confirms it. */
+function saleLine(a: BankAttribution): string {
+  const parts = [
+    a.saleReference ? `Sale ${a.saleReference}` : null,
+    a.collectionCode?.label ?? null,
+  ]
+  if (a.agentName) parts.push(`Agent ${a.agentName}`)
+  return parts.filter(Boolean).join(' · ')
+}
+
+function Badges({
+  transaction,
+  attribution,
+}: {
+  transaction: BankTransactionView
+  attribution: BankAttribution | undefined
+}) {
   return (
     <span className="flex flex-wrap items-center gap-1">
       <BankTransactionStatusBadge status={transaction.status} />
       {transaction.status !== 'PENDING' && transaction.status !== 'FAILED' && (
         <ReconciliationStatusBadge status={transaction.reconciliationStatus} />
       )}
+      {isCodePayment(attribution) && <CodePaymentStageBadge stage={attribution.stage} />}
       {transaction.isSimulated && <SimulatedBadge />}
     </span>
   )
 }
 
-function TransactionsList({ transactions }: { transactions: BankTransactionView[] }) {
+function TransactionsList({
+  transactions,
+  attributionOf,
+}: {
+  transactions: BankTransactionView[]
+  attributionOf: AttributionOf
+}) {
   return (
     <>
-      <ul className="divide-y lg:hidden">
-        {transactions.map((t) => (
-          <li key={t.id} className="space-y-1.5 py-3 first:pt-0 last:pb-0">
-            <div className="flex items-start justify-between gap-3">
-              <Link
-                to={`/transactions/${t.id}`}
-                className="min-w-0 truncate rounded-sm font-medium text-primary hover:underline"
-              >
-                {referenceOf(t)}
-              </Link>
-              <span className="shrink-0 font-semibold tabular-nums">{formatRwf(t.amount)}</span>
-            </div>
-            <Badges transaction={t} />
-            <p className="text-xs text-muted-foreground">
-              {PROVIDER_LABELS[t.provider]} · Invoice: {invoiceNumbersOf(t)} · {whoOf(t)} ·{' '}
-              {formatDateTime(t.providerOccurredAt)}
-            </p>
-          </li>
-        ))}
+      <ul className="divide-y lg:hidden" aria-label="Bank transactions">
+        {transactions.map((t) => {
+          const attribution = attributionOf(t.id)
+          return (
+            <li key={t.id} className="space-y-1.5 py-3 first:pt-0 last:pb-0">
+              <div className="flex items-start justify-between gap-3">
+                <Link
+                  to={`/transactions/${t.id}`}
+                  className="min-w-0 truncate rounded-sm font-medium text-primary hover:underline"
+                >
+                  {referenceOf(t)}
+                </Link>
+                <span className="shrink-0 font-semibold tabular-nums">{formatRwf(t.amount)}</span>
+              </div>
+              <Badges transaction={t} attribution={attribution} />
+              <p className="text-xs text-muted-foreground">
+                {PROVIDER_LABELS[t.provider]} · Invoice: {invoiceNumbersOf(t)} · {whoOf(t)} ·{' '}
+                {formatDateTime(t.providerOccurredAt)}
+              </p>
+              {isCodePayment(attribution) && (
+                <p className="text-xs text-muted-foreground">{saleLine(attribution)}</p>
+              )}
+            </li>
+          )
+        })}
       </ul>
       <table className="hidden w-full text-left lg:table">
         <caption className="sr-only">Bank transactions</caption>
@@ -90,62 +127,144 @@ function TransactionsList({ transactions }: { transactions: BankTransactionView[
           </tr>
         </thead>
         <tbody className="divide-y">
-          {transactions.map((t) => (
-            <tr key={t.id}>
-              <th scope="row" className="whitespace-nowrap py-3 pr-3 font-medium">
-                <Link
-                  to={`/transactions/${t.id}`}
-                  className="rounded-sm text-primary hover:underline"
-                >
-                  {referenceOf(t)}
-                </Link>
-              </th>
-              <td className="py-3 pr-3 text-muted-foreground">{PROVIDER_LABELS[t.provider]}</td>
-              <td className="py-3 pr-3">{invoiceNumbersOf(t)}</td>
-              <td className="py-3 pr-3 text-muted-foreground">{whoOf(t)}</td>
-              <td className="whitespace-nowrap py-3 pr-3 text-muted-foreground">
-                {formatDateTime(t.providerOccurredAt)}
-              </td>
-              <td className="whitespace-nowrap py-3 text-right font-medium tabular-nums">
-                {formatRwf(t.amount)}
-              </td>
-              <td className="py-3 pl-4">
-                <Badges transaction={t} />
-              </td>
-            </tr>
-          ))}
+          {transactions.map((t) => {
+            const attribution = attributionOf(t.id)
+            return (
+              <tr key={t.id}>
+                <th scope="row" className="whitespace-nowrap py-3 pr-3 font-medium">
+                  <Link
+                    to={`/transactions/${t.id}`}
+                    className="rounded-sm text-primary hover:underline"
+                  >
+                    {referenceOf(t)}
+                  </Link>
+                </th>
+                <td className="py-3 pr-3 text-muted-foreground">{PROVIDER_LABELS[t.provider]}</td>
+                <td className="py-3 pr-3">{invoiceNumbersOf(t)}</td>
+                <td className="py-3 pr-3 text-muted-foreground">{whoOf(t)}</td>
+                <td className="whitespace-nowrap py-3 pr-3 text-muted-foreground">
+                  {formatDateTime(t.providerOccurredAt)}
+                </td>
+                <td className="whitespace-nowrap py-3 text-right font-medium tabular-nums">
+                  {formatRwf(t.amount)}
+                </td>
+                <td className="py-3 pl-4">
+                  <Badges transaction={t} attribution={attribution} />
+                  {isCodePayment(attribution) && (
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      {saleLine(attribution)}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </>
   )
 }
 
+function Pagination({
+  page,
+  pageCount,
+  total,
+  onPage,
+}: {
+  page: number
+  pageCount: number
+  total: number
+  onPage: (page: number) => void
+}) {
+  if (total <= TRANSACTIONS_PAGE_SIZE) return null
+  const from = page * TRANSACTIONS_PAGE_SIZE + 1
+  const to = Math.min(total, (page + 1) * TRANSACTIONS_PAGE_SIZE)
+  return (
+    <nav
+      aria-label="Transactions pages"
+      className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t pt-3"
+    >
+      <p className="text-xs text-muted-foreground" aria-live="polite">
+        Showing {from}–{to} of {total}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" disabled={page === 0} onClick={() => onPage(page - 1)}>
+          Previous
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          Page {page + 1} of {pageCount}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={page >= pageCount - 1}
+          onClick={() => onPage(page + 1)}
+        >
+          Next
+        </Button>
+      </div>
+    </nav>
+  )
+}
+
 export function TransactionsPage() {
   const query = useBankTransactions()
+  const attributions = useBankAttributions()
   const { scope } = usePermission('transactions:view')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<'ALL' | BankTransactionStatus>('ALL')
   const [reconciliation, setReconciliation] = useState<'ALL' | ReconciliationStatus>('ALL')
   const [provider, setProvider] = useState('ALL')
+  const [stage, setStage] = useState<StageFilter>('ALL')
   const [sort, setSort] = useState<SortKey>('NEWEST')
+  // The page belongs to the filters it was chosen under: a different filter is a different list, which starts again from its first page.
+  const filterKey = [search, status, reconciliation, provider, stage, sort].join('|')
+  const [pageState, setPageState] = useState({ key: filterKey, page: 0 })
+  const page = pageState.key === filterKey ? pageState.page : 0
+  const setPage = (next: number) => setPageState({ key: filterKey, page: next })
 
   const all = useMemo(() => query.data ?? [], [query.data])
+  const byTransaction = useMemo(
+    () => new Map((attributions.data ?? []).map((a) => [a.transactionId, a])),
+    [attributions.data],
+  )
+  const attributionOf = useMemo<AttributionOf>(
+    () => (transactionId) => byTransaction.get(transactionId),
+    [byTransaction],
+  )
   const providers = useMemo(() => [...new Set(all.map((t) => t.provider))], [all])
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
     return all
-      .filter(
-        (t) =>
+      .filter((t) => {
+        const attribution = attributionOf(t.id)
+        const code = isCodePayment(attribution)
+        const codeText = attribution
+          ? `${attribution.saleReference ?? ''} ${attribution.agentName ?? ''} ${attribution.collectionCode?.label ?? ''}`
+          : ''
+        return (
           (status === 'ALL' || t.status === status) &&
           (reconciliation === 'ALL' || t.reconciliationStatus === reconciliation) &&
           (provider === 'ALL' || t.provider === provider) &&
+          (stage === 'ALL' ||
+            (stage === 'CODE' && code) ||
+            (stage === 'NOT_CODE' && !code) ||
+            (code && attribution?.stage === stage)) &&
           (!term ||
-            `${t.paymentReference ?? ''} ${t.payerDisplayName} ${invoiceNumbersOf(t)} ${t.providerTransactionId}`
+            `${t.paymentReference ?? ''} ${t.payerDisplayName} ${invoiceNumbersOf(t)} ${t.providerTransactionId} ${codeText}`
               .toLowerCase()
-              .includes(term)),
-      )
+              .includes(term))
+        )
+      })
       .sort(SORTERS[sort])
-  }, [all, search, status, reconciliation, provider, sort])
+  }, [all, attributionOf, search, status, reconciliation, provider, stage, sort])
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / TRANSACTIONS_PAGE_SIZE))
+  const safePage = Math.min(page, pageCount - 1)
+  const visible = filtered.slice(
+    safePage * TRANSACTIONS_PAGE_SIZE,
+    (safePage + 1) * TRANSACTIONS_PAGE_SIZE,
+  )
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -162,7 +281,7 @@ export function TransactionsPage() {
         <form
           role="search"
           aria-label="Filter transactions"
-          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
+          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
           onSubmit={(event) => event.preventDefault()}
         >
           <div className="sm:col-span-2 lg:col-span-1">
@@ -172,7 +291,7 @@ export function TransactionsPage() {
             <Input
               id="tx-search"
               type="search"
-              placeholder="Reference, payer or invoice"
+              placeholder="Reference, payer, invoice or sale"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -212,6 +331,25 @@ export function TransactionsPage() {
             </Select>
           </div>
           <div>
+            <label htmlFor="tx-stage" className="mb-1 block text-xs font-medium">
+              Code payment
+            </label>
+            <Select
+              id="tx-stage"
+              value={stage}
+              onChange={(e) => setStage(e.target.value as StageFilter)}
+            >
+              <option value="ALL">All transactions</option>
+              <option value="CODE">Code payments only</option>
+              <option value="NOT_CODE">Not code payments</option>
+              {Object.entries(CODE_PAYMENT_STAGE_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
             <label htmlFor="tx-provider" className="mb-1 block text-xs font-medium">
               Provider
             </label>
@@ -237,6 +375,12 @@ export function TransactionsPage() {
           </div>
         </form>
       </Card>
+      {attributions.isError && (
+        <p role="status" className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
+          Code payment details could not be loaded, so only the bank status and reconciliation are
+          shown.
+        </p>
+      )}
       <Card className="p-4 sm:p-5">
         <QueryBoundary
           query={query}
@@ -263,7 +407,15 @@ export function TransactionsPage() {
                 description="Try clearing a filter or searching for something else."
               />
             ) : (
-              <TransactionsList transactions={filtered} />
+              <>
+                <TransactionsList transactions={visible} attributionOf={attributionOf} />
+                <Pagination
+                  page={safePage}
+                  pageCount={pageCount}
+                  total={filtered.length}
+                  onPage={setPage}
+                />
+              </>
             )
           }
         </QueryBoundary>

@@ -17,6 +17,7 @@ import { newId, type LedgerStore } from './mockLedgerStore'
 export type LedgerRuleCode =
   | 'transaction_not_confirmed'
   | 'invoice_not_payable'
+  | 'code_sale_not_payable'
   | 'exceeds_remaining'
   | 'exceeds_unapplied'
   | 'allocation_not_active'
@@ -268,6 +269,13 @@ export function createLedgerOperations(
       throw new LedgerRuleError(
         'invoice_not_payable',
         `Invoice ${invoice.invoiceNumber} cannot receive payments.`,
+      )
+    }
+    // A demonstration code sale never takes bank money (every mock code sale is one), by any route; the server enforces the same rule.
+    if (invoice.saleChannel === 'CODE') {
+      throw new LedgerRuleError(
+        'code_sale_not_payable',
+        `Invoice ${invoice.invoiceNumber} is a demonstration sale. It takes no real payment, so no bank money can be applied to it.`,
       )
     }
     if (!Number.isInteger(amount) || amount <= 0) {

@@ -83,7 +83,7 @@ class ApiSecurityIT extends IntegrationTest {
                 "GET /api/v1/public/payment-profiles/{token}/requests/{reference}",
                 "POST /api/v1/public/payment-profiles/{token}/requests/{reference}/instructions-opened",
                 "POST /api/v1/public/payment-profiles/{token}/requests/{reference}/claim",
-                "GET /api/v1/public/invitations/{token}", "POST /api/v1/integrations/{provider}/events");
+                "GET /api/v1/public/invitations/{token}", "GET /api/v1/public/code-sales/{reference}", "POST /api/v1/integrations/{provider}/events");
     }
 
     @Test

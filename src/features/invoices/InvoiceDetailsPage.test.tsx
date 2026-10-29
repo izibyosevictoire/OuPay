@@ -6,6 +6,7 @@ import { SAMPLE_BRANCH_IDS } from '@/services/mock/sampleOrganization'
 import { SAMPLE_MERCHANT_ID, SAMPLE_SECOND_MERCHANT_ID } from '@/services/mock/sampleMerchants'
 import { getActiveTestBackend, useFastBackend } from '@/test/merchantTestDouble'
 import { renderAppAt } from '@/test/renderApp'
+import { pinSeedClock, restoreClock } from '@/test/seedClock'
 
 const heading = (name: string) => screen.findByRole('heading', { level: 1, name })
 
@@ -31,7 +32,12 @@ const actionNames = () =>
   )
 
 beforeEach(() => {
+  pinSeedClock()
   useFastBackend()
+})
+
+afterEach(() => {
+  restoreClock()
 })
 
 describe('invoice details', () => {

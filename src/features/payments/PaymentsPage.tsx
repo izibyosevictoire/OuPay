@@ -5,7 +5,11 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { PageHeader } from '@/components/common/PageHeader'
 import { QueryBoundary } from '@/components/common/QueryBoundary'
 import { SampleDataNotice } from '@/components/common/SampleDataNotice'
-import { ReconciliationStatusBadge, SimulatedBadge } from '@/components/common/StatusBadge'
+import {
+  CodePaymentStageBadge,
+  ReconciliationStatusBadge,
+  SimulatedBadge,
+} from '@/components/common/StatusBadge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -21,7 +25,8 @@ import {
   MarkReviewedDialog,
   ReverseAllocationDialog,
 } from './ReconciliationDialogs'
-import { useAllocations, useBankTransactions } from './paymentQueries'
+import { isCodePayment } from './codePayment'
+import { useAllocations, useBankAttributions, useBankTransactions } from './paymentQueries'
 import { hasUnappliedMoney, referenceOf, viewNeedsReview, whoOf } from './transactionHelpers'
 
 type TabId = 'review' | 'unapplied' | 'partial' | 'history'
@@ -48,6 +53,8 @@ function TransactionCards({
   onDialog: (dialog: Dialog) => void
   empty: string
 }) {
+  const attributions = useBankAttributions()
+  const byTransaction = new Map((attributions.data ?? []).map((a) => [a.transactionId, a]))
   if (transactions.length === 0) {
     return <EmptyState icon={CreditCard} title="Nothing here" description={empty} />
   }
@@ -76,6 +83,9 @@ function TransactionCards({
           </div>
           <div className="flex flex-wrap items-center gap-1">
             <ReconciliationStatusBadge status={t.reconciliationStatus} />
+            {isCodePayment(byTransaction.get(t.id)) && (
+              <CodePaymentStageBadge stage={byTransaction.get(t.id)!.stage} />
+            )}
             {t.isSimulated && <SimulatedBadge />}
           </div>
           {t.reviewReason && viewNeedsReview(t) && (

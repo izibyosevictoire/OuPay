@@ -23,7 +23,9 @@ import {
   MarkReviewedDialog,
   ReverseAllocationDialog,
 } from './ReconciliationDialogs'
-import { useBankTransaction } from './paymentQueries'
+import { CodePaymentPanel } from './CodePaymentPanel'
+import { isCodePayment } from './codePayment'
+import { useBankAttribution, useBankTransaction } from './paymentQueries'
 import { referenceOf, viewNeedsReview, whoOf } from './transactionHelpers'
 
 function NotFound() {
@@ -49,6 +51,7 @@ type Dialog =
 function Details({ details }: { details: BankTransactionDetails }) {
   const { transaction, allocations, auditHistory } = details
   const [dialog, setDialog] = useState<Dialog>(null)
+  const attribution = useBankAttribution(transaction.id)
   const needsReview = viewNeedsReview(transaction)
   const canAllocate = transaction.status === 'CONFIRMED' && transaction.unappliedAmount > 0
 
@@ -110,6 +113,13 @@ function Details({ details }: { details: BankTransactionDetails }) {
           ]}
         />
       </Card>
+      {isCodePayment(attribution.data) && (
+        <CodePaymentPanel
+          attribution={attribution.data}
+          auditHistory={auditHistory}
+          simulated={transaction.isSimulated}
+        />
+      )}
       <Card>
         <CardHeader>
           <CardTitle>Allocations</CardTitle>

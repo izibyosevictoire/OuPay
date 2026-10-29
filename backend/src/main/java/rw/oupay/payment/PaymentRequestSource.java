@@ -16,7 +16,8 @@ public enum PaymentRequestSource {
     OPEN,
     INVOICE,
     POS,
-    SIMPLIFIED;
+    SIMPLIFIED,
+    CODE;
 
     /** The source of a request that collects for an invoice created through {@code channel}. */
     public static PaymentRequestSource forInvoice(SaleChannel channel) {
@@ -24,6 +25,7 @@ public enum PaymentRequestSource {
             case INVOICE -> INVOICE;
             case POS -> POS;
             case SIMPLIFIED -> SIMPLIFIED;
+            case CODE -> CODE;
         };
     }
 }

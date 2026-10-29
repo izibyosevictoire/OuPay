@@ -38,6 +38,25 @@ export const PERMISSION_DEFINITIONS = {
   'branches:manage': { OWNER: ALL, MANAGER: ALL, CASHIER: NONE },
   'cashiers:manage': { OWNER: ALL, MANAGER: ALL, CASHIER: NONE },
   'membership:manage': { OWNER: ALL, MANAGER: NONE, CASHIER: NONE },
+  // The goods-and-services catalog (BUSINESS mode). Cashiers may read it (they will sell from it) but never change it.
+  'catalog:view': { OWNER: ALL, MANAGER: ALL, CASHIER: ALL },
+  'catalog:manage': { OWNER: ALL, MANAGER: ALL, CASHIER: NONE },
+  // Branch-level stock of goods (BUSINESS mode). Viewing: owners and managers see every branch, a cashier only the branches
+  // they are assigned to. Recording stock (`receive`, and `adjust` which also covers opening stock) is limited for a manager
+  // to the branches they are assigned to, and never granted to cashiers.
+  'inventory:view': { OWNER: ALL, MANAGER: ALL, CASHIER: LIMITED },
+  'inventory:receive': { OWNER: ALL, MANAGER: LIMITED, CASHIER: NONE },
+  'inventory:adjust': { OWNER: ALL, MANAGER: LIMITED, CASHIER: NONE },
+  // The registry of merchant collection codes and who holds them (internal bookkeeping; it never approves a code). Viewing is
+  // for owners and managers. Assigning agents is limited for a manager to codes of branches they work at. Requesting codes,
+  // recording a bank request, suspending and deactivating are the owner's, like bank linkage. Anyone with an active membership
+  // may see THEIR OWN code (no permission needed).
+  'collection_codes:view': { OWNER: ALL, MANAGER: ALL, CASHIER: NONE },
+  'collection_codes:assign': { OWNER: ALL, MANAGER: LIMITED, CASHIER: NONE },
+  'collection_codes:manage': { OWNER: ALL, MANAGER: NONE, CASHIER: NONE },
+  // Equity activation (KYC): the owner's alone. It holds a representative's identity details and the consent that covers them, so
+  // neither managers nor cashiers may read or change any of it.
+  'kyc:manage': { OWNER: ALL, MANAGER: NONE, CASHIER: NONE },
   'reports:view': { OWNER: ALL, MANAGER: ALL, CASHIER: NONE },
   'banking:manage': { OWNER: ALL, MANAGER: NONE, CASHIER: NONE },
 } as const satisfies Record<string, RoleGrants>

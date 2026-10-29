@@ -143,7 +143,10 @@ export function ManualAllocationDialog({
               )
             }
           </QueryBoundary>
-          <FormField label="Note">
+          <FormField
+            label="Note"
+            hint="Required when you apply money to a code sale: at least ten characters about what you checked. It is kept, with your name, in the history."
+          >
             {(control) => (
               <Textarea {...control} value={note} onChange={(e) => setNote(e.target.value)} />
             )}

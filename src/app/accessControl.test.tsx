@@ -174,12 +174,18 @@ describe('role-based navigation', () => {
     await heading('Dashboard')
     expect(navLabels()).toEqual([
       'Dashboard',
+      'POS billing',
+      'Code checkout',
       'Invoices',
+      'Catalog',
+      'Inventory',
       'Payments',
       'Payment links',
+      'Collection codes',
       'Banking',
       'Cashiers',
       'Branches',
+      'Equity activation',
       'Reports',
       'Settings',
     ])
@@ -190,9 +196,14 @@ describe('role-based navigation', () => {
     await heading('Dashboard')
     expect(navLabels()).toEqual([
       'Dashboard',
+      'POS billing',
+      'Code checkout',
       'Invoices',
+      'Catalog',
+      'Inventory',
       'Payments',
       'Payment links',
+      'Collection codes',
       'Cashiers',
       'Branches',
       'Reports',
@@ -205,9 +216,14 @@ describe('role-based navigation', () => {
     await heading('Dashboard')
     expect(navLabels()).toEqual([
       'Dashboard',
+      'POS billing',
+      'Code checkout',
       'Assigned invoices',
+      'Catalog',
+      'Inventory',
       'Payment confirmations',
       'My payment links',
+      'Collection codes',
       'Settings',
     ])
   })
@@ -333,9 +349,14 @@ describe('account menu and switching businesses', () => {
     await waitFor(() =>
       expect(navLabels()).toEqual([
         'Dashboard',
+        'POS billing',
+        'Code checkout',
         'Assigned invoices',
-          'Payment confirmations',
+        'Catalog',
+        'Inventory',
+        'Payment confirmations',
         'My payment links',
+        'Collection codes',
         'Settings',
       ]),
     )

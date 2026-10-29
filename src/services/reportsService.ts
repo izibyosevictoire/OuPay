@@ -15,8 +15,5 @@ export interface ReportDateRange {
 }
 
 export interface ReportsService {
-  getSummary(
-    merchantId: string,
-    range: ReportDateRange,
-  ): Promise<ReportSummary>
+  getSummary(merchantId: string, range: ReportDateRange): Promise<ReportSummary>
 }

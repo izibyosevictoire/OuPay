@@ -187,13 +187,19 @@ public class SimulatedProviderAdapter implements BankingProviderAdapter,
         if (reference.length() > 64) {
             throw new InvalidProviderEventException("The reference is too long.");
         }
+        // The simulator's OPTIONAL code field. Like the reference it is kept exactly as sent (matching is exact), and an over-long or
+        // unprintable value makes the whole event untrustworthy rather than being silently altered.
+        String code = node.path("collectionCode").isString() ? node.path("collectionCode").asString().trim() : "";
+        if (code.length() > 64 || code.chars().anyMatch(c -> c < 0x20 || c == 0x7f)) {
+            throw new InvalidProviderEventException("The collection code is not valid.");
+        }
         String payer = node.path("payerName").isString() ? node.path("payerName").asString().trim() : "";
         return new NormalizedBankEvent(ProviderId.EQUITY_MOCK, text(node, "eventId", 120), text(node, "transactionId", 120),
                 status, amount.asLong(),
                 // Kept exactly as sent: matching is exact, so no case folding or guessing.
                 reference.isEmpty() ? null : reference,
                 payer.isEmpty() ? "Unknown payer" : payer.substring(0, Math.min(payer.length(), 80)),
-                occurredAt, text(node, "accountRef", 64), true);
+                occurredAt, text(node, "accountRef", 64), true, code.isEmpty() ? null : code);
     }
 
     private static String text(JsonNode node, String field, int maxLength) {

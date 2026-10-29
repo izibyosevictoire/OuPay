@@ -13,7 +13,14 @@ import { VerifyEmailPage } from '@/features/auth/pages/VerifyEmailPage'
 import { BankingPage } from '@/features/banking/BankingPage'
 import { BranchDetailsPage } from '@/features/branches/BranchDetailsPage'
 import { BranchesPage } from '@/features/branches/BranchesPage'
+import { CatalogPage } from '@/features/catalog/CatalogPage'
+import { PosPage } from '@/features/pos/PosPage'
+import { CollectionCodesPage } from '@/features/collectionCodes/CollectionCodesPage'
+import { InventoryPage } from '@/features/inventory/InventoryPage'
+import { EquityActivationPage } from '@/features/equityActivation/EquityActivationPage'
 import { SimplifiedCheckoutPage } from '@/features/checkout/SimplifiedCheckoutPage'
+import { CodeCheckoutPage } from '@/features/codeCheckout/CodeCheckoutPage'
+import { PublicCodeSalePage } from '@/features/codeCheckout/PublicCodeSalePage'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { BankSimulatorPage } from '@/features/demo/BankSimulatorPage'
 import { EditInvoicePage } from '@/features/invoices/EditInvoicePage'
@@ -46,7 +53,13 @@ const BUILT_MODULE_PATHS = [
   '/branches',
   '/cashiers',
   '/invoices',
+  '/catalog',
+  '/inventory',
+  '/collection-codes',
   '/collect',
+  '/code-checkout',
+  '/pos',
+  '/equity-activation',
   '/transactions',
   '/payments',
   '/payment-links',
@@ -100,6 +113,7 @@ export const appRoutes: RouteObject[] = [
     children: [
       { path: '/p/:paymentProfileId', element: <PublicProfilePage /> },
       { path: '/p/:paymentProfileId/r/:publicReference', element: <PublicRequestPage /> },
+      { path: '/code-sale/:reference', element: <PublicCodeSalePage /> },
     ],
   },
   {
@@ -162,8 +176,24 @@ export const appRoutes: RouteObject[] = [
                   { path: '/invoices/new', element: <NewInvoicePage /> },
                   // The page itself explains when the business is not in simplified mode (and what to do instead).
                   { path: '/collect', element: <SimplifiedCheckoutPage /> },
+                  // The page itself explains when the person holds no code, or the code cannot bill.
+                  { path: '/code-checkout', element: <CodeCheckoutPage /> },
+                  // The page itself explains when the business is not in business mode, or the person has no branch.
+                  { path: '/pos', element: <PosPage /> },
                 ],
               },
+              {
+                // The page itself explains when the business is not in business mode.
+                element: <PermissionRoute permission="catalog:view" />,
+                children: [{ path: '/catalog', element: <CatalogPage /> }],
+              },
+              {
+                // The page itself explains when the business is not in business mode.
+                element: <PermissionRoute permission="inventory:view" />,
+                children: [{ path: '/inventory', element: <InventoryPage /> }],
+              },
+              // Open to every member: the page shows the registry to those who may manage it and the person’s own code to everyone else.
+              { path: '/collection-codes', element: <CollectionCodesPage /> },
               {
                 element: <PermissionRoute permission="branches:manage" />,
                 children: [
@@ -196,6 +226,11 @@ export const appRoutes: RouteObject[] = [
               {
                 element: <PermissionRoute permission="banking:manage" />,
                 children: [{ path: '/banking', element: <BankingPage /> }],
+              },
+              {
+                // Owner only: the page holds a representative's identity details.
+                element: <PermissionRoute permission="kyc:manage" />,
+                children: [{ path: '/equity-activation', element: <EquityActivationPage /> }],
               },
               {
                 element: <PermissionRoute permission="reports:view" />,

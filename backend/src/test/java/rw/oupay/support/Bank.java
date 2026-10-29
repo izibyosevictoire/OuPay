@@ -44,6 +44,11 @@ public class Bank {
     }
 
     public static String body(String accountId, String state, long amount, String reference, String transactionId, String eventId, Instant occurredAt) {
+        return body(accountId, state, amount, reference, null, transactionId, eventId, occurredAt);
+    }
+
+    /** As {@link #body(String, String, long, String, String, String, Instant)}, plus the collection code the (simulated) bank reports, if any. */
+    public static String body(String accountId, String state, long amount, String reference, String code, String transactionId, String eventId, Instant occurredAt) {
         Map<String, Object> event = new java.util.LinkedHashMap<>();
         event.put("simulated", true);
         event.put("eventId", eventId);
@@ -53,6 +58,9 @@ public class Bank {
         event.put("currency", "RWF");
         if (reference != null) {
             event.put("reference", reference);
+        }
+        if (code != null) {
+            event.put("collectionCode", code);
         }
         event.put("payerName", "Test Payer");
         event.put("occurredAt", occurredAt.toString());
@@ -70,6 +78,24 @@ public class Bank {
     public Delivery send(String state, long amount, String reference, String transactionId, String eventId, Instant occurredAt) {
         String raw = body(accountId, state, amount, reference, transactionId, eventId, occurredAt);
         return new Delivery(post(raw, SimulatedProviderAdapter.sign(SECRET, raw)), transactionId);
+    }
+
+    /** A signed event that carries the collection code the bank reports. */
+    public Delivery sendWithCode(String state, long amount, String reference, String code, String transactionId, String eventId, Instant occurredAt) {
+        String raw = body(accountId, state, amount, reference, code, transactionId, eventId, occurredAt);
+        return new Delivery(post(raw, SimulatedProviderAdapter.sign(SECRET, raw)), transactionId);
+    }
+
+    /** A fresh transaction reporting a code. */
+    public Delivery payWithCode(String state, long amount, String reference, String code) {
+        int n = COUNTER.incrementAndGet();
+        return sendWithCode(state, amount, reference, code, "tx-" + n, "evt-" + n, BASE.plusSeconds(sequence.incrementAndGet()));
+    }
+
+    /** A later event about an existing transaction, reporting a code. */
+    public Delivery updateWithCode(String transactionId, String state, long amount, String reference, String code) {
+        int n = COUNTER.incrementAndGet();
+        return sendWithCode(state, amount, reference, code, transactionId, "evt-" + n, BASE.plusSeconds(sequence.incrementAndGet()));
     }
 
     private final AtomicInteger sequence = new AtomicInteger();

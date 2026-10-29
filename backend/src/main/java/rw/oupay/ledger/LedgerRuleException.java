@@ -18,6 +18,18 @@ public class LedgerRuleException extends ApiException {
         return new LedgerRuleException("invoice_not_payable", "Invoice " + invoiceNumber + " cannot receive payments.");
     }
 
+    /** A demonstration code sale takes no real payment, and a code sale is never matched to bank money automatically (R6d). */
+    public static LedgerRuleException codeSaleNotPayable(String invoiceNumber, boolean demonstration) {
+        return new LedgerRuleException("code_sale_not_payable", demonstration
+                ? "Invoice " + invoiceNumber + " is a demonstration sale. It takes no real payment, so no bank money can be applied to it."
+                : "Invoice " + invoiceNumber + " is a code sale. It is not matched to bank money automatically yet; an authorised person can apply it manually.");
+    }
+
+    /** A code sale could not receive this money because the bank evidence does not (yet) support it. The reason says which piece. */
+    public static LedgerRuleException codeSaleEvidence(String invoiceNumber, String reason) {
+        return new LedgerRuleException("code_sale_evidence_mismatch", "Bank money can not be applied to code sale " + invoiceNumber + ": " + reason + ".");
+    }
+
     public static LedgerRuleException exceedsRemaining(String invoiceNumber, long remaining) {
         return new LedgerRuleException("exceeds_remaining", "Invoice " + invoiceNumber + " only has RWF " + remaining + " left to pay.");
     }

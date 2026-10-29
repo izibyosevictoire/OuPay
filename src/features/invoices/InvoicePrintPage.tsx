@@ -4,6 +4,7 @@ import { QueryBoundary } from '@/components/common/QueryBoundary'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
+  DEMONSTRATION_INVOICE_NOTICE,
   FISCAL_DISCLAIMER,
   INVOICE_PAYMENT_STATUS_LABELS,
   INVOICE_STATUS_LABELS,
@@ -141,6 +142,7 @@ function PrintableInvoice({ invoice }: { invoice: Invoice }) {
       )}
 
       <footer className="mt-4 border-t pt-4 text-xs text-muted-foreground print:text-black">
+        {invoice.demonstration && <p className="font-semibold">{DEMONSTRATION_INVOICE_NOTICE}</p>}
         <p>{FISCAL_DISCLAIMER}</p>
       </footer>
     </article>
