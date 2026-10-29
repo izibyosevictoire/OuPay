@@ -269,7 +269,9 @@ describe('POS billing: layout', () => {
     await screen.findByRole('heading', { level: 2, name: 'Goods and services' })
     const grid = container.querySelector('div.grid[class*="lg:grid-cols-"]')
     expect(grid).not.toBeNull()
-    expect(grid!.className).not.toMatch(/(^|\s)grid-cols-/)
+    // On a phone the single column must be an explicit, shrinkable one (grid-cols-1 = minmax(0, 1fr)): an implicit `auto` column grows to its widest
+    // child (a 416 px card on a 375 px phone) and pushes the page into horizontal scrolling.
+    expect(grid!.className).toMatch(/(^|\s)grid-cols-1(\s|$)/)
     // No fixed widths that would force horizontal scrolling.
     expect(container.querySelector('[class*="min-w-["]')).toBeNull()
   })

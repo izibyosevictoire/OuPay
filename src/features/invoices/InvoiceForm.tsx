@@ -214,7 +214,7 @@ export function InvoiceForm({ options, invoice, fixedAssigneeUserId }: InvoiceFo
       onSubmit={(event) => event.preventDefault()}
       aria-label={invoice ? 'Edit draft invoice' : 'New invoice'}
     >
-      <div className="grid gap-4 sm:gap-6 lg:grid-cols-[1fr_20rem]">
+      <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0 space-y-4 sm:space-y-6">
           <Card>
             <CardHeader>

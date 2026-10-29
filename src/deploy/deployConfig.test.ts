@@ -200,8 +200,18 @@ describe('vercel.json', () => {
       ],
     })
 
-    it('refuses the committed placeholder, so an unconfigured project cannot deploy', () => {
-      const result = run(vercel)
+    it('refuses the unconfigured placeholder host, so an unconfigured project cannot deploy', () => {
+      // The committed file now names the real service; the gate must still refuse the original template value.
+      const result = run({
+        ...vercel,
+        rewrites: [
+          {
+            source: '/api/:path*',
+            destination: 'https://REPLACE-WITH-RENDER-SERVICE.onrender.com/api/:path*',
+          },
+          { source: '/((?!api/).*)', destination: '/index.html' },
+        ],
+      })
       expect(result.status).toBe(1)
       expect(result.stderr).toMatch(/placeholder/)
     })

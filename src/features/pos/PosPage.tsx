@@ -638,7 +638,7 @@ function PosCart({ scope, options }: { scope: string; options: PosOptions }) {
         </p>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
         <Card>
           <CardContent className="p-4 sm:p-6">
             <ItemPicker

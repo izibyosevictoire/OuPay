@@ -4,6 +4,7 @@ import { invoiceService } from '@/services'
 import { SAMPLE_BRANCH_IDS } from '@/services/mock/sampleOrganization'
 import { useFastBackend } from '@/test/merchantTestDouble'
 import { renderAppAt } from '@/test/renderApp'
+import { pinSeedClock, restoreClock } from '@/test/seedClock'
 
 const heading = (name: string) => screen.findByRole('heading', { level: 1, name })
 const table = () => within(screen.getByRole('table'))
@@ -20,7 +21,12 @@ const numbersInTable = () =>
     .map((cell) => cell.textContent)
 
 beforeEach(() => {
+  pinSeedClock()
   useFastBackend()
+})
+
+afterEach(() => {
+  restoreClock()
 })
 
 describe('invoice list', () => {

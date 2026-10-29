@@ -6,6 +6,7 @@ import { SAMPLE_BRANCH_IDS } from '@/services/mock/sampleOrganization'
 import { SAMPLE_MERCHANT_ID, SAMPLE_SECOND_MERCHANT_ID } from '@/services/mock/sampleMerchants'
 import { getActiveTestBackend, useFastBackend } from '@/test/merchantTestDouble'
 import { renderAppAt } from '@/test/renderApp'
+import { pinSeedClock, restoreClock } from '@/test/seedClock'
 
 /** The value shown on the KPI card with this label. */
 const kpi = (label: string) => screen.getByText(label).closest('div')!.parentElement!
@@ -19,7 +20,12 @@ async function openDashboard(options: Parameters<typeof renderAppAt>[1] = {}) {
 }
 
 beforeEach(() => {
+  pinSeedClock()
   useFastBackend()
+})
+
+afterEach(() => {
+  restoreClock()
 })
 
 describe('dashboard figures keep their sources apart', () => {

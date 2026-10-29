@@ -78,7 +78,7 @@ export function CodePaymentPanel({
               key={fact.id}
               data-fact={fact.id}
               data-state={fact.state}
-              className="grid gap-1 px-3 py-2.5 text-sm sm:grid-cols-[10rem_11rem_1fr] sm:items-center sm:gap-3"
+              className="grid grid-cols-1 gap-1 px-3 py-2.5 text-sm sm:grid-cols-[10rem_11rem_1fr] sm:items-center sm:gap-3"
             >
               <span className="font-medium">{fact.label}</span>
               <span
