@@ -5,6 +5,7 @@ export const STOCK_MOVEMENT_LABELS: Record<StockMovementType, string> = {
   RECEIVE: 'Received',
   ADJUST_IN: 'Adjusted in',
   ADJUST_OUT: 'Adjusted out',
+  SALE: 'Sold (paid sale)',
 }
 
 export const INVENTORY_PAGE_SIZE = 20

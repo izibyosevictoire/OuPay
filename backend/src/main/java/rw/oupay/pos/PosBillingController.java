@@ -45,6 +45,12 @@ public class PosBillingController {
         return noStore(HttpStatus.OK, service.get(merchantId, saleId));
     }
 
+    /** The OPEN fulfilment exceptions of the business: paid sales that need an owner's decision. Read-only. */
+    @GetMapping("/fulfilment/exceptions")
+    ResponseEntity<java.util.List<PosBillingDtos.FulfilmentIssue>> exceptions(@PathVariable UUID merchantId) {
+        return noStore(HttpStatus.OK, service.fulfilmentExceptions(merchantId));
+    }
+
     @PostMapping("/sales/{saleId}/release-reservation")
     ResponseEntity<PosBillingDtos.BilledSale> release(@PathVariable UUID merchantId, @PathVariable UUID saleId, @Valid @RequestBody PosBillingDtos.ReleaseRequest request) {
         return noStore(HttpStatus.OK, service.release(merchantId, saleId, request));

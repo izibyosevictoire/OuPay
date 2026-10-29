@@ -136,3 +136,5 @@ itself and must not sell an inactive item because it has stock. The UI offers on
 
 * One movement per operation (no multi-line receipts); no valuation or cost; no stock-take workflow; no per-branch reorder levels.
 * Search on balances is a name/code `LIKE` scoped to the business.
+
+> **R7c:** the `SALE` movement now exists. It is posted by the system (no actor) only for a LIVE POS sale paid in full through reconciled bank money, once per reservation line. See `docs/pos-billing.md`.

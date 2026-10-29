@@ -159,7 +159,8 @@ class ArchitectureTest {
                 .filter(p -> code(p).contains("TransactionTemplate"))
                 .map(p -> MAIN.relativize(p).toString().replace('\\', '/'))
                 .collect(Collectors.toList());
-        assertThat(templates).containsExactlyInAnyOrder("idempotency/IdempotencyService.java", "email/EmailOutboxDispatcher.java");
+        // (R7c: the POS fulfilment service posts each paid sale in its own transaction, after the payment has committed.)
+        assertThat(templates).containsExactlyInAnyOrder("idempotency/IdempotencyService.java", "email/EmailOutboxDispatcher.java", "pos/PosFulfilmentService.java");
         // ...and the orchestrator itself is not transactional (executeOnce refuses to run inside a transaction), has no external
         // side effect, and creates its rows only through the invoice and payment services.
         String checkout = code(MAIN.resolve("checkout/SimplifiedCheckoutService.java"));

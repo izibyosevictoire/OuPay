@@ -33,6 +33,7 @@ import {
 import type { DashboardService } from '@/services/dashboardService'
 import { PosServiceError, type PosService, type PosServiceErrorCode } from '@/services/posService'
 import type {
+  PosFulfilmentException,
   PosBilledSale,
   PosBillingReview,
   PosCatalogItem,
@@ -887,11 +888,34 @@ type RawReservation = Omit<
     packageLabel?: string | null
   })[]
 }
-type RawBilledSale = Omit<PosBilledSale, 'sale' | 'lines' | 'reservation'> & {
+type RawFulfilment = Omit<
+  PosBilledSale['fulfilment'],
+  'postedAt' | 'nextAttemptAt' | 'lastError' | 'lines' | 'exceptions' | 'events'
+> & {
+  postedAt?: string | null
+  nextAttemptAt?: string | null
+  lastError?: string | null
+  lines?: (Omit<PosBilledSale['fulfilment']['lines'][number], 'physicalNow' | 'availableNow'> & {
+    physicalNow?: string | null
+    availableNow?: string | null
+  })[]
+  exceptions?: RawFulfilmentException[]
+  events?: PosBilledSale['fulfilment']['events']
+}
+type RawFulfilmentException = Omit<PosFulfilmentException, 'history'> & {
+  history?: PosFulfilmentException['history']
+}
+type RawBilledSale = Omit<PosBilledSale, 'sale' | 'lines' | 'reservation' | 'fulfilment'> & {
   sale: RawCodeSale
   lines?: RawSaleLine[]
   reservation: RawReservation
+  fulfilment: RawFulfilment
 }
+
+const fulfilmentExceptionOf = (raw: RawFulfilmentException): PosFulfilmentException => ({
+  ...raw,
+  history: raw.history ?? [],
+})
 
 const billingReviewOf = (raw: RawBillingReview): PosBillingReview => ({
   ...raw,
@@ -918,6 +942,19 @@ const billingReviewOf = (raw: RawBillingReview): PosBillingReview => ({
 const billedSaleOf = (raw: RawBilledSale): PosBilledSale => ({
   ...raw,
   sale: codeSaleOf(raw.sale),
+  fulfilment: {
+    ...raw.fulfilment,
+    postedAt: raw.fulfilment.postedAt ?? null,
+    nextAttemptAt: raw.fulfilment.nextAttemptAt ?? null,
+    lastError: raw.fulfilment.lastError ?? null,
+    lines: (raw.fulfilment.lines ?? []).map((line) => ({
+      ...line,
+      physicalNow: line.physicalNow ?? null,
+      availableNow: line.availableNow ?? null,
+    })),
+    exceptions: (raw.fulfilment.exceptions ?? []).map(fulfilmentExceptionOf),
+    events: raw.fulfilment.events ?? [],
+  },
   lines: (raw.lines ?? []).map((line) => ({
     ...line,
     code: line.code ?? null,
@@ -1056,6 +1093,13 @@ export function createHttpPosService(http: HttpClient): PosService {
               collectionCodeId: input.collectionCodeId ?? undefined,
             },
           }),
+        ),
+      posError,
+    ),
+    listFulfilmentExceptions: translating(
+      async (id) =>
+        (await http.get<RawFulfilmentException[]>(`${base(id)}/fulfilment/exceptions`)).map(
+          fulfilmentExceptionOf,
         ),
       posError,
     ),

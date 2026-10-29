@@ -53,7 +53,7 @@ public class StockMovement {
     @Column(name = "request_sha256", nullable = false, updatable = false)
     private String requestSha256;
 
-    @Column(name = "actor_user_id", nullable = false, updatable = false)
+    @Column(name = "actor_user_id", updatable = false)
     private UUID actorUserId;
 
     @Column(name = "created_at", nullable = false, updatable = false)

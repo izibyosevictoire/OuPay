@@ -1,7 +1,7 @@
 package rw.oupay.inventory;
 
 /**
- * Why stock changed. Only these four exist today. RESERVE, RELEASE, SALE, RETURN and CORRECTION are designed for later
+ * Why stock changed. RESERVE, RELEASE, RETURN and CORRECTION are designed for later
  * milestones: each will need its own sign rule in the database, so each arrives with its own migration rather than being
  * allowed (and meaningless) now.
  */
@@ -13,7 +13,12 @@ public enum MovementType {
     /** A manual correction that adds stock; always carries a reason. */
     ADJUST_IN(true),
     /** A manual correction that removes stock (loss, damage, count difference); always carries a reason. */
-    ADJUST_OUT(false);
+    ADJUST_OUT(false),
+    /**
+     * Stock deducted for a sale that was paid in full through reconciled bank money (R7c). Posted by the system, never by a person: it has no
+     * actor and always names the sale. It records the stock LEDGER only; it does not prove the goods were handed to the customer.
+     */
+    SALE(false);
 
     private final boolean adds;
 

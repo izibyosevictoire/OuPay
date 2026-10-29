@@ -87,6 +87,7 @@ public class PosBillingService {
     private final PosService drafts;
     private final CodeCheckoutService codeCheckout;
     private final StockReservationService reservations;
+    private final PosFulfilmentService fulfilments;
     private final PosTaxPolicy taxPolicy;
     private final MerchantAccess access;
     private final AuditService audit;
@@ -94,13 +95,14 @@ public class PosBillingService {
     private final Duration reviewGrace;
 
     public PosBillingService(JdbcClient jdbc, IdempotencyService idempotency, PosService drafts, CodeCheckoutService codeCheckout,
-                             StockReservationService reservations, PosTaxPolicy taxPolicy, MerchantAccess access, AuditService audit, Clock clock,
+                             StockReservationService reservations, PosFulfilmentService fulfilments, PosTaxPolicy taxPolicy, MerchantAccess access, AuditService audit, Clock clock,
                              @Value("${oupay.pos.reservation-review-grace:PT24H}") Duration reviewGrace) {
         this.jdbc = jdbc;
         this.idempotency = idempotency;
         this.drafts = drafts;
         this.codeCheckout = codeCheckout;
         this.reservations = reservations;
+        this.fulfilments = fulfilments;
         this.taxPolicy = taxPolicy;
         this.access = access;
         this.audit = audit;
@@ -312,6 +314,16 @@ public class PosBillingService {
         return assemble(merchantId, view);
     }
 
+    /**
+     * Every OPEN fulfilment exception of the business (a paid sale whose stock could not be deducted, or whose payment was reversed after the deduction),
+     * for the OWNER (invoices:void, as for a release). Read-only: resolving one is a later, separately authorised workflow.
+     */
+    @Transactional(readOnly = true)
+    public List<PosBillingDtos.FulfilmentIssue> fulfilmentExceptions(UUID merchantId) {
+        access.require(merchantId, Permission.INVOICES_VOID);
+        return fulfilments.exceptionsOf(merchantId, null, true);
+    }
+
     // ---- the review ---------------------------------------------------------------------------------------------------------------
 
     private Review review(UUID merchantId, Actor actor, PosService.DraftRow row, UUID codeId, boolean lock) {
@@ -509,7 +521,7 @@ public class PosBillingService {
         }).orElseGet(() -> new PosBillingDtos.ReservationView("NOT_RESERVED", "DEMONSTRATION".equals(mode) ? PosBillingDtos.DEMO_RESERVATION_NOTE
                 : "This sale has no goods, so nothing is reserved.", null, null, null, List.of()));
         return new PosBillingDtos.BilledSale(sale, (UUID) head[0], mode, lines, (Long) head[2], (Long) head[3], (Long) head[4], reservation,
-                PosDtos.TAX_NOTE);
+                PosDtos.TAX_NOTE, fulfilments.view(merchantId, sale.saleId()));
     }
 
     private static String canonicalUnitOf(List<PosBillingDtos.SaleLine> lines, UUID itemId) {

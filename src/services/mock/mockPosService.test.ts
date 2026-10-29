@@ -702,3 +702,61 @@ describe('mock POS: a mixed cart is billed as the cart, not as an amount (R7b re
     expect(s.authStore.loadRecords(MOCK_STORAGE_KEYS.posSales, [])).toHaveLength(1)
   })
 })
+
+describe('mock POS: fulfilment (R7c)', () => {
+  it('says a demonstration has no real payment, stock reservation, deduction or fulfilment', async () => {
+    const s = setup()
+    s.signInAs('owner')
+    const profile = s.ledger.paymentProfiles
+      .load()
+      .find((p) => p.merchantId === M && p.status === 'ACTIVE' && p.assignedCashierId === null)
+    const destination = s.ledger.paymentDestinations
+      .load()
+      .find((d) => d.id === profile?.paymentDestinationId)
+    const requested = await s.fastCollectionCodes.requestCode(M, {
+      clientOperationId: crypto.randomUUID(),
+      settlementDestinationId: destination?.id ?? '',
+      displayLabel: 'Demo counter',
+      branchId: REMERA,
+    })
+    await s.fastCollectionCodes.assign(M, requested.code.id, { membershipId: 'mem-004' })
+    s.signInAs('cashier')
+    const stockBefore = s.authStore.loadRecords(MOCK_STORAGE_KEYS.inventoryBalances, [])
+    const draft = await s.pos.createPosDraft(M, {
+      ...ids(),
+      branchId: REMERA,
+      lines: [line('cat-rice', '2')],
+    })
+    const sale = await s.pos.billPosDraft(M, draft.id, {
+      expectedDraftVersion: 0,
+      reviewedTotalRwf: 2_400,
+      collectionCodeId: requested.code.id,
+      idempotencyKey: 'bill-key-fulfil-0001',
+    })
+    expect(sale.fulfilment).toMatchObject({
+      paymentState: 'NOT_APPLICABLE',
+      inventoryState: 'NOT_APPLICABLE',
+      handover: 'NOT_TRACKED',
+      lines: [],
+      exceptions: [],
+    })
+    expect(sale.fulfilment.note).toMatch(
+      /DEMONSTRATION: no real payment, stock reservation, stock deduction or fulfilment/,
+    )
+    expect(s.authStore.loadRecords(MOCK_STORAGE_KEYS.inventoryBalances, [])).toEqual(stockBefore)
+    expect(
+      s.authStore
+        .loadRecords(MOCK_STORAGE_KEYS.inventoryMovements, [])
+        .filter((m) => (m as { movementType: string }).movementType === 'SALE'),
+    ).toEqual([])
+  })
+
+  it('lists fulfilment exceptions for the owner only, and a demonstration never has one', async () => {
+    const s = setup('owner')
+    expect(await s.pos.listFulfilmentExceptions(M)).toEqual([])
+    s.signInAs('manager')
+    expect(await codeOf(s.pos.listFulfilmentExceptions(M))).toBe('forbidden')
+    s.signInAs('cashier')
+    expect(await codeOf(s.pos.listFulfilmentExceptions(M))).toBe('forbidden')
+  })
+})

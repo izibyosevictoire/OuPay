@@ -431,6 +431,7 @@ const MOVEMENT_TONE: Record<StockMovementType, string> = {
   RECEIVE: 'bg-success-soft text-success',
   ADJUST_IN: 'bg-success-soft text-success',
   ADJUST_OUT: 'bg-warning-soft text-warning',
+  SALE: 'bg-info-soft text-info',
 }
 
 function MovementBadge({ type }: { type: StockMovementType }) {

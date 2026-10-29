@@ -327,6 +327,8 @@ export interface PosReservation {
 /** The sale's payment side (reference, code, status) is the existing code-sale view: nothing is paid until verified reconciliation says so. */
 export interface PosBilledSale {
   sale: CodeSale
+  /** Payment, reservation, inventory posting and handover: four separate facts. Never one "status". */
+  fulfilment: PosFulfilmentView
   draftId: string
   mode: 'LIVE' | 'DEMONSTRATION'
   lines: PosSaleLine[]
@@ -335,4 +337,71 @@ export interface PosBilledSale {
   totalRwf: number
   reservation: PosReservation
   taxNote: string
+}
+
+// ---- Fulfilment (R7c) -----------------------------------------------------------------------------------------------
+//
+// When a LIVE sale is paid in full through RECONCILED bank money, its reservation becomes physical stock deductions (SALE movements), once, by a
+// worker that runs after the payment was applied. PAID never means fulfilled, POSTED only says the stock ledger was updated, and handing the goods
+// over is not recorded yet. A demonstration has no real payment, reservation, deduction or fulfilment.
+
+/** UNPAID, PARTIAL, PAID or REVERSED from verified allocations only; NOT_APPLICABLE for a demonstration. */
+export type PosPaymentState = 'UNPAID' | 'PARTIAL' | 'PAID' | 'REVERSED' | 'NOT_APPLICABLE'
+
+/** NOT_POSTED (waiting for payment or the worker), POSTED, EXCEPTION (needs a person), NOT_REQUIRED (services only), NOT_APPLICABLE (demonstration). */
+export type PosInventoryState =
+  'NOT_POSTED' | 'POSTED' | 'EXCEPTION' | 'NOT_REQUIRED' | 'NOT_APPLICABLE'
+
+export interface PosFulfilmentLine {
+  itemId: string
+  name: string
+  /** What the SALE movement deducted, in the canonical unit. */
+  quantityDeducted: string
+  canonicalUnit: MeasurementUnitCode
+  movementId: string
+  /** Physical and available stock as they are NOW. */
+  physicalNow: string | null
+  availableNow: string | null
+}
+
+export interface PosFulfilmentEvent {
+  kind: string
+  detail: string
+  at: string
+}
+
+export type PosFulfilmentExceptionKind =
+  | 'RESERVATION_RELEASED'
+  | 'INSUFFICIENT_STOCK'
+  | 'PAYMENT_REVERSED_AFTER_POSTING'
+  | 'PROCESSING_FAILED'
+
+/** A decision a person has to take. Read-only for now: nothing here resolves one. */
+export interface PosFulfilmentException {
+  id: string
+  saleId: string
+  saleReference: string
+  invoiceNumber: string
+  kind: PosFulfilmentExceptionKind
+  status: 'OPEN' | 'RESOLVED'
+  detail: string
+  openedAt: string
+  history: PosFulfilmentEvent[]
+}
+
+export interface PosFulfilmentView {
+  paymentState: PosPaymentState
+  appliedRwf: number
+  totalRwf: number
+  inventoryState: PosInventoryState
+  postedAt: string | null
+  attempts: number
+  nextAttemptAt: string | null
+  lastError: string | null
+  lines: PosFulfilmentLine[]
+  exceptions: PosFulfilmentException[]
+  events: PosFulfilmentEvent[]
+  /** Always NOT_TRACKED for now: posting is not proof of handover. */
+  handover: 'NOT_TRACKED'
+  note: string
 }

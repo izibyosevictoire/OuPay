@@ -18,6 +18,7 @@ import type {
   PosReviewLine,
   PosSaleLine,
 } from '@/types/pos'
+import { FulfilmentSection } from './PosFulfilment'
 import { useBillPosDraft, usePosBillingReview, usePosSale } from './posBillingQueries'
 import { availabilityText, billFailure, taxLabelOf } from './posBillingRules'
 import { friendlyQuantity, unitSymbol } from './posRules'
@@ -331,6 +332,7 @@ function SaleSummary({ sale }: { sale: PosBilledSale }) {
           </ul>
         )}
       </div>
+      <FulfilmentSection fulfilment={sale.fulfilment} demo={demo} />
       <p>
         <Link to={`/invoices/${sale.sale.invoiceId}`} className={linkClass}>
           Open invoice {sale.sale.invoiceNumber}

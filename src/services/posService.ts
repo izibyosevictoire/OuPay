@@ -7,6 +7,7 @@ import type {
   PosDraftInput,
   PosDraftPage,
   PosDraftUpdateInput,
+  PosFulfilmentException,
   PosOptions,
   PosQuote,
   PosQuoteInput,
@@ -88,4 +89,6 @@ export interface PosService {
   billPosDraft(merchantId: string, draftId: string, input: PosBillInput): Promise<PosBilledSale>
   /** One POS sale with its lines, tax and reservation: safe recovery after a refresh. */
   getPosSale(merchantId: string, saleId: string): Promise<PosBilledSale>
+  /** The OPEN fulfilment exceptions of the business (paid sales that need an owner's decision). Owners only. Read-only. */
+  listFulfilmentExceptions(merchantId: string): Promise<PosFulfilmentException[]>
 }

@@ -4,7 +4,7 @@ import type { MeasurementDimension, MeasurementUnitCode } from './catalog'
  * Movement types implemented so far. Stock only changes by appending a movement: history is never edited, and a correction
  * is a new movement.
  */
-export type StockMovementType = 'OPENING' | 'RECEIVE' | 'ADJUST_IN' | 'ADJUST_OUT'
+export type StockMovementType = 'OPENING' | 'RECEIVE' | 'ADJUST_IN' | 'ADJUST_OUT' | 'SALE'
 
 export interface InventoryBranchOption {
   id: string

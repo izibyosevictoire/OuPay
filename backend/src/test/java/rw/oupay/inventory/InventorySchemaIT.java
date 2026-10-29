@@ -131,7 +131,7 @@ class InventorySchemaIT extends IntegrationTest {
         assertThat(jdbc.queryForList("select tgname from pg_trigger where not tgisinternal and tgrelid in "
                 + "('inventory_balances'::regclass, 'stock_movements'::regclass) order by 1", String.class))
                 .containsExactly("trg_inventory_balances_identity", "trg_inventory_balances_reserved", "trg_inventory_balances_start_empty", "trg_stock_movements_apply",
-                        "trg_stock_movements_immutable");
+                        "trg_stock_movements_immutable", "trg_stock_movements_sale_posted");
     }
 
     @Test

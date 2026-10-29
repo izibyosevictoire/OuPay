@@ -453,6 +453,9 @@ public class InventoryService {
         }
 
         String actorName(UUID id) {
+            if (id == null) {
+                return "OuPay (verified payment)";
+            }
             return actors.getOrDefault(id, "Unknown");
         }
     }
@@ -463,8 +466,10 @@ public class InventoryService {
         Map<UUID, Branch> branchMap = branchIds.isEmpty() ? Map.of()
                 : branches.findAllById(branchIds).stream().collect(Collectors.toMap(Branch::getId, Function.identity()));
         Map<UUID, String> actorMap = new HashMap<>();
-        if (!userIds.isEmpty()) {
-            users.findAllById(userIds).forEach(u -> actorMap.put(u.getId(), u.getFullName()));
+        // A SALE movement is posted by the system and has no actor (null): it is shown as OuPay itself.
+        Set<UUID> people = userIds.stream().filter(java.util.Objects::nonNull).collect(Collectors.toSet());
+        if (!people.isEmpty()) {
+            users.findAllById(people).forEach(u -> actorMap.put(u.getId(), u.getFullName()));
         }
         return new Lookup(itemMap, branchMap, actorMap);
     }
@@ -494,6 +499,7 @@ public class InventoryService {
             case OPENING -> "INVENTORY_STOCK_OPENED";
             case RECEIVE -> "INVENTORY_STOCK_RECEIVED";
             case ADJUST_IN, ADJUST_OUT -> "INVENTORY_STOCK_ADJUSTED";
+            case SALE -> "INVENTORY_STOCK_SOLD";
         };
     }
 
@@ -504,6 +510,7 @@ public class InventoryService {
             case RECEIVE -> "Received";
             case ADJUST_IN -> "Adjusted in";
             case ADJUST_OUT -> "Adjusted out";
+            case SALE -> "Deducted for a paid sale";
         };
         return verb + " " + plain(delta.abs()) + " " + unit + " of \"" + item.getName() + "\" at " + branch.getCode() + "; balance "
                 + plain(after) + " " + unit + (reason == null ? "." : ". Reason: " + reason);

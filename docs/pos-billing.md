@@ -290,3 +290,117 @@ re-reads the catalog price at Bill, and refuses a total that differs from the re
 line by line against the review and `pos_sale_lines`, and each reservation line equals the canonical quantity of its snapshot. **Tax-exclusive pricing
 (tax added on top of the catalog price) still needs the business's approval**, as do the approved treatments and each item's classification: until then
 production POS billing stays disabled.
+
+
+---
+
+# R7c: verified-payment inventory fulfilment
+
+When a **LIVE** POS sale is paid **in full** through bank money that R6d-B has **reconciled** (active allocations that cover the invoice), its ACTIVE
+reservation becomes **FULFILLED** and one **SALE** stock movement per reservation line deducts the physical stock, in **one transaction**. It reuses the
+R5c movement ledger (there is no second stock ledger) and the V17 reservation tables.
+
+**"Posted" means the stock ledger was updated. It does not mean the goods were handed to the customer, and an invoice being PAID never means fulfilled.**
+
+## Architecture and transaction design
+
+| Reviewed | Finding |
+| --- | --- |
+| V10 movements | `apply_stock_movement` locks the balance row and moves the balance with the movement. Types were OPENING/RECEIVE/ADJUST_IN/ADJUST_OUT and every movement needed a user. |
+| V17 | `guard_balance_not_below_reserved` refuses a balance below active reservations; a reservation can become FULFILLED/RELEASED once. |
+| Bank events (R6d-B) | `BankEventProcessor` / `LedgerOperations` lock the bank transaction, then invoices; they touch no inventory or reservation. They are **not changed**. |
+| Scheduler pattern | `@Scheduled` components with an `enabled` switch (`EmailOutboxDispatcher`). The fulfilment worker follows it. No new infrastructure. |
+
+**Inventory is never written inside the bank-event transaction.** `PosFulfilmentWorker` polls (`oupay.pos.fulfilment.poll-interval`, default 15 s) *after* an
+allocation has committed, and each sale is posted in its **own** transaction (`PosFulfilmentService`, one `TransactionTemplate` per sale), so one sale's failure
+never blocks another's. The allocation stays the only authority that a sale is paid; the worker only reads it.
+
+**Lock order of the posting transaction** (every other transaction that takes any of these locks takes a prefix of this order, or rows a posting cannot hold):
+
+1. the **invoice** row `FOR UPDATE` (the lock a release and an allocation already take);
+2. the `pos_fulfilments` row `FOR UPDATE` (concurrent workers take turns; the second finds the first one's result);
+3. the **reservation** row `FOR UPDATE`;
+4. the **stock balance rows** of the sale's goods, **ascending item id**, `FOR UPDATE` (the lock every movement and every billing takes);
+5. the writes: reservation to FULFILLED, one SALE movement per line, one posting per line, the fulfilment to POSTED.
+
+Billing locks the draft and the balances and then only rows of the **new** invoice (invisible to a posting); a release locks invoice then reservation; an allocation
+locks the bank transaction then invoices; a stock movement locks only its balance. No cycle exists.
+
+## Database (V18, additive; V1 to V17 untouched)
+
+* `stock_movements`: type `SALE` (negative), **no actor** for a SALE (every other movement still needs one; a SALE is posted by the system and always names its sale).
+* `pos_fulfilments`: one per sale (the durable operation identity), `PENDING | POSTED | EXCEPTION`, attempts, last/next attempt, last error. Rows exist only for a sale
+  that was eligible at the time (never for a demonstration, an unpaid sale or a services-only sale).
+* `pos_fulfilment_lines`: one per reservation line (primary key) with a **unique** movement: the immutable link from a SALE movement to its reservation line, so to
+  the reservation, invoice line and sale. A trigger checks it is exactly that line (same quantity, branch, item).
+* `pos_fulfilment_exceptions` (`RESERVATION_RELEASED`, `INSUFFICIENT_STOCK`, `PAYMENT_REVERSED_AFTER_POSTING`, `PROCESSING_FAILED`; OPEN until resolved; resolution
+  columns exist, nothing resolves one yet) and `pos_fulfilment_events` (append-only history).
+* Deferred, commit-time checks: a SALE movement has a posting; a FULFILLED reservation has a POSTED fulfilment; a POSTED fulfilment has a FULFILLED reservation and
+  **one posting for every reservation line**. A POSTED fulfilment, postings, events and movements are final.
+
+## Lifecycle and eligibility
+
+Four **separate** facts (the sale view shows each; never one status):
+
+| Fact | Values |
+| --- | --- |
+| Payment | `UNPAID`, `PARTIAL`, `PAID`, `REVERSED` (from active/reversed allocations only), `NOT_APPLICABLE` (demonstration) |
+| Reservation | `ACTIVE`, `RELEASED`, `FULFILLED` (`NOT_RESERVED` for a demonstration or services only) |
+| Inventory posting | `NOT_POSTED`, `POSTED`, `EXCEPTION`, `NOT_REQUIRED` (services only), `NOT_APPLICABLE` (demonstration) |
+| Handover | `NOT_TRACKED`. **Deferred:** recording a handover needs its own authorised workflow (who may confirm, evidence, undo); R7c only says it is not recorded. |
+
+Eligible: a LIVE sale, active allocations summing to at least the invoice total, an ACTIVE reservation. **Not** eligible: a confirmed but unmatched bank transaction (no
+allocation), a partial payment, a payment reversed before posting, a demonstration, a sale of services only (no reservation, so no movement).
+
+## Worker, idempotency and retries
+
+* One fulfilment per sale (primary key), one posting per reservation line (primary key), one movement per posting (unique), and every SALE movement has a **deterministic
+  operation id** derived from its reservation line (unique per business): a crash, a retry or a second worker can never deduct a line twice. Reservation, movements and
+  fulfilment commit together or not at all (also checked by the database at commit).
+* A failed attempt rolls the whole posting back, is **counted and backed off** (`oupay.pos.fulfilment.backoff` doubling, capped at 2 h), and after
+  `oupay.pos.fulfilment.max-attempts` (default 5) becomes a `PROCESSING_FAILED` exception: **no more automatic retries** of a permanent failure.
+* `FOR UPDATE` row locks (not process-local mutexes) make any number of workers safe.
+
+## Late payment after release, and reversal after posting
+
+* **Paid after the owner released the reservation:** never re-reserved, never deducted without a decision. A `RESERVATION_RELEASED` exception is opened (once); the verified
+  payment and its allocations are untouched; the sale shows payment PAID, inventory EXCEPTION. Owners read it at `GET /pos/fulfilment/exceptions` (read-only).
+* **Physical stock cannot cover a paid, reserved sale** (the database makes this impossible through normal paths): an `INSUFFICIENT_STOCK` exception, nothing deducted.
+* **Payment reversed after the stock was deducted:** the SALE movements are **kept**, stock is **not** restored (no goods came back), the invoice is UNPAID again
+  (existing reversal accounting) and a `PAYMENT_REVERSED_AFTER_POSTING` exception is opened. Restoring stock needs a future RETURN/correction workflow.
+* **Next step (deferred):** an authorised "resolve exception" workflow (re-reserve if stock allows, supply anyway, refund via R-refunds, or write off) with its own audit;
+  the exception rows and event history are already shaped for it.
+
+## Demonstration isolation
+
+A demonstration reserves nothing, creates no real allocation (the ledger refuses real bank money for it), no fulfilment, no movement; the worker's query only considers
+`LIVE` sales; its view says `NOT_APPLICABLE` and "no real payment, stock reservation, stock deduction or fulfilment exists for this bill".
+
+## API and frontend
+
+* `GET /pos/sales/{id}` now includes `fulfilment` (payment state, applied amount, inventory state, posted time, attempts/next attempt/last error, deducted lines with the
+  physical and available stock **now**, exceptions, event history, handover). `GET /pos/fulfilment/exceptions` (owner, `invoices:void`) lists every OPEN exception.
+* The POS sale panel has a "Payment and stock" section (read from the server, refreshed every 10 s while a real sale is not posted: the timer only asks); the POS page shows
+  owners a read-only "Paid sales that need attention" list. Inventory history shows SALE movements as "Sold (paid sale)" by "OuPay (verified payment)". HTTP and mock behave the
+  same; the mock only bills demonstrations, so it only ever shows the demonstration state.
+
+## Open decisions
+
+Who may resolve an exception and how; whether a paid-after-release sale should be re-reserved automatically when stock allows (R7c deliberately does not); how handover is
+confirmed; return and refund workflows; and the (still unconfirmed) Equity capabilities that make LIVE collection possible at all.
+
+## R7c integrity review: reversal races, crashes and the worker
+
+* **Finding and fix.** A bank reversal updates the allocation rows but does **not** take the invoice lock, so reading the allocations (even after the invoice lock) could
+  see a reversal that had not committed yet. The posting now reads the ACTIVE allocation rows `FOR SHARE`: a reversal and a posting of one sale are serialised on
+  those rows. Eligibility is therefore decided against committed, locked data. `BankEventProcessor` and the ledger are unchanged.
+* **Reversal commits first:** the posting waits, sees the allocation REVERSED, posts nothing (no SALE movement, reservation stays ACTIVE, no exception).
+  **Posting commits first:** exactly one set of SALE movements, then the reversal commits and the next run records one `PAYMENT_REVERSED_AFTER_POSTING` exception; stock is
+  not restored. Both orders are proven deterministically (`PosFulfilmentRaceIT`: a test-held advisory lock holds one side inside its transaction until the other is
+  observed blocked in `pg_stat_activity`). No deadlock, no 5xx.
+* **Crash safety:** a session killed before commit leaves no movement and an ACTIVE reservation; eligibility is derived from allocations, so the sale is found again
+  (the fulfilment row only carries back-off). A crash after commit finds a POSTED fulfilment and does nothing. Several instances claim sales by row locks and post each once.
+* **Worker:** `@Scheduled(fixedDelay = 15 s)`, on unless `oupay.pos.fulfilment.enabled=false` (only the test profile sets it); fixed delay means no overlap within an instance;
+  across instances the locks make overlap harmless; a failed run is logged and never escapes into the scheduler.
+* **Exceptions** are created once per sale and kind (partial unique index), never resolved by the system (the database refuses RESOLVED without a person and a written
+  note) and no endpoint resolves one yet; the list is owner-only and per merchant.

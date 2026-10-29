@@ -12,7 +12,7 @@ class MigrationIT extends IntegrationTest {
     @Test
     void everyMigrationAppliedSuccessfullyInOrder() {
         List<String> versions = jdbc.queryForList("select version from flyway_schema_history where success order by installed_rank", String.class);
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18");
     }
 
     @Test
@@ -21,7 +21,7 @@ class MigrationIT extends IntegrationTest {
         assertThat(jdbc.queryForList("select column_name from information_schema.columns where table_schema = 'public' "
                 + "and data_type in ('double precision', 'real', 'money')", String.class)).isEmpty();
         assertThat(jdbc.queryForList("select table_name || '.' || column_name from information_schema.columns where table_schema = 'public' "
-                + "and data_type = 'numeric'", String.class)).containsExactlyInAnyOrder("catalog_item_packages.quantity_per_package", "inventory_balances.quantity_on_hand", "pos_draft_lines.canonical_quantity", "pos_sale_lines.canonical_quantity", "stock_reservation_lines.quantity",
+                + "and data_type = 'numeric'", String.class)).containsExactlyInAnyOrder("catalog_item_packages.quantity_per_package", "inventory_balances.quantity_on_hand", "pos_draft_lines.canonical_quantity", "pos_sale_lines.canonical_quantity", "stock_reservation_lines.quantity", "pos_fulfilment_lines.quantity",
                         "stock_movements.quantity_delta", "stock_movements.balance_after");
         List<String> moneyColumns = jdbc.queryForList("select column_name from information_schema.columns where table_schema = 'public' "
                 + "and column_name like '%\\_rwf' order by 1", String.class);

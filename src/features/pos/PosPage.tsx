@@ -47,6 +47,7 @@ import {
   type StockDescription,
 } from './posRules'
 import { PosBillingReview, PosSalePanel } from './PosBilling'
+import { FulfilmentExceptionsCard } from './PosFulfilment'
 import { attemptFor, forgetAttempt, forgetSaleId, loadSaleId, rememberSaleId } from './posSession'
 
 const linkClass = 'font-medium text-primary hover:underline'
@@ -785,13 +786,21 @@ function PosBody({ scope }: { scope: string }) {
       loadingFallback={<Skeleton className="h-72 w-full" />}
       errorMessage="POS billing could not be loaded."
     >
-      {(data): ReactNode =>
-        data.readiness === 'READY' ? (
-          <PosCart scope={scope} options={data} />
-        ) : (
-          <SetupRequired options={data} />
-        )
-      }
+      {(data): ReactNode => (
+        <div className="space-y-4">
+          {data.readiness === 'READY' ? (
+            <PosCart scope={scope} options={data} />
+          ) : (
+            <SetupRequired options={data} />
+          )}
+          {/* Owners see the paid sales that need a decision, whether or not they bill themselves. */}
+          {data.readiness !== 'NOT_BUSINESS' && (
+            <PermissionGuard permission="invoices:void">
+              <FulfilmentExceptionsCard />
+            </PermissionGuard>
+          )}
+        </div>
+      )}
     </QueryBoundary>
   )
 }

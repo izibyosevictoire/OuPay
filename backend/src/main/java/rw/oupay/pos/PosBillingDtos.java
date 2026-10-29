@@ -59,8 +59,30 @@ public final class PosBillingDtos {
      */
     public record ReservationView(String state, String note, Instant expiryReviewAt, Instant releasedAt, String releaseReason, List<ReservationLine> lines) {}
 
+    /** One deduction: the goods of a reserved line, taken out of PHYSICAL stock by a SALE movement. Physical and available are as they are NOW. */
+    public record FulfilmentLine(UUID itemId, String name, String quantityDeducted, String canonicalUnit, UUID movementId, String physicalNow, String availableNow) {}
+
+    public record FulfilmentEvent(String kind, String detail, Instant at) {}
+
+    /** A decision a person has to take: see pos_fulfilment_exceptions. */
+    public record FulfilmentIssue(UUID id, UUID saleId, String saleReference, String invoiceNumber, String kind, String status, String detail, Instant openedAt,
+                                      List<FulfilmentEvent> history) {}
+
+    /**
+     * Four SEPARATE facts, never one status. paymentState: UNPAID, PARTIAL, PAID or REVERSED (from verified, reconciled allocations only), or
+     * NOT_APPLICABLE for a demonstration. The reservation is in {@link ReservationView}. inventoryState: NOT_POSTED, POSTED, EXCEPTION, NOT_REQUIRED
+     * (services only) or NOT_APPLICABLE (a demonstration). handover: NOT_TRACKED (handing the goods over is not recorded yet): PAID is never
+     * "delivered", and POSTED only says the stock ledger was updated.
+     */
+    public record FulfilmentView(String paymentState, long appliedRwf, long totalRwf, String inventoryState, Instant postedAt, int attempts, Instant nextAttemptAt,
+                                 String lastError, List<FulfilmentLine> lines, List<FulfilmentIssue> exceptions, List<FulfilmentEvent> events, String handover,
+                                 String note) {}
+
+    public static final String HANDOVER_NOTE = "Posting records the stock deduction only. Handing the goods over is not recorded yet.";
+    public static final String DEMO_FULFILMENT_NOTE = "DEMONSTRATION: no real payment, stock reservation, stock deduction or fulfilment exists for this bill.";
+
     public record BilledSale(CodeCheckoutDtos.CodeSaleDto sale, UUID draftId, String mode, List<SaleLine> lines, long subtotalRwf, long taxRwf, long totalRwf,
-                             ReservationView reservation, String taxNote) {}
+                             ReservationView reservation, String taxNote, FulfilmentView fulfilment) {}
 
     /** {@code created} is false when this was a repeat of an earlier bill (the original sale comes back). */
     public record BillOutcome(BilledSale sale, boolean created) {}

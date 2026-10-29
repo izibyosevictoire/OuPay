@@ -284,6 +284,15 @@ describe('HTTP POS billing keeps the contract with the backend (R7b)', () => {
         },
       ],
       reservation: { state: 'NOT_RESERVED', note: 'DEMONSTRATION', lines: [] },
+      fulfilment: {
+        paymentState: 'NOT_APPLICABLE',
+        appliedRwf: 0,
+        totalRwf: 5400,
+        inventoryState: 'NOT_APPLICABLE',
+        attempts: 0,
+        handover: 'NOT_TRACKED',
+        note: 'DEMONSTRATION',
+      },
     }
     const { pos, calls } = setup({ status: 201, body: sale })
     const billed = await pos.billPosDraft(M, 'd-1', {
@@ -307,6 +316,15 @@ describe('HTTP POS billing keeps the contract with the backend (R7b)', () => {
     })
     expect(billed.sale.code).toMatchObject({ bankCode: null, notice: null })
     expect(billed.lines[0]).toMatchObject({ code: null, enteredUnit: null, packageLabel: null })
+    expect(billed.fulfilment).toMatchObject({
+      postedAt: null,
+      nextAttemptAt: null,
+      lastError: null,
+      lines: [],
+      exceptions: [],
+      events: [],
+      handover: 'NOT_TRACKED',
+    })
     expect(billed.reservation).toMatchObject({
       expiryReviewAt: null,
       releasedAt: null,
@@ -336,5 +354,35 @@ describe('HTTP POS billing keeps the contract with the backend (R7b)', () => {
     await expect(pos.billPosDraft(M, 'd-1', input)).rejects.toMatchObject({
       code: 'insufficient_stock',
     })
+  })
+})
+
+describe('HTTP POS fulfilment keeps the contract with the backend (R7c)', () => {
+  it('reads the open fulfilment exceptions of the business and fills what the server omits', async () => {
+    const { pos, calls } = setup({
+      body: [
+        {
+          id: 'e-1',
+          saleId: 'sale-1',
+          saleReference: 'OP-ABC12345',
+          invoiceNumber: 'INV-0007',
+          kind: 'RESERVATION_RELEASED',
+          status: 'OPEN',
+          detail: 'Paid after release.',
+          openedAt: 't',
+        },
+      ],
+    })
+    const [first] = await pos.listFulfilmentExceptions(M)
+    expect(calls[0]).toMatchObject({
+      method: 'GET',
+      url: `/api/v1/merchants/${M}/pos/fulfilment/exceptions`,
+    })
+    expect(first).toMatchObject({ kind: 'RESERVATION_RELEASED', history: [] })
+  })
+
+  it('maps a refusal for someone who is not an owner', async () => {
+    const { pos } = setup({ status: 403, body: { code: 'forbidden', message: 'no' } })
+    await expect(pos.listFulfilmentExceptions(M)).rejects.toMatchObject({ code: 'forbidden' })
   })
 })

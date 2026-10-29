@@ -759,7 +759,9 @@ class InventoryIT extends IntegrationTest {
         assertThat(w.owner.get(base() + "/movements?itemId=" + rice.path("id").asString() + "&branchId=" + w.branchId).json().path("items").size())
                 .isEqualTo(6);
         assertThat(w.owner.get(base() + "/movements?cursor=garbage").status()).isEqualTo(400);
-        assertThat(w.owner.get(base() + "/movements?type=SALE").status()).isEqualTo(400);
+        // SALE exists since R7c (posted only by a paid POS sale: none here); a type that still does not exist is refused.
+        assertThat(w.owner.get(base() + "/movements?type=SALE").json().path("items").size()).isZero();
+        assertThat(w.owner.get(base() + "/movements?type=RETURN").status()).isEqualTo(400);
     }
 
     @Test

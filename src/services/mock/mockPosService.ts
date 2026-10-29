@@ -884,6 +884,22 @@ export function createMockPosService(options: MockPosServiceOptions): PosService
       lines: [],
     },
     taxNote: TAX_NOTE,
+    // A demonstration has no real payment, reservation, deduction or fulfilment: it says so rather than showing a stage.
+    fulfilment: {
+      paymentState: 'NOT_APPLICABLE',
+      appliedRwf: 0,
+      totalRwf: stored.totalRwf,
+      inventoryState: 'NOT_APPLICABLE',
+      postedAt: null,
+      attempts: 0,
+      nextAttemptAt: null,
+      lastError: null,
+      lines: [],
+      exceptions: [],
+      events: [],
+      handover: 'NOT_TRACKED',
+      note: 'DEMONSTRATION: no real payment, stock reservation, stock deduction or fulfilment exists for this bill.',
+    },
   })
 
   return {
@@ -1220,6 +1236,16 @@ export function createMockPosService(options: MockPosServiceOptions): PosService
         return billedSaleOf(stored, sale)
       })
     },
+
+    // The mock only ever bills demonstrations, which have no fulfilment: there is never an exception to show.
+    listFulfilmentExceptions: (merchantId) =>
+      run(() => {
+        const actor = authorize(merchantId)
+        if (actor.membership.role !== 'OWNER') {
+          throw new PosServiceError('forbidden', 'Only an owner can see fulfilment exceptions.')
+        }
+        return []
+      }),
 
     getPosSale: async (merchantId, saleId) => {
       if (!codeCheckout) {
