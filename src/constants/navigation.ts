@@ -9,6 +9,7 @@ import {
   Hash,
   ShieldCheck,
   KeyRound,
+  Nfc,
   Landmark,
   LayoutDashboard,
   QrCode,
@@ -105,6 +106,14 @@ export const PRIMARY_NAVIGATION: NavigationItem[] = [
     icon: QrCode,
     description: 'QR codes and NFC payment links',
     permission: 'payment_profiles:view',
+  },
+  {
+    label: 'Payment points',
+    limitedLabel: 'My payment points',
+    path: '/entry-devices',
+    icon: Nfc,
+    description: 'Static QR codes, NFC tags and bracelets that open a prepared bill',
+    permission: 'entry_devices:view',
   },
   {
     // Every member gets this entry: owners and managers manage the registry, everyone else sees their own code. Both operating modes.

@@ -6,6 +6,7 @@ import type { BranchService } from './branchService'
 import type { CatalogService } from './catalogService'
 import type { CheckoutService } from './checkoutService'
 import type { CodeCheckoutService, PublicCodeSaleService } from './codeCheckoutService'
+import type { EntryDeviceService, PublicEntryService } from './entryDeviceService'
 import type { KycService } from './kycService'
 import type { DashboardService } from './dashboardService'
 import type { CollectionCodeService } from './collectionCodeService'
@@ -21,6 +22,8 @@ import {
   createHttpCatalogService,
   createHttpCheckoutService,
   createHttpCodeCheckoutService,
+  createHttpEntryDeviceService,
+  createHttpPublicEntryService,
   createHttpPublicCodeSaleService,
   createHttpKycService,
   createHttpDashboardService,
@@ -46,6 +49,7 @@ import { createMockBranchService } from './mock/mockBranchService'
 import { createMockCatalogService } from './mock/mockCatalogService'
 import { createMockCheckoutService } from './mock/mockCheckoutService'
 import { createMockCodeCheckout } from './mock/mockCodeCheckoutService'
+import { createMockEntryDevices } from './mock/mockEntryDeviceService'
 import { createMockKycService } from './mock/mockKycService'
 import { createLedgerStore } from './mock/ledger/mockLedgerStore'
 import { createMockDashboardService } from './mock/mockDashboardService'
@@ -97,6 +101,8 @@ interface Services {
   bankingService: BankingConfigurationService
   paymentProfileService: PaymentProfileService
   publicPaymentService: PublicPaymentService
+  entryDeviceService: EntryDeviceService
+  publicEntryService: PublicEntryService
   /** Demo only (mock mode, demo build). The trusted event processor is never exported at all. */
   bankSimulator: BankSimulatorService | null
 }
@@ -109,6 +115,10 @@ function createMockServices(): Services {
   const shared = { authStore: mockAuthStore, ledger: mockLedger }
   const mockInvoiceService = createMockInvoiceService(shared)
   const mockCodeCheckout = createMockCodeCheckout({ ...shared, invoiceService: mockInvoiceService })
+  const mockEntryDevices = createMockEntryDevices({
+    authStore: mockAuthStore,
+    publicCodeSaleService: mockCodeCheckout.publicCodeSaleService,
+  })
   return {
     authService: createMockAuthService({ store: mockAuthStore }),
     merchantService: createMockMerchantService({ authStore: mockAuthStore }),
@@ -130,6 +140,8 @@ function createMockServices(): Services {
       billCart: mockCodeCheckout.billCart,
     }),
     collectionCodeService: createMockCollectionCodeService({ authStore: mockAuthStore }),
+    entryDeviceService: mockEntryDevices.entryDeviceService,
+    publicEntryService: mockEntryDevices.publicEntryService,
     reconciliationService: createMockReconciliationService(shared),
     notificationService: createMockNotificationService(shared),
     bankingService: createMockBankingService(shared),
@@ -164,6 +176,8 @@ function createHttpServices(): Services {
     inventoryService: createHttpInventoryService(http),
     posService: createHttpPosService(http),
     collectionCodeService: createHttpCollectionCodeService(http),
+    entryDeviceService: createHttpEntryDeviceService(http),
+    publicEntryService: createHttpPublicEntryService(http),
     reconciliationService: createHttpReconciliationService(http),
     notificationService: createHttpNotificationService(http),
     bankingService: createHttpBankingService(http),
@@ -192,6 +206,8 @@ export const {
   inventoryService,
   posService,
   collectionCodeService,
+  entryDeviceService,
+  publicEntryService,
   kycService,
   reconciliationService,
   notificationService,

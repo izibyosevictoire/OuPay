@@ -72,6 +72,19 @@ import type {
 } from '@/types/collectionCodes'
 import type { InventoryBalance, MovementResult, StockMovement } from '@/types/inventory'
 import type { InvoicePage } from '@/types/invoice'
+import {
+  EntryDeviceServiceError,
+  type EntryDeviceService,
+  type PublicEntryService,
+} from '@/services/entryDeviceService'
+import type {
+  EligibleEntrySale,
+  EntryDevice,
+  EntryDeviceAssignment,
+  EntryDeviceBindingHistory,
+  EntryDeviceOptions,
+  PublicEntry,
+} from '@/types/entryDevices'
 import { mapHttpError, translating } from './errorMapping'
 import type { ReportsService } from '@/services/reportsService'
 import type { HttpClient } from './httpClient'
@@ -1664,5 +1677,201 @@ export function createHttpReportsService(http: HttpClient): ReportsService {
       http.get(`/merchants/${merchantId}/reports/summary`, {
         query: { from: range.from, to: range.to },
       }),
+  }
+}
+
+// ---- payment-entry devices (R8a) ---------------------------------------------------------------------
+
+const ENTRY_DEVICE_CODES = [
+  'unauthenticated',
+  'not_found',
+  'forbidden',
+  'validation',
+  'client_request_id_reuse',
+  'device_name_taken',
+  'branch_not_eligible',
+  'cashier_not_eligible',
+  'device_not_active',
+  'device_revoked',
+  'device_status_invalid',
+  'no_change',
+  'version_conflict',
+  'sale_branch_mismatch',
+  'sale_agent_mismatch',
+  'sale_not_bindable',
+  'sale_already_bound',
+  'device_has_open_bill',
+  'no_open_bill',
+  'customer_session_active',
+] as const
+
+const entryDeviceError = (error: unknown) =>
+  mapHttpError(
+    error,
+    (code, message) => new EntryDeviceServiceError(code, message),
+    ENTRY_DEVICE_CODES,
+  )
+
+/** The server omits null fields from its JSON, so a missing field means null. Normalised once, here. */
+type RawEntryBinding = Omit<NonNullable<EntryDevice['binding']>, 'sessionExpiresAt'> & {
+  sessionExpiresAt?: string | null
+}
+type RawEntryDevice = Omit<
+  EntryDevice,
+  'assignedCashierUserId' | 'assignedCashierName' | 'statusReason' | 'binding'
+> & {
+  assignedCashierUserId?: string | null
+  assignedCashierName?: string | null
+  statusReason?: string | null
+  binding?: RawEntryBinding | null
+}
+
+const entryDeviceOf = (raw: RawEntryDevice): EntryDevice => ({
+  ...raw,
+  assignedCashierUserId: raw.assignedCashierUserId ?? null,
+  assignedCashierName: raw.assignedCashierName ?? null,
+  statusReason: raw.statusReason ?? null,
+  binding: raw.binding
+    ? { ...raw.binding, sessionExpiresAt: raw.binding.sessionExpiresAt ?? null }
+    : null,
+})
+
+type RawEntryAssignment = Omit<
+  EntryDeviceAssignment,
+  'assignedCashierUserId' | 'assignedCashierName' | 'validTo' | 'reason'
+> & {
+  assignedCashierUserId?: string | null
+  assignedCashierName?: string | null
+  validTo?: string | null
+  reason?: string | null
+}
+
+type RawEntryBindingHistory = Omit<EntryDeviceBindingHistory, 'endedAt' | 'endReason'> & {
+  endedAt?: string | null
+  endReason?: string | null
+}
+
+export function createHttpEntryDeviceService(http: HttpClient): EntryDeviceService {
+  const base = (merchantId: string) => `${m(merchantId)}/entry-devices`
+  const path = (merchantId: string, deviceId: string) => `${base(merchantId)}/${deviceId}`
+  const post = (merchantId: string, deviceId: string, action: string, body: unknown) =>
+    http.post<RawEntryDevice>(`${path(merchantId, deviceId)}/${action}`, { body })
+  return {
+    getOptions: translating(async (id) => {
+      const options = await http.get<EntryDeviceOptions>(`${base(id)}/options`)
+      return {
+        branches: options.branches ?? [],
+        cashiers: (options.cashiers ?? []).map((cashier) => ({
+          ...cashier,
+          branchIds: cashier.branchIds ?? [],
+        })),
+      }
+    }, entryDeviceError),
+    listDevices: translating(async (id, filter) => {
+      const raw = await http.get<RawEntryDevice[]>(base(id), {
+        query: { status: filter?.status, branchId: filter?.branchId },
+      })
+      return (raw ?? []).map(entryDeviceOf)
+    }, entryDeviceError),
+    getDevice: translating(async (id, deviceId) => {
+      return entryDeviceOf(await http.get<RawEntryDevice>(path(id, deviceId)))
+    }, entryDeviceError),
+    registerDevice: translating(async (id, input) => {
+      const result = await http.post<{ device: RawEntryDevice; replayed?: boolean }>(base(id), {
+        body: input,
+      })
+      return { device: entryDeviceOf(result.device), replayed: result.replayed ?? false }
+    }, entryDeviceError),
+    assignDevice: translating(async (id, deviceId, input) => {
+      return entryDeviceOf(await post(id, deviceId, 'assignment', input))
+    }, entryDeviceError),
+    suspendDevice: translating(async (id, deviceId, input) => {
+      return entryDeviceOf(await post(id, deviceId, 'suspend', input))
+    }, entryDeviceError),
+    reactivateDevice: translating(async (id, deviceId, input) => {
+      return entryDeviceOf(await post(id, deviceId, 'reactivate', input))
+    }, entryDeviceError),
+    revokeDevice: translating(async (id, deviceId, input) => {
+      return entryDeviceOf(await post(id, deviceId, 'revoke', input))
+    }, entryDeviceError),
+    listAssignments: translating(async (id, deviceId) => {
+      const raw = await http.get<RawEntryAssignment[]>(`${path(id, deviceId)}/assignments`)
+      return (raw ?? []).map((a) => ({
+        ...a,
+        assignedCashierUserId: a.assignedCashierUserId ?? null,
+        assignedCashierName: a.assignedCashierName ?? null,
+        validTo: a.validTo ?? null,
+        reason: a.reason ?? null,
+      }))
+    }, entryDeviceError),
+    listBindings: translating(async (id, deviceId) => {
+      const raw = await http.get<RawEntryBindingHistory[]>(`${path(id, deviceId)}/bindings`)
+      return (raw ?? []).map((b) => ({
+        ...b,
+        endedAt: b.endedAt ?? null,
+        endReason: b.endReason ?? null,
+      }))
+    }, entryDeviceError),
+    listEligibleSales: translating(async (id, deviceId) => {
+      return (await http.get<EligibleEntrySale[]>(`${path(id, deviceId)}/eligible-sales`)) ?? []
+    }, entryDeviceError),
+    bindSale: translating(async (id, deviceId, input) => {
+      return entryDeviceOf(await post(id, deviceId, 'binding', input))
+    }, entryDeviceError),
+    unbindSale: translating(async (id, deviceId, input) => {
+      return entryDeviceOf(await post(id, deviceId, 'binding/end', input))
+    }, entryDeviceError),
+  }
+}
+
+type RawPublicEntryClaim = Omit<NonNullable<PublicEntry['claim']>, 'endReason' | 'claimToken'> & {
+  endReason?: string | null
+  claimToken?: string | null
+}
+type RawPublicEntry = Omit<PublicEntry, 'merchantDisplayName' | 'sale' | 'claim'> & {
+  merchantDisplayName?: string | null
+  sale?: RawPublicCodeSale | null
+  claim?: RawPublicEntryClaim | null
+}
+
+const publicEntryOf = (raw: RawPublicEntry): PublicEntry => ({
+  state: raw.state,
+  message: raw.message,
+  merchantDisplayName: raw.merchantDisplayName ?? null,
+  sale: raw.sale
+    ? {
+        ...raw.sale,
+        description: raw.sale.description ?? null,
+        instructions: raw.sale.instructions ?? [],
+        code: presentationOf(raw.sale.code),
+      }
+    : null,
+  claim: raw.claim
+    ? {
+        ...raw.claim,
+        endReason: raw.claim.endReason ?? null,
+        claimToken: raw.claim.claimToken ?? null,
+      }
+    : null,
+})
+
+/**
+ * The customer's side of a payment-entry device: anonymous, no cookies are needed. The session secret travels in a header, never in
+ * the URL. Every unusable token gets the same UNAVAILABLE answer, so the page needs no special error handling for it.
+ */
+export function createHttpPublicEntryService(http: HttpClient): PublicEntryService {
+  const headers = (claim?: string | null) => (claim ? { 'X-Entry-Claim': claim } : undefined)
+  const url = (token: string) => `/public/entry/${encodeURIComponent(token)}`
+  return {
+    resolve: async (token, claim) =>
+      publicEntryOf(await http.get<RawPublicEntry>(url(token), { headers: headers(claim) })),
+    claim: async (token, claim) =>
+      publicEntryOf(
+        await http.post<RawPublicEntry>(`${url(token)}/claim`, { headers: headers(claim) }),
+      ),
+    release: async (token, claim) =>
+      publicEntryOf(
+        await http.post<RawPublicEntry>(`${url(token)}/release`, { headers: headers(claim) }),
+      ),
   }
 }

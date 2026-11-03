@@ -26,6 +26,9 @@ const EXPECTED_MATRIX: [Permission, Record<BusinessRole, 'all' | 'limited' | nul
   ['collection_codes:view', { OWNER: 'all', MANAGER: 'all', CASHIER: null }],
   ['collection_codes:assign', { OWNER: 'all', MANAGER: 'limited', CASHIER: null }],
   ['collection_codes:manage', { OWNER: 'all', MANAGER: null, CASHIER: null }],
+  ['entry_devices:view', { OWNER: 'all', MANAGER: 'all', CASHIER: 'limited' }],
+  ['entry_devices:manage', { OWNER: 'all', MANAGER: 'limited', CASHIER: null }],
+  ['entry_devices:bind', { OWNER: 'all', MANAGER: 'limited', CASHIER: 'limited' }],
   ['reports:view', { OWNER: 'all', MANAGER: 'all', CASHIER: null }],
   ['banking:manage', { OWNER: 'all', MANAGER: null, CASHIER: null }],
 ]

@@ -12,6 +12,8 @@ import {
   inventoryService,
   posService,
   collectionCodeService,
+  entryDeviceService,
+  publicEntryService,
   notificationService,
   paymentProfileService,
   publicPaymentService,
@@ -29,6 +31,7 @@ import { createMockBranchService } from '@/services/mock/mockBranchService'
 import { createMockCatalogService } from '@/services/mock/mockCatalogService'
 import { createMockCheckoutService } from '@/services/mock/mockCheckoutService'
 import { createMockCodeCheckout } from '@/services/mock/mockCodeCheckoutService'
+import { createMockEntryDevices } from '@/services/mock/mockEntryDeviceService'
 import { createMockKycService } from '@/services/mock/mockKycService'
 import { createMockCollectionCodeService } from '@/services/mock/mockCollectionCodeService'
 import { createMockInventoryService } from '@/services/mock/mockInventoryService'
@@ -87,6 +90,12 @@ export function createTestBackend() {
     authStore: store,
     ledger,
     invoiceService: fastInvoices,
+    merchantStorage,
+    delayInMilliseconds: 0,
+  })
+  const fastEntryDevices = createMockEntryDevices({
+    authStore: store,
+    publicCodeSaleService: fastCodeCheckout.publicCodeSaleService,
     merchantStorage,
     delayInMilliseconds: 0,
   })
@@ -161,6 +170,7 @@ export function createTestBackend() {
     fastInvoices,
     fastCheckout,
     fastCodeCheckout,
+    fastEntryDevices,
     fastCatalog,
     fastInventory,
     fastPos,
@@ -213,6 +223,8 @@ export function useFastBackend() {
   delegateAll(inventoryService, backend.fastInventory)
   delegateAll(posService, backend.fastPos)
   delegateAll(collectionCodeService, backend.fastCollectionCodes)
+  delegateAll(entryDeviceService, backend.fastEntryDevices.entryDeviceService)
+  delegateAll(publicEntryService, backend.fastEntryDevices.publicEntryService)
   delegateAll(publicPaymentService, backend.fastPublic)
   if (bankSimulator) delegateAll(bankSimulator, backend.fastSimulator)
   return {

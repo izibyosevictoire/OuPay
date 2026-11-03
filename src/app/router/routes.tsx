@@ -33,6 +33,9 @@ import { MerchantProfilePage } from '@/features/merchants/profile/MerchantProfil
 import { MerchantSettingsPage } from '@/features/merchants/settings/MerchantSettingsPage'
 import { PaymentLinkDetailsPage } from '@/features/paymentLinks/PaymentLinkDetailsPage'
 import { PaymentLinkPrintPage } from '@/features/paymentLinks/PaymentLinkPrintPage'
+import { EntryDevicePrintPage } from '@/features/entryDevices/EntryDevicePrintPage'
+import { EntryDevicesPage } from '@/features/entryDevices/EntryDevicesPage'
+import { PublicEntryPage } from '@/features/entryDevices/PublicEntryPage'
 import { PaymentLinksPage } from '@/features/paymentLinks/PaymentLinksPage'
 import { PaymentsPage } from '@/features/payments/PaymentsPage'
 import { TransactionDetailsPage } from '@/features/payments/TransactionDetailsPage'
@@ -56,6 +59,7 @@ const BUILT_MODULE_PATHS = [
   '/catalog',
   '/inventory',
   '/collection-codes',
+  '/entry-devices',
   '/collect',
   '/code-checkout',
   '/pos',
@@ -114,6 +118,8 @@ export const appRoutes: RouteObject[] = [
       { path: '/p/:paymentProfileId', element: <PublicProfilePage /> },
       { path: '/p/:paymentProfileId/r/:publicReference', element: <PublicRequestPage /> },
       { path: '/code-sale/:reference', element: <PublicCodeSalePage /> },
+      // The permanent URL of a static QR code, NFC tag or bracelet: read-only until the customer explicitly takes the bill.
+      { path: '/e/:token', element: <PublicEntryPage /> },
     ],
   },
   {
@@ -144,6 +150,7 @@ export const appRoutes: RouteObject[] = [
                 element: <PrintLayout />,
                 children: [
                   { path: '/payment-links/:profileId/print', element: <PaymentLinkPrintPage /> },
+                  { path: '/entry-devices/:deviceId/print', element: <EntryDevicePrintPage /> },
                 ],
               },
             ],
@@ -191,6 +198,11 @@ export const appRoutes: RouteObject[] = [
                 // The page itself explains when the business is not in business mode.
                 element: <PermissionRoute permission="inventory:view" />,
                 children: [{ path: '/inventory', element: <InventoryPage /> }],
+              },
+              {
+                // The page itself explains when the business is not in business mode.
+                element: <PermissionRoute permission="entry_devices:view" />,
+                children: [{ path: '/entry-devices', element: <EntryDevicesPage /> }],
               },
               // Open to every member: the page shows the registry to those who may manage it and the person’s own code to everyone else.
               { path: '/collection-codes', element: <CollectionCodesPage /> },

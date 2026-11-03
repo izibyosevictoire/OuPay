@@ -45,6 +45,10 @@ class PermissionTest {
         expected.put(Permission.COLLECTION_CODES_MANAGE, new Scope[] {all, null, null});
         // Equity KYC holds a representative's identity details and the consent over them: the owner's alone.
         expected.put(Permission.KYC_MANAGE, new Scope[] {all, null, null});
+        // Payment-entry devices: managers only at their own branches, a cashier only their own devices and sales.
+        expected.put(Permission.ENTRY_DEVICES_VIEW, new Scope[] {all, all, lim});
+        expected.put(Permission.ENTRY_DEVICES_MANAGE, new Scope[] {all, lim, null});
+        expected.put(Permission.ENTRY_DEVICES_BIND, new Scope[] {all, lim, lim});
 
         assertThat(expected.keySet()).containsExactlyInAnyOrder(Permission.values());
         expected.forEach((permission, scopes) -> {

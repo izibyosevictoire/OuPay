@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { CUSTOMER_STATUS_LABEL } from '@/lib/codeSaleStatus'
 import { formatDateTime, formatRwf } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import type { CodeSaleCustomerStatus } from '@/types/codeCheckout'
+import type { CodeSaleCustomerStatus, PublicCodeSale } from '@/types/codeCheckout'
 import { usePublicCodeSale } from './codeCheckoutQueries'
 import { CodePresentationCard } from './CodePresentationCard'
 import { DemoBillNotice } from './DemoBillNotice'
@@ -57,6 +57,14 @@ export function PublicCodeSalePage() {
     )
   }
 
+  return <PublicSaleView sale={sale} />
+}
+
+/**
+ * The bill itself, shared by the customer page of a sale (/code-sale/{reference}) and the page a QR code or NFC tag opens. It names the business,
+ * the amount, the reference and the code, shows the bank-verified status, and never claims a payment itself.
+ */
+export function PublicSaleView({ sale }: { sale: PublicCodeSale }) {
   const open = sale.status === 'AWAITING_PAYMENT' || sale.status === 'PARTIALLY_PAID'
   return (
     <Card>
