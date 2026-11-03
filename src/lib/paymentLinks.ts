@@ -53,6 +53,20 @@ export function describeNdefUriRecord(url: string) {
   }
 }
 
+/**
+ * How to put a payment-entry device's permanent link on an NFC tag. Locking is deliberately NOT a step: it is optional, irreversible on some
+ * tags, and unnecessary, because revoking the device disables the link on the server whatever the tag says.
+ */
+export const ENTRY_NFC_STEPS = [
+  'Use an NDEF-capable tag such as NTAG213, NTAG215 or NTAG216 (NFC Forum Type 2). NTAG213 holds about 144 bytes, enough for this link.',
+  'In an NFC writer app choose Write, then URL or URI, and paste exactly the permanent link above: https, no spaces, nothing added or changed. Write ONE record.',
+  'Never write a sale amount, a sale reference, a name, a bank code or anything else on the tag. It only opens the payment point.',
+  'Read the tag back with the same app and compare it with the link character by character. Then tap it with a phone and check that it opens the payment point page.',
+  'You never rewrite the tag when the bill changes: the payment point shows whichever bill the cashier gives it.',
+  'Locking the tag is OPTIONAL and cannot be undone on some tags. OuPay does not need it: if a tag is lost or copied, revoke the payment point and the link stops working everywhere.',
+  'The tag only carries a link. Anyone can read or copy it, so treat it as public. OuPay does not write or provision tags for you.',
+]
+
 export const NFC_TAG_REQUIREMENTS = [
   'An NDEF-capable tag such as NTAG213, NTAG215 or NTAG216 (NFC Forum Type 2). NTAG213 holds about 144 bytes, enough for one payment link.',
   'Write exactly one NDEF URI record containing the payment URL above. Do not add other records.',

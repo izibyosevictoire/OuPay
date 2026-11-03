@@ -85,7 +85,10 @@ describe('HTTP payment-entry devices keep the contract with the backend', () => 
   })
 
   it('registers with a stable request id and reports a replay', async () => {
-    const { devices, calls } = setup({ status: 200, body: { device: omitNulls(device), replayed: true } })
+    const { devices, calls } = setup({
+      status: 200,
+      body: { device: omitNulls(device), replayed: true },
+    })
     const input = {
       clientRequestId: '11111111-2222-4333-8444-555555555555',
       deviceType: 'STATIC_QR' as const,
@@ -98,7 +101,9 @@ describe('HTTP payment-entry devices keep the contract with the backend', () => 
   })
 
   it('sends each lifecycle and binding act to its own path, with the expected version', async () => {
-    const { devices, calls } = setup(...Array.from({ length: 7 }, () => ({ body: omitNulls(device) })))
+    const { devices, calls } = setup(
+      ...Array.from({ length: 7 }, () => ({ body: omitNulls(device) })),
+    )
     await devices.assignDevice(M, D, {
       expectedVersion: 3,
       branchId: 'b1',
@@ -131,7 +136,9 @@ describe('HTTP payment-entry devices keep the contract with the backend', () => 
       { status: 409, body: { code: 'customer_session_active', message: 'A customer is looking.' } },
       { status: 409, body: { code: 'something_new', message: 'x' } },
     )
-    await expect(devices.unbindSale(M, D, { reason: 'x', confirmActiveSession: false })).rejects.toMatchObject({
+    await expect(
+      devices.unbindSale(M, D, { reason: 'x', confirmActiveSession: false }),
+    ).rejects.toMatchObject({
       name: 'EntryDeviceServiceError',
       code: 'customer_session_active',
     })
@@ -191,7 +198,9 @@ describe('HTTP customer entry keeps the contract with the backend', () => {
   })
 
   it('treats every unusable token as the same UNAVAILABLE answer, without a sale or a claim', async () => {
-    const { publicEntry } = setup({ body: { state: 'UNAVAILABLE', message: 'This payment point is not available.' } })
+    const { publicEntry } = setup({
+      body: { state: 'UNAVAILABLE', message: 'This payment point is not available.' },
+    })
     await expect(publicEntry.resolve('nope')).resolves.toEqual({
       state: 'UNAVAILABLE',
       message: 'This payment point is not available.',

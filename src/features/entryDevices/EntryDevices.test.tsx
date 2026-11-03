@@ -26,7 +26,9 @@ async function demoSale(amountRwf = 5_000) {
   const profile = t.ledger.paymentProfiles
     .load()
     .find((p) => p.merchantId === M && p.status === 'ACTIVE' && p.assignedCashierId === null)
-  const destination = t.ledger.paymentDestinations.load().find((d) => d.id === profile?.paymentDestinationId)
+  const destination = t.ledger.paymentDestinations
+    .load()
+    .find((d) => d.id === profile?.paymentDestinationId)
   if (!destination) throw new Error('the sample ledger has no destination to settle to')
   const requested = await t.fastCollectionCodes.requestCode(M, {
     clientOperationId: crypto.randomUUID(),
@@ -74,7 +76,9 @@ describe('payment points: registering and printing (owner)', () => {
     await user.type(within(dialog).getByLabelText(/^Name/), 'Counter 1')
     await user.click(within(dialog).getByRole('button', { name: 'Register' }))
 
-    const card = await screen.findByRole('article', { name: /Payment point Counter 1/ }).catch(() => null)
+    const card = await screen
+      .findByRole('article', { name: /Payment point Counter 1/ })
+      .catch(() => null)
     const region = card ?? (await screen.findByLabelText('Payment point Counter 1'))
     const link = within(region).getByLabelText(/Permanent link/) as HTMLInputElement
     expect(link.value).toMatch(URL_PATTERN)
@@ -98,7 +102,9 @@ describe('payment points: registering and printing (owner)', () => {
     await user.selectOptions(within(dialog).getByLabelText(/^Kind/), 'NFC_BRACELET')
     await user.type(within(dialog).getByLabelText(/^Name/), 'Aline bracelet')
     await user.click(within(dialog).getByRole('button', { name: 'Register' }))
-    expect(await within(dialog).findAllByText('A bracelet belongs to one cashier.')).not.toHaveLength(0)
+    expect(
+      await within(dialog).findAllByText('A bracelet belongs to one cashier.'),
+    ).not.toHaveLength(0)
 
     await user.selectOptions(within(dialog).getByLabelText(/^Cashier/), DEMO_USER_IDS.cashier)
     await user.click(within(dialog).getByRole('button', { name: 'Register' }))
@@ -106,7 +112,7 @@ describe('payment points: registering and printing (owner)', () => {
     const link = (within(region).getByLabelText(/Permanent link/) as HTMLInputElement).value
     await user.click(within(region).getByRole('button', { name: /Writing the NFC tag/ }))
     expect(within(region).getByText(/exactly this link/)).toBeInTheDocument()
-    expect(within(region).getByText(/Write exactly one NDEF URI record/)).toBeInTheDocument()
+    expect(within(region).getByText(/Write ONE record/)).toBeInTheDocument()
     expect(link).toMatch(URL_PATTERN)
   })
 
@@ -129,7 +135,9 @@ describe('payment points: registering and printing (owner)', () => {
     expect(within(history).getByText(/Aline takes the counter/)).toBeInTheDocument()
 
     await user.click(within(region).getByRole('button', { name: 'Revoke' }))
-    const revoke = await screen.findByRole('dialog', { name: 'Revoke this payment point for good?' })
+    const revoke = await screen.findByRole('dialog', {
+      name: 'Revoke this payment point for good?',
+    })
     // A reason is required, and nothing happens without it.
     await user.click(within(revoke).getByRole('button', { name: 'Revoke' }))
     expect(await within(revoke).findByText(/Write a short reason/)).toBeInTheDocument()
@@ -139,7 +147,9 @@ describe('payment points: registering and printing (owner)', () => {
     // A revoked device shows no link, no print and no actions that could revive it.
     expect(within(region).queryByLabelText(/Permanent link/)).not.toBeInTheDocument()
     expect(within(region).queryByRole('link', { name: /Print QR code/ })).not.toBeInTheDocument()
-    expect(within(region).queryByRole('button', { name: /Switch on|Suspend|Revoke/ })).not.toBeInTheDocument()
+    expect(
+      within(region).queryByRole('button', { name: /Switch on|Suspend|Revoke/ }),
+    ).not.toBeInTheDocument()
   })
 })
 
@@ -151,8 +161,12 @@ describe('payment points: a cashier and a bill', () => {
     const sale = await demoSale(7_500)
     await renderAppAt('/entry-devices', { signedInAs: 'cashier' })
     const region = await screen.findByLabelText('Payment point Aline counter')
-    expect(screen.queryByRole('button', { name: /Register a payment point/ })).not.toBeInTheDocument()
-    expect(within(region).queryByRole('button', { name: /Revoke|Suspend|Change branch/ })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /Register a payment point/ }),
+    ).not.toBeInTheDocument()
+    expect(
+      within(region).queryByRole('button', { name: /Revoke|Suspend|Change branch/ }),
+    ).not.toBeInTheDocument()
 
     await user.click(within(region).getByRole('button', { name: 'Give a bill' }))
     const dialog = await screen.findByRole('dialog', { name: /Give “Aline counter” a bill/ })
@@ -165,16 +179,20 @@ describe('payment points: a cashier and a bill', () => {
 
     await waitFor(() => expect(within(region).getByLabelText('Current bill')).toBeInTheDocument())
     const bill = within(region).getByLabelText('Current bill')
-    expect(within(bill).getByText(new RegExp(`Opens bill ${sale.saleReference}`))).toBeInTheDocument()
+    expect(
+      within(bill).getByText(new RegExp(`Opens bill ${sale.saleReference}`)),
+    ).toBeInTheDocument()
     expect(within(bill).getByText(/DEMONSTRATION/)).toBeInTheDocument()
     // The screen never claims a payment: the status is the one the (mock) bank-verified page reports.
     expect(within(bill).getByText(/Awaiting payment/)).toBeInTheDocument()
-    expect(within(bill).getByText(/No customer has taken this bill/)).toBeInTheDocument()
+    expect(within(bill).getByText(/Ready: no customer has taken this bill/)).toBeInTheDocument()
 
     await user.click(within(region).getByRole('button', { name: 'Stop opening this bill' }))
     const stop = await screen.findByRole('dialog', { name: 'Stop opening this bill?' })
     await user.click(within(stop).getByRole('button', { name: 'Stop opening this bill' }))
-    await waitFor(() => expect(within(region).getByText(/Idle: no bill is open here/)).toBeInTheDocument())
+    await waitFor(() =>
+      expect(within(region).getByText(/Idle: no bill is open here/)).toBeInTheDocument(),
+    )
   })
 })
 
@@ -239,12 +257,16 @@ describe('the page a QR code or NFC tap opens (customer)', () => {
   it('answers every unusable link the same way, and a device with no bill as idle', async () => {
     const device = await registerDevice('Counter 1')
     await renderAppAt(`/e/${tokenOf(device.entryPath)}`, { signedInAs: null })
-    expect(await screen.findByText(/No bill is ready at this payment point yet/)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/No bill is ready at this payment point yet/),
+    ).toBeInTheDocument()
   })
 
   it('shows "not available" for an unknown token, with nothing else', async () => {
     await renderAppAt('/e/AAAAAAAAAAAAAAAAAAAAAA', { signedInAs: null })
-    expect(await screen.findByRole('heading', { name: 'This payment point is not available' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: 'This payment point is not available' }),
+    ).toBeInTheDocument()
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
@@ -290,7 +312,9 @@ describe('the page a QR code or NFC tap opens (customer)', () => {
     await renderAppAt(`/e/${tokenOf(device.entryPath)}`, { signedInAs: null })
     await user.click(await screen.findByRole('button', { name: 'Show my bill' }))
     await screen.findAllByText(sale.saleReference)
-    expect(screen.getByText(/permanent payment point: it stays the same for every customer/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/permanent payment point: it stays the same for every customer/),
+    ).toBeInTheDocument()
     expect(screen.getByText(/sale reference above belongs to\s+this bill only/)).toBeInTheDocument()
   })
 

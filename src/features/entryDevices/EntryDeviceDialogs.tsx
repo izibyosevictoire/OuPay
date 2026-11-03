@@ -61,11 +61,23 @@ function ErrorAlert({ message }: { message: string | null }) {
   )
 }
 
-function Submit({ pending, label, destructive = false }: { pending: boolean; label: string; destructive?: boolean }) {
+function Submit({
+  pending,
+  label,
+  destructive = false,
+}: {
+  pending: boolean
+  label: string
+  destructive?: boolean
+}) {
   return (
     <Button
       type="submit"
-      className={destructive ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90' : undefined}
+      className={
+        destructive
+          ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+          : undefined
+      }
       disabled={pending}
       aria-busy={pending}
     >
@@ -158,15 +170,19 @@ function RegisterForm({ options, onDone }: { options: EntryDeviceOptions; onDone
       <DialogHeader>
         <DialogTitle>Register a payment point</DialogTitle>
         <DialogDescription>
-          A payment point is a permanent doorway. It never holds a bank code, an amount or a person: it only opens
-          the bill you prepare for it.
+          A payment point is a permanent doorway. It never holds a bank code, an amount or a person:
+          it only opens the bill you prepare for it.
         </DialogDescription>
       </DialogHeader>
       <DialogBody className="space-y-4">
         <ErrorAlert message={error} />
         <FormField label="Kind" required hint={DEVICE_TYPE_HELP[deviceType]}>
           {(props) => (
-            <Select {...props} value={deviceType} onChange={(e) => setDeviceType(e.target.value as EntryDeviceType)}>
+            <Select
+              {...props}
+              value={deviceType}
+              onChange={(e) => setDeviceType(e.target.value as EntryDeviceType)}
+            >
               {ENTRY_DEVICE_TYPES.map((type) => (
                 <option key={type} value={type}>
                   {DEVICE_TYPE_LABELS[type]}
@@ -175,9 +191,19 @@ function RegisterForm({ options, onDone }: { options: EntryDeviceOptions; onDone
             </Select>
           )}
         </FormField>
-        <FormField label="Name" required error={error && nameProblem ? nameProblem : undefined} hint="How staff will recognise it, for example “Counter 1”.">
+        <FormField
+          label="Name"
+          required
+          error={error && nameProblem ? nameProblem : undefined}
+          hint="How staff will recognise it, for example “Counter 1”."
+        >
           {(props) => (
-            <Input {...props} value={displayName} maxLength={MAX_DEVICE_NAME + 10} onChange={(e) => setDisplayName(e.target.value)} />
+            <Input
+              {...props}
+              value={displayName}
+              maxLength={MAX_DEVICE_NAME + 10}
+              onChange={(e) => setDisplayName(e.target.value)}
+            />
           )}
         </FormField>
         <FormField label="Branch" required>
@@ -246,7 +272,15 @@ export function AssignDeviceDialog({
   )
 }
 
-function AssignForm({ device, options, onDone }: { device: EntryDevice; options: EntryDeviceOptions; onDone: () => void }) {
+function AssignForm({
+  device,
+  options,
+  onDone,
+}: {
+  device: EntryDevice
+  options: EntryDeviceOptions
+  onDone: () => void
+}) {
   const { notify } = useToast()
   const assign = useAssignDevice(device.id)
   const [branchId, setBranchId] = useState(device.branchId)
@@ -274,7 +308,10 @@ function AssignForm({ device, options, onDone }: { device: EntryDevice; options:
       },
       {
         onSuccess: () => {
-          notify('success', 'The payment point was reassigned. The history keeps the earlier assignment.')
+          notify(
+            'success',
+            'The payment point was reassigned. The history keeps the earlier assignment.',
+          )
           onDone()
         },
         onError: (e) => setError(describe(e, 'The payment point could not be reassigned.')),
@@ -287,16 +324,26 @@ function AssignForm({ device, options, onDone }: { device: EntryDevice; options:
       <DialogHeader>
         <DialogTitle>Change branch or cashier</DialogTitle>
         <DialogDescription>
-          “{device.displayName}” keeps its link. A bill that no longer fits the new cashier or branch is closed, never carried over.
+          “{device.displayName}” keeps its link. A bill that no longer fits the new cashier or
+          branch is closed, never carried over.
         </DialogDescription>
       </DialogHeader>
       <DialogBody className="space-y-4">
         <ErrorAlert message={error} />
         <FormField label="Branch" required>
           {(props) => (
-            <Select {...props} value={branchId} onChange={(e) => { setBranchId(e.target.value); setCashierId('') }}>
+            <Select
+              {...props}
+              value={branchId}
+              onChange={(e) => {
+                setBranchId(e.target.value)
+                setCashierId('')
+              }}
+            >
               {options.branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>{branch.name} ({branch.code})</option>
+                <option key={branch.id} value={branch.id}>
+                  {branch.name} ({branch.code})
+                </option>
               ))}
             </Select>
           )}
@@ -306,23 +353,39 @@ function AssignForm({ device, options, onDone }: { device: EntryDevice; options:
             <Select {...props} value={cashierId} onChange={(e) => setCashierId(e.target.value)}>
               <option value="">No fixed cashier</option>
               {cashiers.map((cashier) => (
-                <option key={cashier.userId} value={cashier.userId}>{cashier.fullName}</option>
+                <option key={cashier.userId} value={cashier.userId}>
+                  {cashier.fullName}
+                </option>
               ))}
             </Select>
           )}
         </FormField>
         <FormField label="Reason" hint="Kept in the assignment history.">
-          {(props) => <Input {...props} value={reason} maxLength={MAX_REASON} onChange={(e) => setReason(e.target.value)} />}
+          {(props) => (
+            <Input
+              {...props}
+              value={reason}
+              maxLength={MAX_REASON}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          )}
         </FormField>
         {sessionNeedsConfirmation && (
           <label className="flex items-start gap-2 text-sm">
-            <input type="checkbox" className="mt-1" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} />
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={confirm}
+              onChange={(e) => setConfirm(e.target.checked)}
+            />
             <span>Close the bill anyway, although a customer is looking at it.</span>
           </label>
         )}
       </DialogBody>
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onDone}>Cancel</Button>
+        <Button type="button" variant="outline" onClick={onDone}>
+          Cancel
+        </Button>
         <Submit pending={assign.isPending} label="Save change" />
       </DialogFooter>
     </form>
@@ -331,7 +394,10 @@ function AssignForm({ device, options, onDone }: { device: EntryDevice; options:
 
 // ---- suspend, reactivate, revoke ------------------------------------------------------------------------------------
 
-const STATUS_COPY: Record<DeviceStatusAction, { title: string; body: string; button: string; destructive: boolean; done: string }> = {
+const STATUS_COPY: Record<
+  DeviceStatusAction,
+  { title: string; body: string; button: string; destructive: boolean; done: string }
+> = {
   suspend: {
     title: 'Suspend this payment point?',
     body: 'Customers who open its link will see that it is not available, and it cannot be given a new bill until you switch it on again.',
@@ -373,7 +439,15 @@ export function DeviceStatusDialog({
   )
 }
 
-function StatusForm({ device, action, onDone }: { device: EntryDevice; action: DeviceStatusAction; onDone: () => void }) {
+function StatusForm({
+  device,
+  action,
+  onDone,
+}: {
+  device: EntryDevice
+  action: DeviceStatusAction
+  onDone: () => void
+}) {
   const { notify } = useToast()
   const change = useChangeDeviceStatus(device.id)
   const copy = STATUS_COPY[action]
@@ -408,11 +482,20 @@ function StatusForm({ device, action, onDone }: { device: EntryDevice; action: D
       <DialogBody className="space-y-4">
         <ErrorAlert message={error} />
         <FormField label="Reason" required>
-          {(props) => <Textarea {...props} value={reason} maxLength={MAX_REASON} onChange={(e) => setReason(e.target.value)} />}
+          {(props) => (
+            <Textarea
+              {...props}
+              value={reason}
+              maxLength={MAX_REASON}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          )}
         </FormField>
       </DialogBody>
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onDone}>Cancel</Button>
+        <Button type="button" variant="outline" onClick={onDone}>
+          Cancel
+        </Button>
         <Submit pending={change.isPending} label={copy.button} destructive={copy.destructive} />
       </DialogFooter>
     </form>
@@ -421,7 +504,15 @@ function StatusForm({ device, action, onDone }: { device: EntryDevice; action: D
 
 // ---- give a bill ----------------------------------------------------------------------------------------------------
 
-export function BindSaleDialog({ open, onOpenChange, device }: { open: boolean; onOpenChange: (open: boolean) => void; device: EntryDevice }) {
+export function BindSaleDialog({
+  open,
+  onOpenChange,
+  device,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  device: EntryDevice
+}) {
   return (
     <Shell open={open} onOpenChange={onOpenChange}>
       <BindForm device={device} onDone={() => onOpenChange(false)} />
@@ -460,32 +551,48 @@ function BindForm({ device, onDone }: { device: EntryDevice; onDone: () => void 
       <DialogHeader>
         <DialogTitle>Give “{device.displayName}” a bill</DialogTitle>
         <DialogDescription>
-          Choose one prepared bill. The payment point never picks one for itself, and giving it a bill creates no invoice and
-          takes no payment.
+          Choose one prepared bill. The payment point never picks one for itself, and giving it a
+          bill creates no invoice and takes no payment.
         </DialogDescription>
       </DialogHeader>
       <DialogBody className="space-y-3">
         <ErrorAlert message={error} />
         {eligible.isPending && (
-          <p role="status" className="text-sm text-muted-foreground">Loading prepared bills…</p>
+          <p role="status" className="text-sm text-muted-foreground">
+            Loading prepared bills…
+          </p>
         )}
         {eligible.isError && <ErrorAlert message="The prepared bills could not be loaded." />}
         {eligible.data && eligible.data.length === 0 && (
           <p className="text-sm text-muted-foreground">
-            There is no open bill for this branch{device.assignedCashierName ? ` and ${device.assignedCashierName}` : ''} right now. Prepare
-            one in POS billing or Code checkout first.
+            There is no open bill for this branch
+            {device.assignedCashierName ? ` and ${device.assignedCashierName}` : ''} right now.
+            Prepare one in POS billing or Code checkout first.
           </p>
         )}
         {eligible.data && eligible.data.length > 0 && (
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">Prepared bills</legend>
             {eligible.data.map((sale) => (
-              <label key={sale.saleId} className="flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm has-[:checked]:border-primary">
-                <input type="radio" name="sale" className="mt-1" value={sale.saleId} checked={saleId === sale.saleId} onChange={() => setSaleId(sale.saleId)} />
+              <label
+                key={sale.saleId}
+                className="flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm has-[:checked]:border-primary"
+              >
+                <input
+                  type="radio"
+                  name="sale"
+                  className="mt-1"
+                  value={sale.saleId}
+                  checked={saleId === sale.saleId}
+                  onChange={() => setSaleId(sale.saleId)}
+                />
                 <span className="min-w-0">
-                  <span className="block font-medium">{formatRwf(sale.amountRwf)} · {sale.saleReference}</span>
+                  <span className="block font-medium">
+                    {formatRwf(sale.amountRwf)} · {sale.saleReference}
+                  </span>
                   <span className="block text-muted-foreground">
-                    {sale.description} · {sale.agentName} · {SALE_STATUS_LABELS[sale.status] ?? sale.status}
+                    {sale.description} · {sale.agentName} ·{' '}
+                    {SALE_STATUS_LABELS[sale.status] ?? sale.status}
                     {sale.presentationMode === 'DEMONSTRATION' ? ' · DEMONSTRATION' : ''}
                   </span>
                 </span>
@@ -495,7 +602,9 @@ function BindForm({ device, onDone }: { device: EntryDevice; onDone: () => void 
         )}
       </DialogBody>
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onDone}>Cancel</Button>
+        <Button type="button" variant="outline" onClick={onDone}>
+          Cancel
+        </Button>
         <Submit pending={bind.isPending} label="Give this bill" />
       </DialogFooter>
     </form>
@@ -504,7 +613,15 @@ function BindForm({ device, onDone }: { device: EntryDevice; onDone: () => void 
 
 // ---- close the current bill -----------------------------------------------------------------------------------------
 
-export function UnbindSaleDialog({ open, onOpenChange, device }: { open: boolean; onOpenChange: (open: boolean) => void; device: EntryDevice }) {
+export function UnbindSaleDialog({
+  open,
+  onOpenChange,
+  device,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  device: EntryDevice
+}) {
   return (
     <Shell open={open} onOpenChange={onOpenChange}>
       <UnbindForm device={device} onDone={() => onOpenChange(false)} />
@@ -531,7 +648,10 @@ function UnbindForm({ device, onDone }: { device: EntryDevice; onDone: () => voi
       { reason: reason.trim(), confirmActiveSession: confirm },
       {
         onSuccess: () => {
-          notify('success', 'The payment point no longer opens that bill. The bill itself is untouched.')
+          notify(
+            'success',
+            'The payment point no longer opens that bill. The bill itself is untouched.',
+          )
           onDone()
         },
         onError: (e) => setError(describe(e, 'The bill could not be closed.')),
@@ -544,28 +664,52 @@ function UnbindForm({ device, onDone }: { device: EntryDevice; onDone: () => voi
       <DialogHeader>
         <DialogTitle>Stop opening this bill?</DialogTitle>
         <DialogDescription>
-          The payment point goes idle. The bill {device.binding?.saleReference} stays exactly as it is and can still be paid with its code.
+          The payment point goes idle. The bill {device.binding?.saleReference} stays exactly as it
+          is and can still be paid with its code.
         </DialogDescription>
       </DialogHeader>
       <DialogBody className="space-y-4">
         <ErrorAlert message={error} />
         {active && (
-          <p role="status" className="rounded-md border border-warning/30 bg-warning-soft px-3 py-2 text-sm text-warning">
-            A customer is looking at this bill right now. They keep seeing their own bill, but confirm before you close it.
+          <p
+            role="status"
+            className="rounded-md border border-warning/30 bg-warning-soft px-3 py-2 text-sm text-warning"
+          >
+            A customer is looking at this bill right now. They keep seeing their own bill, but
+            confirm before you close it.
           </p>
         )}
+        <p className="text-sm text-muted-foreground">
+          Closing it does not cancel the bill and does not mean it failed. The customer can still
+          pay it with its code, and only the bank decides whether it was paid. If you give this
+          payment point another bill, the next customer who scans sees that one.
+        </p>
         <FormField label="Reason" required>
-          {(props) => <Input {...props} value={reason} maxLength={MAX_REASON} onChange={(e) => setReason(e.target.value)} />}
+          {(props) => (
+            <Input
+              {...props}
+              value={reason}
+              maxLength={MAX_REASON}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          )}
         </FormField>
         {active && (
           <label className="flex items-start gap-2 text-sm">
-            <input type="checkbox" className="mt-1" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} />
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={confirm}
+              onChange={(e) => setConfirm(e.target.checked)}
+            />
             <span>Close it anyway, although a customer is looking at it.</span>
           </label>
         )}
       </DialogBody>
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onDone}>Cancel</Button>
+        <Button type="button" variant="outline" onClick={onDone}>
+          Cancel
+        </Button>
         <Submit pending={unbind.isPending} label="Stop opening this bill" />
       </DialogFooter>
     </form>

@@ -145,7 +145,8 @@ export interface EntryDeviceWriteResult {
  * UNAVAILABLE is one answer for an unknown, suspended or revoked token. READY and BUSY carry no amount, reference or code: the bill is
  * shown only to the customer who took it.
  */
-export type PublicEntryState = 'UNAVAILABLE' | 'IDLE' | 'READY' | 'BUSY' | 'CLAIMED' | 'SESSION_ENDED'
+export type PublicEntryState =
+  'UNAVAILABLE' | 'IDLE' | 'READY' | 'BUSY' | 'CLAIMED' | 'SESSION_ENDED'
 
 export interface PublicEntryClaim {
   active: boolean

@@ -11,7 +11,7 @@ import { Select } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { usePermission } from '@/features/auth/permissions/usePermission'
 import { formatDateTime, formatRwf } from '@/lib/format'
-import { NFC_TAG_REQUIREMENTS, buildEntryUrl, describeNdefUriRecord } from '@/lib/paymentLinks'
+import { ENTRY_NFC_STEPS, buildEntryUrl, describeNdefUriRecord } from '@/lib/paymentLinks'
 import { cn } from '@/lib/utils'
 import type { EntryDevice, EntryDeviceStatus } from '@/types/entryDevices'
 import {
@@ -69,15 +69,21 @@ export function EntryDevicesPage() {
       />
 
       <p className="rounded-lg border border-info/30 bg-info-soft px-4 py-3 text-sm text-info">
-        A QR code or NFC tag only <strong>opens</strong> a bill. Scanning or tapping does not move money. The customer still pays with
-        the bank-approved collection code shown on the bill, and a payment counts only after the bank confirms it.
+        A QR code or NFC tag only <strong>opens</strong> a bill. Scanning or tapping does not move
+        money. The customer still pays with the bank-approved collection code shown on the bill, and
+        a payment counts only after the bank confirms it.
       </p>
 
       <div className="max-w-xs">
         <label htmlFor="device-status" className="mb-1 block text-sm font-medium">
           Show
         </label>
-        <Select id="device-status" value={status} onChange={(e) => setStatus(e.target.value as EntryDeviceStatus | '')}>
+        <Select
+          id="device-status"
+          className="min-h-11"
+          value={status}
+          onChange={(e) => setStatus(e.target.value as EntryDeviceStatus | '')}
+        >
           <option value="">All payment points</option>
           <option value="ACTIVE">Active</option>
           <option value="SUSPENDED">Suspended</option>
@@ -119,11 +125,27 @@ export function EntryDevicesPage() {
         <RegisterDeviceDialog open onOpenChange={close} options={optionsQuery.data} />
       )}
       {dialog?.kind === 'assign' && optionsQuery.data && (
-        <AssignDeviceDialog open onOpenChange={close} device={dialog.device} options={optionsQuery.data} />
+        <AssignDeviceDialog
+          open
+          onOpenChange={close}
+          device={dialog.device}
+          options={optionsQuery.data}
+        />
       )}
-      {dialog?.kind === 'status' && <DeviceStatusDialog open onOpenChange={close} device={dialog.device} action={dialog.action} />}
-      {dialog?.kind === 'bind' && <BindSaleDialog open onOpenChange={close} device={dialog.device} />}
-      {dialog?.kind === 'unbind' && <UnbindSaleDialog open onOpenChange={close} device={dialog.device} />}
+      {dialog?.kind === 'status' && (
+        <DeviceStatusDialog
+          open
+          onOpenChange={close}
+          device={dialog.device}
+          action={dialog.action}
+        />
+      )}
+      {dialog?.kind === 'bind' && (
+        <BindSaleDialog open onOpenChange={close} device={dialog.device} />
+      )}
+      {dialog?.kind === 'unbind' && (
+        <UnbindSaleDialog open onOpenChange={close} device={dialog.device} />
+      )}
     </div>
   )
 }
@@ -169,7 +191,12 @@ function DeviceCard({
             </p>
           </div>
         </div>
-        <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium', DEVICE_STATUS_STYLES[device.status])}>
+        <span
+          className={cn(
+            'rounded-full px-2.5 py-0.5 text-xs font-medium',
+            DEVICE_STATUS_STYLES[device.status],
+          )}
+        >
           {DEVICE_STATUS_LABELS[device.status]}
         </span>
       </div>
@@ -188,15 +215,22 @@ function DeviceCard({
               id={`url-${device.id}`}
               readOnly
               value={url}
-              className="h-10 min-w-0 flex-1 rounded-md border border-input bg-muted px-3 text-sm"
+              className="h-11 min-w-0 flex-1 rounded-md border border-input bg-muted px-3 text-sm"
               onFocus={(e) => e.currentTarget.select()}
             />
-            <Button type="button" variant="outline" onClick={() => void copy()} aria-label={`Copy the link of ${device.displayName}`}>
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-11"
+              onClick={() => void copy()}
+              aria-label={`Copy the link of ${device.displayName}`}
+            >
               <Copy aria-hidden="true" /> Copy
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            This link identifies the payment point, not a bill: it never changes. Each bill has its own sale reference (OP-…).
+            This link identifies the payment point, not a bill: it never changes. Each bill has its
+            own sale reference (OP-…).
           </p>
         </div>
       )}
@@ -205,48 +239,91 @@ function DeviceCard({
 
       <div className="flex flex-wrap gap-2">
         {live && (
-          <Button asChild variant="outline" size="sm">
+          <Button asChild variant="outline" size="sm" className="min-h-11 sm:min-h-9">
             <Link to={`/entry-devices/${device.id}/print`}>
               <Printer aria-hidden="true" /> Print QR code
             </Link>
           </Button>
         )}
         {device.status === 'ACTIVE' && bindPermission.isAllowed && !device.binding && (
-          <Button size="sm" onClick={() => onDialog({ kind: 'bind', device })}>
+          <Button
+            size="sm"
+            className="min-h-11 sm:min-h-9"
+            onClick={() => onDialog({ kind: 'bind', device })}
+          >
             Give a bill
           </Button>
         )}
         {device.binding && bindPermission.isAllowed && (
-          <Button size="sm" variant="outline" onClick={() => onDialog({ kind: 'unbind', device })}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="min-h-11 sm:min-h-9"
+            onClick={() => onDialog({ kind: 'unbind', device })}
+          >
             Stop opening this bill
           </Button>
         )}
         {canManage && live && (
-          <Button size="sm" variant="outline" onClick={() => onDialog({ kind: 'assign', device })}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="min-h-11 sm:min-h-9"
+            onClick={() => onDialog({ kind: 'assign', device })}
+          >
             Change branch or cashier
           </Button>
         )}
         {canManage && device.status === 'ACTIVE' && (
-          <Button size="sm" variant="outline" onClick={() => onDialog({ kind: 'status', device, action: 'suspend' })}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="min-h-11 sm:min-h-9"
+            onClick={() => onDialog({ kind: 'status', device, action: 'suspend' })}
+          >
             Suspend
           </Button>
         )}
         {canManage && device.status === 'SUSPENDED' && (
-          <Button size="sm" variant="outline" onClick={() => onDialog({ kind: 'status', device, action: 'reactivate' })}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="min-h-11 sm:min-h-9"
+            onClick={() => onDialog({ kind: 'status', device, action: 'reactivate' })}
+          >
             Switch on
           </Button>
         )}
         {canManage && live && (
-          <Button size="sm" variant="outline" className="text-danger" onClick={() => onDialog({ kind: 'status', device, action: 'revoke' })}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="min-h-11 text-danger sm:min-h-9"
+            onClick={() => onDialog({ kind: 'status', device, action: 'revoke' })}
+          >
             Revoke
           </Button>
         )}
-        <Button size="sm" variant="ghost" aria-expanded={showHistory} onClick={() => setShowHistory((v) => !v)}>
-          History {showHistory ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="min-h-11 sm:min-h-9"
+          aria-expanded={showHistory}
+          onClick={() => setShowHistory((v) => !v)}
+        >
+          History{' '}
+          {showHistory ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
         </Button>
         {live && device.deviceType !== 'STATIC_QR' && (
-          <Button size="sm" variant="ghost" aria-expanded={showNfc} onClick={() => setShowNfc((v) => !v)}>
-            Writing the NFC tag {showNfc ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="min-h-11 sm:min-h-9"
+            aria-expanded={showNfc}
+            onClick={() => setShowNfc((v) => !v)}
+          >
+            Writing the NFC tag{' '}
+            {showNfc ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
           </Button>
         )}
       </div>
@@ -275,12 +352,19 @@ function BindingPanel({ device }: { device: EntryDevice }) {
         {binding.presentationMode === 'DEMONSTRATION' && ' · DEMONSTRATION'}
       </p>
       <p className="text-muted-foreground">
-        {binding.description} · {binding.agentName} · {SALE_STATUS_LABELS[binding.saleStatus] ?? binding.saleStatus}
+        {binding.description} · {binding.agentName} ·{' '}
+        {SALE_STATUS_LABELS[binding.saleStatus] ?? binding.saleStatus}
       </p>
-      <p className={cn('text-xs', binding.customerSessionActive ? 'font-medium text-warning' : 'text-muted-foreground')}>
+      <p
+        role="status"
+        className={cn(
+          'text-xs',
+          binding.customerSessionActive ? 'font-medium text-warning' : 'text-muted-foreground',
+        )}
+      >
         {binding.customerSessionActive
-          ? 'A customer is looking at this bill right now.'
-          : 'No customer has taken this bill at the moment.'}
+          ? `BUSY: a customer is looking at this bill right now. Their session ends at ${binding.sessionExpiresAt ? formatDateTime(binding.sessionExpiresAt) : 'a few minutes from now'} unless they continue. Anyone else who scans sees "Payment in progress".`
+          : 'Ready: no customer has taken this bill at the moment.'}
       </p>
     </div>
   )
@@ -301,7 +385,8 @@ function History({ device }: { device: EntryDevice }) {
               {a.branchName} · {a.assignedCashierName ?? 'shared counter'}
               <br />
               <span className="text-xs">
-                {formatDateTime(a.validFrom)} → {a.validTo ? formatDateTime(a.validTo) : 'now'} · by {a.assignedBy}
+                {formatDateTime(a.validFrom)} → {a.validTo ? formatDateTime(a.validTo) : 'now'} · by{' '}
+                {a.assignedBy}
                 {a.reason ? ` · ${a.reason}` : ''}
               </span>
             </li>
@@ -320,7 +405,9 @@ function History({ device }: { device: EntryDevice }) {
               <br />
               <span className="text-xs">
                 {formatDateTime(b.boundAt)} by {b.boundBy} →{' '}
-                {b.endedAt ? `${formatDateTime(b.endedAt)} (${BINDING_END_LABELS[b.endReason ?? ''] ?? b.endReason})` : 'still open'}
+                {b.endedAt
+                  ? `${formatDateTime(b.endedAt)} (${BINDING_END_LABELS[b.endReason ?? ''] ?? b.endReason})`
+                  : 'still open'}
               </span>
             </li>
           ))}
@@ -335,11 +422,11 @@ function NfcInstructions({ url }: { url: string }) {
   return (
     <div className="space-y-2 border-t pt-3 text-sm">
       <p>
-        Write <strong>one</strong> NDEF record ({ndef.recordType}) containing exactly this link, about {ndef.payloadBytes} bytes. The QR code of
-        this payment point carries the same string.
+        Write <strong>one</strong> NDEF record ({ndef.recordType}) containing exactly this link,
+        about {ndef.payloadBytes} bytes. The QR code of this payment point carries the same string.
       </p>
       <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
-        {NFC_TAG_REQUIREMENTS.map((line) => (
+        {ENTRY_NFC_STEPS.map((line) => (
           <li key={line}>{line}</li>
         ))}
       </ul>

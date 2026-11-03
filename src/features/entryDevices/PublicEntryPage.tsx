@@ -38,10 +38,25 @@ function writeClaim(token: string, claim: string | null) {
   }
 }
 
-function Notice({ title, message, tone = 'neutral', children }: { title: string; message: string; tone?: 'neutral' | 'busy'; children?: React.ReactNode }) {
+function Notice({
+  title,
+  message,
+  tone = 'neutral',
+  children,
+}: {
+  title: string
+  message: string
+  tone?: 'neutral' | 'busy'
+  children?: React.ReactNode
+}) {
   return (
     <Card>
-      <CardContent className="space-y-3 p-4 text-center text-sm sm:p-6" role="status" aria-live="polite" data-tone={tone}>
+      <CardContent
+        className="space-y-3 p-4 text-center text-sm sm:p-6"
+        role="status"
+        aria-live="polite"
+        data-tone={tone}
+      >
         <h1 className="text-base font-semibold">{title}</h1>
         <p className="text-muted-foreground">{message}</p>
         {children}
@@ -111,7 +126,12 @@ export function PublicEntryPage() {
         <CardContent className="space-y-3 p-4 text-sm" role="alert">
           <h1 className="text-base font-semibold">This payment point could not be opened</h1>
           <p>Check your connection and try again.</p>
-          <Button type="button" variant="outline" onClick={() => void query.refetch()}>
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11"
+            onClick={() => void query.refetch()}
+          >
             Try again
           </Button>
         </CardContent>
@@ -125,7 +145,12 @@ export function PublicEntryPage() {
     case 'IDLE':
       return (
         <Notice title={entry.merchantDisplayName ?? 'Payment point'} message={entry.message}>
-          <Button type="button" variant="outline" onClick={() => void query.refetch()}>
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11"
+            onClick={() => void query.refetch()}
+          >
             Check again
           </Button>
         </Notice>
@@ -133,7 +158,12 @@ export function PublicEntryPage() {
     case 'BUSY':
       return (
         <Notice title="Payment in progress" message={entry.message} tone="busy">
-          <Button type="button" variant="outline" onClick={() => void query.refetch()}>
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11"
+            onClick={() => void query.refetch()}
+          >
             Check again
           </Button>
         </Notice>
@@ -148,7 +178,7 @@ export function PublicEntryPage() {
           )}
           <Button
             type="button"
-            className="w-full"
+            className="min-h-12 w-full text-base"
             disabled={take.isPending}
             aria-busy={take.isPending}
             onClick={takeBill}
@@ -167,14 +197,14 @@ export function PublicEntryPage() {
             {entry.message}
           </p>
           <p className="px-1 text-center text-xs text-muted-foreground">
-            The QR code or tag you used is a permanent payment point: it stays the same for every customer. The sale reference above belongs to
-            this bill only.
+            The QR code or tag you used is a permanent payment point: it stays the same for every
+            customer. The sale reference above belongs to this bill only.
           </p>
           {entry.state === 'CLAIMED' ? (
             <Button
               type="button"
               variant="outline"
-              className="w-full"
+              className="min-h-12 w-full"
               disabled={release.isPending}
               onClick={() =>
                 release.mutate(claim, {
@@ -185,8 +215,14 @@ export function PublicEntryPage() {
               I am finished: free this payment point
             </Button>
           ) : (
-            <Button type="button" variant="outline" className="w-full" onClick={takeBill} disabled={take.isPending}>
-              Show the bill now ready at this payment point
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-12 w-full"
+              onClick={takeBill}
+              disabled={take.isPending}
+            >
+              Check for a new bill at this payment point
             </Button>
           )}
         </div>

@@ -17,7 +17,11 @@ import type {
 import { ENTRY_DEVICE_TYPES } from '@/types/entryDevices'
 import { createLedgerStore } from './ledger/mockLedgerStore'
 import type { MockAuthStore } from './mockAuthStore'
-import { loadStoredMerchants, resolveDefaultStorage, type MerchantStorage } from './mockMerchantService'
+import {
+  loadStoredMerchants,
+  resolveDefaultStorage,
+  type MerchantStorage,
+} from './mockMerchantService'
 import { createOperationRunner, requireActor, type Actor } from './mockOrganizationAccess'
 import type { StoredCodeSale } from './mockCodeCheckoutService'
 import { MOCK_STORAGE_KEYS } from './mockStorageKeys'
@@ -203,14 +207,20 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
             a.status === 'ACTIVE',
         )
     if (!membership || !assigned) {
-      throw fail('cashier_not_eligible', 'The cashier must be an active member assigned to this branch.')
+      throw fail(
+        'cashier_not_eligible',
+        'The cashier must be an active member assigned to this branch.',
+      )
     }
     return nameOf(userId)
   }
   const requireUsableBranch = (merchantId: string, branchId: string) => {
     const branch = branchOf(merchantId, branchId)
     if (!branch || branch.status !== 'ACTIVE') {
-      throw fail('branch_not_eligible', 'A device can only belong to an active branch of this business.')
+      throw fail(
+        'branch_not_eligible',
+        'A device can only belong to an active branch of this business.',
+      )
     }
     return branch
   }
@@ -224,7 +234,10 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
   }
   const requireVersion = (device: StoredDevice, expected: number) => {
     if (device.version !== expected) {
-      throw fail('version_conflict', 'This device was changed by someone else. Reload it and try again.')
+      throw fail(
+        'version_conflict',
+        'This device was changed by someone else. Reload it and try again.',
+      )
     }
   }
   const update = (device: StoredDevice, change: Partial<StoredDevice>) => {
@@ -247,7 +260,8 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
     bindings().find((b) => b.deviceId === deviceId && b.endedAt === null)
   const activeClaim = (deviceId: string) =>
     claims().find(
-      (c) => c.deviceId === deviceId && c.endedAt === null && new Date(c.expiresAt).getTime() > now(),
+      (c) =>
+        c.deviceId === deviceId && c.endedAt === null && new Date(c.expiresAt).getTime() > now(),
     )
 
   const endClaims = (deviceId: string, reason: string) => {
@@ -264,7 +278,9 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
     endClaims(binding.deviceId, 'BINDING_ENDED')
     save(
       MOCK_STORAGE_KEYS.entryBindings,
-      bindings().map((b) => (b.id === binding.id ? { ...b, endedAt: iso(), endReason: reason } : b)),
+      bindings().map((b) =>
+        b.id === binding.id ? { ...b, endedAt: iso(), endReason: reason } : b,
+      ),
     )
   }
   const requireNoActiveSession = (binding: StoredBinding, confirmed: boolean) => {
@@ -275,7 +291,12 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
       )
     }
   }
-  const openAssignment = (device: StoredDevice, branchName: string, by: string, reason: string | null) => {
+  const openAssignment = (
+    device: StoredDevice,
+    branchName: string,
+    by: string,
+    reason: string | null,
+  ) => {
     const closed = assignments().map((a) =>
       a.deviceId === device.id && a.validTo === null ? { ...a, validTo: iso() } : a,
     )
@@ -348,7 +369,10 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
     requireManageScope(actor, device.branchId)
     requireVersion(device, input.expectedVersion)
     if (device.status !== from) {
-      throw fail('device_status_invalid', `A device that is ${device.status.toLowerCase()} cannot be ${verb}.`)
+      throw fail(
+        'device_status_invalid',
+        `A device that is ${device.status.toLowerCase()} cannot be ${verb}.`,
+      )
     }
     return update(device, { status: to, statusReason: input.reason.trim() || null })
   }
@@ -398,7 +422,8 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
       run(() => {
         const actor = actorFor(merchantId, 'entry_devices:view')
         const device = find(merchantId, deviceId)
-        if (!device || !visible(actor, device)) throw fail('not_found', 'This device could not be found.')
+        if (!device || !visible(actor, device))
+          throw fail('not_found', 'This device could not be found.')
         return device
       }).then(toDevice),
 
@@ -422,7 +447,10 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
             existing.branchId !== input.branchId ||
             existing.cashierUserId !== input.assignedCashierUserId
           ) {
-            throw fail('client_request_id_reuse', 'This request identifier was already used for a different device.')
+            throw fail(
+              'client_request_id_reuse',
+              'This request identifier was already used for a different device.',
+            )
           }
           return { id: existing.id, created: false }
         }
@@ -440,7 +468,10 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
               d.displayName.toLowerCase() === name.toLowerCase(),
           )
         ) {
-          throw fail('device_name_taken', 'Another device already has this name. Names identify devices at the counter.')
+          throw fail(
+            'device_name_taken',
+            'Another device already has this name. Names identify devices at the counter.',
+          )
         }
         const device: StoredDevice = {
           id: crypto.randomUUID(),
@@ -473,7 +504,10 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
         requireManageScope(actor, device.branchId)
         requireVersion(device, input.expectedVersion)
         if (device.status === 'REVOKED') throw fail('device_revoked', 'A revoked device is final.')
-        if (device.branchId === input.branchId && device.cashierUserId === input.assignedCashierUserId) {
+        if (
+          device.branchId === input.branchId &&
+          device.cashierUserId === input.assignedCashierUserId
+        ) {
           throw fail('no_change', 'This is already the branch and cashier of the device.')
         }
         const branch = requireUsableBranch(merchantId, input.branchId)
@@ -500,9 +534,13 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
       }).then(toDevice),
 
     suspendDevice: (merchantId, deviceId, input) =>
-      run(() => changeStatus(merchantId, deviceId, input, 'ACTIVE', 'SUSPENDED', 'suspended')).then(toDevice),
+      run(() => changeStatus(merchantId, deviceId, input, 'ACTIVE', 'SUSPENDED', 'suspended')).then(
+        toDevice,
+      ),
     reactivateDevice: (merchantId, deviceId, input) =>
-      run(() => changeStatus(merchantId, deviceId, input, 'SUSPENDED', 'ACTIVE', 'reactivated')).then(toDevice),
+      run(() =>
+        changeStatus(merchantId, deviceId, input, 'SUSPENDED', 'ACTIVE', 'reactivated'),
+      ).then(toDevice),
 
     revokeDevice: (merchantId, deviceId, input) =>
       run(() => {
@@ -510,18 +548,23 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
         const device = mustFind(merchantId, deviceId)
         requireManageScope(actor, device.branchId)
         requireVersion(device, input.expectedVersion)
-        if (device.status === 'REVOKED') throw fail('device_revoked', 'This device is already revoked.')
+        if (device.status === 'REVOKED')
+          throw fail('device_revoked', 'This device is already revoked.')
         endClaims(device.id, 'DEVICE_REVOKED')
         const open = openBinding(device.id)
         if (open) {
           save(
             MOCK_STORAGE_KEYS.entryBindings,
-            bindings().map((b) => (b.id === open.id ? { ...b, endedAt: iso(), endReason: 'DEVICE_REVOKED' } : b)),
+            bindings().map((b) =>
+              b.id === open.id ? { ...b, endedAt: iso(), endReason: 'DEVICE_REVOKED' } : b,
+            ),
           )
         }
         save(
           MOCK_STORAGE_KEYS.entryDeviceAssignments,
-          assignments().map((a) => (a.deviceId === device.id && a.validTo === null ? { ...a, validTo: iso() } : a)),
+          assignments().map((a) =>
+            a.deviceId === device.id && a.validTo === null ? { ...a, validTo: iso() } : a,
+          ),
         )
         return update(device, { status: 'REVOKED', statusReason: input.reason.trim() || null })
       }).then(toDevice),
@@ -530,7 +573,8 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
       run(() => {
         const actor = actorFor(merchantId, 'entry_devices:view')
         const device = find(merchantId, deviceId)
-        if (!device || !visible(actor, device)) throw fail('not_found', 'This device could not be found.')
+        if (!device || !visible(actor, device))
+          throw fail('not_found', 'This device could not be found.')
         return assignments()
           .filter((a) => a.deviceId === deviceId)
           .sort((a, b) => b.validFrom.localeCompare(a.validFrom))
@@ -551,7 +595,8 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
       run(() => {
         const actor = actorFor(merchantId, 'entry_devices:view')
         const device = find(merchantId, deviceId)
-        if (!device || !visible(actor, device)) throw fail('not_found', 'This device could not be found.')
+        if (!device || !visible(actor, device))
+          throw fail('not_found', 'This device could not be found.')
         return bindings()
           .filter((b) => b.deviceId === deviceId)
           .sort((a, b) => b.boundAt.localeCompare(a.boundAt))
@@ -571,7 +616,8 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
       run(() => {
         const actor = actorFor(merchantId, 'entry_devices:bind')
         const device = find(merchantId, deviceId)
-        if (!device || !visible(actor, device)) throw fail('not_found', 'This device could not be found.')
+        if (!device || !visible(actor, device))
+          throw fail('not_found', 'This device could not be found.')
         requireBindScope(actor, device)
         const agent =
           device.cashierUserId ?? (actor.membership.role === 'CASHIER' ? actor.user.id : null)
@@ -606,11 +652,15 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
       const prepared = await run(() => {
         const actor = actorFor(merchantId, 'entry_devices:bind')
         const device = find(merchantId, deviceId)
-        if (!device || !visible(actor, device)) throw fail('not_found', 'This device could not be found.')
+        if (!device || !visible(actor, device))
+          throw fail('not_found', 'This device could not be found.')
         requireBindScope(actor, device)
         requireVersion(device, input.expectedVersion)
         if (device.status !== 'ACTIVE') {
-          throw fail('device_not_active', `A ${device.status.toLowerCase()} device cannot be given a bill.`)
+          throw fail(
+            'device_not_active',
+            `A ${device.status.toLowerCase()} device cannot be given a bill.`,
+          )
         }
         const sale = sales().find((s) => s.saleId === input.saleId && s.merchantId === merchantId)
         if (!sale) throw fail('not_found', 'This sale could not be found.')
@@ -618,7 +668,10 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
           throw fail('sale_branch_mismatch', 'This sale belongs to another branch than the device.')
         }
         if (device.cashierUserId && device.cashierUserId !== sale.agentUserId) {
-          throw fail('sale_agent_mismatch', "This device belongs to another cashier: it only leads to that cashier's sales.")
+          throw fail(
+            'sale_agent_mismatch',
+            "This device belongs to another cashier: it only leads to that cashier's sales.",
+          )
         }
         if (actor.membership.role === 'CASHIER' && actor.user.id !== sale.agentUserId) {
           throw fail('forbidden', 'A cashier can only give a device their own sales.')
@@ -633,11 +686,17 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
           const open = openBinding(device.id)
           if (open?.saleId === sale.saleId) return find(merchantId, deviceId)!
           if (!reference || !BINDABLE.includes(status)) {
-            throw fail('sale_not_bindable', `A bill that is ${status.toLowerCase().replace(/_/g, ' ')} cannot be given to a device.`)
+            throw fail(
+              'sale_not_bindable',
+              `A bill that is ${status.toLowerCase().replace(/_/g, ' ')} cannot be given to a device.`,
+            )
           }
           if (open) {
             // Only a bill that has reached an end is closed by the system; any other needs an explicit unbind first.
-            throw fail('device_has_open_bill', `This device still leads to bill ${open.saleReference}. Close it first.`)
+            throw fail(
+              'device_has_open_bill',
+              `This device still leads to bill ${open.saleReference}. Close it first.`,
+            )
           }
           if (bindings().some((b) => b.saleId === sale.saleId && b.endedAt === null)) {
             throw fail('sale_already_bound', 'This bill already leads from another device.')
@@ -666,7 +725,8 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
       run(() => {
         const actor = actorFor(merchantId, 'entry_devices:bind')
         const device = find(merchantId, deviceId)
-        if (!device || !visible(actor, device)) throw fail('not_found', 'This device could not be found.')
+        if (!device || !visible(actor, device))
+          throw fail('not_found', 'This device could not be found.')
         requireBindScope(actor, device)
         const open = openBinding(device.id)
         if (!open) throw fail('no_open_bill', 'This device has no bill to close.')
@@ -678,7 +738,10 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
 
   /** The sale reference of a stored mock sale: it is the public reference of the sale's payment request. */
   async function referenceOf(sale: StoredCodeSale): Promise<string | null> {
-    return ledger.paymentRequests.load().find((r) => r.id === sale.paymentRequestId)?.publicReference ?? null
+    return (
+      ledger.paymentRequests.load().find((r) => r.id === sale.paymentRequestId)?.publicReference ??
+      null
+    )
   }
 
   // ---- the customer's side -----------------------------------------------------------------------
@@ -709,11 +772,14 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
       return UNAVAILABLE
     }
     const active =
-      deviceStatus === 'ACTIVE' && claim.endedAt === null && new Date(claim.expiresAt).getTime() > now()
+      deviceStatus === 'ACTIVE' &&
+      claim.endedAt === null &&
+      new Date(claim.expiresAt).getTime() > now()
     return active
       ? {
           state: 'CLAIMED',
-          message: 'This is your bill. Pay it with the code shown; the bank confirms the payment, not this page.',
+          message:
+            'This is your bill. Pay it with the code shown; the bank confirms the payment, not this page.',
           merchantDisplayName: sale.merchantDisplayName,
           sale,
           claim: { active: true, expiresAt: claim.expiresAt, endReason: null, claimToken: issued },
@@ -727,7 +793,8 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
           claim: {
             active: false,
             expiresAt: claim.expiresAt,
-            endReason: claim.endReason ?? (deviceStatus === 'ACTIVE' ? 'EXPIRED' : `DEVICE_${deviceStatus}`),
+            endReason:
+              claim.endReason ?? (deviceStatus === 'ACTIVE' ? 'EXPIRED' : `DEVICE_${deviceStatus}`),
             claimToken: null,
           },
         }
@@ -754,7 +821,8 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
     }
     return {
       state: 'READY',
-      message: 'A bill is ready here. Choose "Show my bill" to see it. Opening this page does not take it.',
+      message:
+        'A bill is ready here. Choose "Show my bill" to see it. Opening this page does not take it.',
       merchantDisplayName: merchantName(device.merchantId),
       sale: null,
       claim: null,
@@ -793,12 +861,17 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
       const mine = holderOf(device, claimToken)
       if (mine && mine.endedAt === null) {
         const renewed = { ...mine, expiresAt: iso(now() + CLAIM_TTL_MS) }
-        save(MOCK_STORAGE_KEYS.entryClaims, claims().map((c) => (c.id === mine.id ? renewed : c)))
+        save(
+          MOCK_STORAGE_KEYS.entryClaims,
+          claims().map((c) => (c.id === mine.id ? renewed : c)),
+        )
         return forHolder(renewed, null)
       }
       const binding = openBinding(device.id)
-      if (!binding || TERMINAL.includes(await saleStatus(binding.saleReference))) return forStranger(device)
-      if (claims().some((c) => c.deviceId === device.id && c.endedAt === null)) return forStranger(device)
+      if (!binding || TERMINAL.includes(await saleStatus(binding.saleReference)))
+        return forStranger(device)
+      if (claims().some((c) => c.deviceId === device.id && c.endedAt === null))
+        return forStranger(device)
       // The browser may propose its own token (so a lost answer is recoverable); it is used only if no claim anywhere has it.
       const proposed =
         Boolean(claimToken) &&
@@ -828,7 +901,9 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
       if (mine && mine.endedAt === null) {
         save(
           MOCK_STORAGE_KEYS.entryClaims,
-          claims().map((c) => (c.id === mine.id ? { ...c, endedAt: iso(), endReason: 'RELEASED' } : c)),
+          claims().map((c) =>
+            c.id === mine.id ? { ...c, endedAt: iso(), endReason: 'RELEASED' } : c,
+          ),
         )
       }
       const after = holderOf(device, claimToken)

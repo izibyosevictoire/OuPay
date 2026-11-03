@@ -45,6 +45,8 @@ export function useEntryDevices(status?: EntryDeviceStatus) {
     queryKey: entryDeviceKeys.list(merchantId, status),
     queryFn: () => entryDeviceService.listDevices(merchantId, { status }),
     retry: false,
+    // Who is looking at a bill right now changes by the minute: never show a minute-old answer.
+    staleTime: 0,
     refetchInterval: (query) =>
       query.state.data?.some((device) => device.binding !== null) ? DEVICE_POLL_MS : false,
   })
@@ -121,7 +123,13 @@ export function useChangeDeviceStatus(deviceId: string) {
   const merchantId = useSelectedMerchantId()
   const invalidate = useInvalidate()
   return useMutation({
-    mutationFn: ({ action, input }: { action: DeviceStatusAction; input: EntryDeviceStatusInput }) =>
+    mutationFn: ({
+      action,
+      input,
+    }: {
+      action: DeviceStatusAction
+      input: EntryDeviceStatusInput
+    }) =>
       action === 'suspend'
         ? entryDeviceService.suspendDevice(merchantId, deviceId, input)
         : action === 'reactivate'
@@ -167,6 +175,9 @@ export function usePublicEntry(token: string, claim: string | null) {
     queryKey: publicEntryKey(token, claim),
     queryFn: () => publicEntryService.resolve(token, claim),
     retry: false,
+    // Whether the payment point is ready, busy or idle must never come from a cache: every visit asks again.
+    staleTime: 0,
+    gcTime: 0,
     refetchInterval: (query) => {
       const entry: PublicEntry | undefined = query.state.data
       if (!entry) return false
@@ -174,7 +185,8 @@ export function usePublicEntry(token: string, claim: string | null) {
         return CUSTOMER_POLL_MS
       }
       if (entry.state === 'CLAIMED' || entry.state === 'SESSION_ENDED') {
-        const open = entry.sale?.status === 'AWAITING_PAYMENT' || entry.sale?.status === 'PARTIALLY_PAID'
+        const open =
+          entry.sale?.status === 'AWAITING_PAYMENT' || entry.sale?.status === 'PARTIALLY_PAID'
         return open ? CUSTOMER_POLL_MS : false
       }
       return false
