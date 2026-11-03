@@ -30,6 +30,10 @@ export const MOCK_STORAGE_KEYS = {
   catalogTax: 'oupay.mock.catalogTax',
   collectionCodes: 'oupay.mock.collectionCodes',
   collectionCodeAssignments: 'oupay.mock.collectionCodeAssignments',
+  entryDevices: 'oupay.mock.entryDevices',
+  entryDeviceAssignments: 'oupay.mock.entryDeviceAssignments',
+  entryBindings: 'oupay.mock.entryBindings',
+  entryClaims: 'oupay.mock.entryClaims',
   demoSession: 'oupay.mock.demoSession',
   schemaVersion: 'oupay.mock.schemaVersion',
 } as const

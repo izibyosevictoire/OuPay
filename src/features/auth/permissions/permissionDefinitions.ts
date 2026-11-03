@@ -57,6 +57,12 @@ export const PERMISSION_DEFINITIONS = {
   // Equity activation (KYC): the owner's alone. It holds a representative's identity details and the consent that covers them, so
   // neither managers nor cashiers may read or change any of it.
   'kyc:manage': { OWNER: ALL, MANAGER: NONE, CASHIER: NONE },
+  // Payment-entry devices (static QR, NFC tag, NFC bracelet): a stable doorway to ONE prepared bill. Viewing: a cashier sees only
+  // the devices assigned to them (and shared ones of their branches). Registering, reassigning, suspending and revoking is the
+  // owner's, and a manager's only for branches they are assigned to. Giving a device a bill is the cashier's own sales only.
+  'entry_devices:view': { OWNER: ALL, MANAGER: ALL, CASHIER: LIMITED },
+  'entry_devices:manage': { OWNER: ALL, MANAGER: LIMITED, CASHIER: NONE },
+  'entry_devices:bind': { OWNER: ALL, MANAGER: LIMITED, CASHIER: LIMITED },
   'reports:view': { OWNER: ALL, MANAGER: ALL, CASHIER: NONE },
   'banking:manage': { OWNER: ALL, MANAGER: NONE, CASHIER: NONE },
 } as const satisfies Record<string, RoleGrants>

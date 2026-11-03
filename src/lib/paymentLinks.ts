@@ -26,6 +26,15 @@ export const buildCodeSaleUrl = (saleReference: string, baseUrl = getPublicPayme
   `${baseUrl}/code-sale/${saleReference}`
 export const buildLocalCodeSalePath = (saleReference: string) => `/code-sale/${saleReference}`
 
+/**
+ * The PERMANENT entry URL of a payment-entry device (static QR, NFC tag or bracelet): the base plus the device's opaque path (`/e/{token}`).
+ * A QR code and an NFC tag of the same device carry EXACTLY this string. It is a public identifier, not a credential: it contains no bank
+ * detail, amount or person, and revoking the device disables it on the server.
+ */
+export const buildEntryUrl = (entryPath: string, baseUrl = getPublicPaymentBaseUrl()) =>
+  `${baseUrl}${entryPath}`
+export const buildLocalEntryPath = (entryPath: string) => entryPath
+
 /** The same page inside this app, so the demo can be opened locally. */
 export const buildLocalProfilePath = (paymentProfileId: string) => `/p/${paymentProfileId}`
 export const buildLocalRequestPath = (paymentProfileId: string, publicReference: string) =>

@@ -83,6 +83,7 @@ describe('invitation acceptance', () => {
       'Assigned invoices',
       'Payment confirmations',
       'My payment links',
+      'My payment points',
       'Collection codes',
       'Settings',
     ])

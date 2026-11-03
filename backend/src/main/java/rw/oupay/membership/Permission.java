@@ -45,7 +45,13 @@ public enum Permission {
     /** Request codes, record a bank request, suspend or deactivate: provisioning is the owner's, like bank linkage. Never approves. */
     COLLECTION_CODES_MANAGE("collection_codes:manage", all(), none(), none()),
     /** Equity KYC onboarding: representative identity, answers, consent and documents. Owner only; never a manager or a cashier. */
-    KYC_MANAGE("kyc:manage", all(), none(), none());
+    KYC_MANAGE("kyc:manage", all(), none(), none()),
+    /** See payment-entry devices (static QR, NFC tag, NFC bracelet). A cashier sees only the devices assigned to them. */
+    ENTRY_DEVICES_VIEW("entry_devices:view", all(), all(), limited()),
+    /** Register, reassign, suspend and revoke devices. A manager only for branches they are assigned to; never a cashier. */
+    ENTRY_DEVICES_MANAGE("entry_devices:manage", all(), limited(), none()),
+    /** Lead a device to a prepared bill and close that again. A cashier only with their own sales; a manager only at their own branches. */
+    ENTRY_DEVICES_BIND("entry_devices:bind", all(), limited(), limited());
 
     public enum Scope { ALL, LIMITED }
 
