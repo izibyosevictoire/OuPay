@@ -1,0 +1,27 @@
+# The demonstration seeder profile (R9). Never combined with prod: the application refuses to start if it is (DemoSeedStartupGuard).
+#
+#   mvn spring-boot:run -Dspring-boot.run.profiles=demo-seed        (see docs/demo-seed.md for the settings it needs)
+#
+# This file deliberately does NOT set oupay.demo-seed.enabled, the database confirmation, the allowed hosts or any password: those are supplied
+# explicitly by the operator at run time. It only makes the run quiet and self-contained: bound to loopback on a random port, nothing scheduled,
+# mail kept in the in-memory sink (so no real email can leave), the simulator off, and the process exits after the seed.
+server:
+  port: 0
+  address: 127.0.0.1
+oupay:
+  demo-seed:
+    run-on-startup: true
+    exit-after-run: true
+  email:
+    provider: sink
+    sink-endpoint-enabled: false
+    dispatcher:
+      enabled: false
+  housekeeping:
+    enabled: false
+  pos:
+    fulfilment:
+      enabled: false
+  integrations:
+    simulated:
+      enabled: false
