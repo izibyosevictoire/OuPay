@@ -1,0 +1,36 @@
+# The sample-data importer profile (R9b). Never combined with prod or demo-seed: the application refuses to start if it is (SampleImportStartupGuard).
+#
+#   mvn spring-boot:run -Dspring-boot.run.profiles=sample-import        (see docs/sample-data-import.md for the settings it needs)
+#
+# This file deliberately does NOT set oupay.sample-import.enabled, the merchant, the owner, any password or the confirmation: those are supplied
+# explicitly by the operator at run time. It only makes the run quiet, bounded and safe to point at a shared database:
+#   * the schema is NEVER migrated from here (the importer checks the database matches this build and refuses otherwise);
+#   * nothing is scheduled: no email dispatcher, no housekeeping, no fulfilment worker, no simulator, so nothing but the import touches the database;
+#   * invitation emails are only QUEUED (the deployed service's dispatcher sends them); nothing is sent from the operator's machine;
+#   * the process listens on loopback only, on a random port, and exits when the import ends.
+server:
+  port: 0
+  address: 127.0.0.1
+spring:
+  flyway:
+    enabled: false
+  datasource:
+    hikari:
+      maximum-pool-size: 3
+      minimum-idle: 1
+oupay:
+  sample-import:
+    run-on-startup: true
+  email:
+    provider: sink
+    sink-endpoint-enabled: false
+    dispatcher:
+      enabled: false
+  housekeeping:
+    enabled: false
+  pos:
+    fulfilment:
+      enabled: false
+  integrations:
+    simulated:
+      enabled: false
