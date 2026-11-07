@@ -35,6 +35,7 @@ import { CatalogItemDetailsDialog } from './CatalogItemDetailsDialog'
 import { CatalogItemFormDialog } from './CatalogItemFormDialog'
 import { CatalogStatusDialog } from './CatalogStatusDialog'
 import { useCatalogItems } from './catalogQueries'
+import { ExampleData } from '@/features/examples/ExampleData'
 
 type TypeFilter = 'ALL' | CatalogItemType
 type StatusFilter = 'ALL' | 'ACTIVE' | 'INACTIVE'
@@ -304,6 +305,7 @@ function CatalogContent() {
           }}
         />
       )}
+      <ExampleData topic="catalog" />
     </div>
   )
 }

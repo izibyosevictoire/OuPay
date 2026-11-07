@@ -35,6 +35,7 @@ import {
   useEntryDevices,
   type DeviceStatusAction,
 } from './entryDeviceQueries'
+import { ExampleData } from '@/features/examples/ExampleData'
 
 type Dialog =
   | { kind: 'assign' | 'bind' | 'unbind'; device: EntryDevice }
@@ -146,6 +147,7 @@ export function EntryDevicesPage() {
       {dialog?.kind === 'unbind' && (
         <UnbindSaleDialog open onOpenChange={close} device={dialog.device} />
       )}
+      <ExampleData topic="paymentPoints" />
     </div>
   )
 }

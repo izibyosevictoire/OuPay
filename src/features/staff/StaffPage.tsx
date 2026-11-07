@@ -25,6 +25,7 @@ import {
 } from './StaffMemberDialogs'
 import { StaffRowActions } from './StaffRowActions'
 import { useStaff } from './useStaffQueries'
+import { ExampleData } from '@/features/examples/ExampleData'
 
 type DialogState =
   | { type: 'invite'; defaults?: InviteDefaults }
@@ -329,6 +330,7 @@ export function StaffPage() {
           onOpenChange={closeDialog}
         />
       )}
+      <ExampleData topic="staff" />
     </div>
   )
 }

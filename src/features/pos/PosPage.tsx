@@ -49,6 +49,7 @@ import {
 import { PosBillingReview, PosSalePanel } from './PosBilling'
 import { FulfilmentExceptionsCard } from './PosFulfilment'
 import { attemptFor, forgetAttempt, forgetSaleId, loadSaleId, rememberSaleId } from './posSession'
+import { ExampleData } from '@/features/examples/ExampleData'
 
 const linkClass = 'font-medium text-primary hover:underline'
 
@@ -818,6 +819,7 @@ export function PosPage() {
       />
       {/* Keyed by business and person: switching either never shows another's cart. */}
       <PosBody key={scope} scope={scope} />
+      <ExampleData topic="pos" />
     </div>
   )
 }

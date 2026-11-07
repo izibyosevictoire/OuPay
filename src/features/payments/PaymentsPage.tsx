@@ -28,6 +28,7 @@ import {
 import { isCodePayment } from './codePayment'
 import { useAllocations, useBankAttributions, useBankTransactions } from './paymentQueries'
 import { hasUnappliedMoney, referenceOf, viewNeedsReview, whoOf } from './transactionHelpers'
+import { ExampleData } from '@/features/examples/ExampleData'
 
 type TabId = 'review' | 'unapplied' | 'partial' | 'history'
 
@@ -301,6 +302,7 @@ export function PaymentsPage() {
           onOpenChange={() => setDialog(null)}
         />
       )}
+      <ExampleData topic="payments" />
     </div>
   )
 }

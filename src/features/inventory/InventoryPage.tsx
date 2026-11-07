@@ -30,6 +30,7 @@ import {
   useStockableGoods,
 } from './inventoryQueries'
 import type { StockEntryKind } from './inventorySchemas'
+import { ExampleData } from '@/features/examples/ExampleData'
 
 type Tab = 'stock' | 'movements'
 
@@ -210,6 +211,7 @@ function InventoryContent() {
           }}
         />
       )}
+      <ExampleData topic="inventory" />
     </div>
   )
 }
