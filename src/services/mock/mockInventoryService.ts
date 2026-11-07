@@ -1,3 +1,4 @@
+import { ACTIVE_SEEDS } from './seeds'
 import { getPermissionScope, hasPermission } from '@/features/auth/permissions/permissions'
 import type { Permission } from '@/features/auth/permissions/permissionDefinitions'
 import { INVENTORY_MAX_REASON, INVENTORY_MAX_REFERENCE, UUID_PATTERN } from '@/constants/inventory'
@@ -33,12 +34,9 @@ import { newId } from './ledger/mockLedgerStore'
 import {
   CANONICAL_UNIT,
   CATALOG_UNITS,
-  SAMPLE_CATALOG_ITEMS,
   type StoredCatalogItem,
 } from './sampleCatalog'
 import {
-  SAMPLE_INVENTORY_BALANCES,
-  SAMPLE_STOCK_MOVEMENTS,
   type StoredBalance,
   type StoredMovement,
 } from './sampleInventory'
@@ -91,15 +89,15 @@ export function createMockInventoryService(options: MockInventoryServiceOptions)
   const run = createOperationRunner(options.delayInMilliseconds ?? 350)
 
   const balances = () =>
-    store.loadRecords<StoredBalance>(MOCK_STORAGE_KEYS.inventoryBalances, SAMPLE_INVENTORY_BALANCES)
+    store.loadRecords<StoredBalance>(MOCK_STORAGE_KEYS.inventoryBalances, ACTIVE_SEEDS.inventoryBalances)
   const saveBalances = (all: StoredBalance[]) =>
     store.saveRecords(MOCK_STORAGE_KEYS.inventoryBalances, all)
   const movements = () =>
-    store.loadRecords<StoredMovement>(MOCK_STORAGE_KEYS.inventoryMovements, SAMPLE_STOCK_MOVEMENTS)
+    store.loadRecords<StoredMovement>(MOCK_STORAGE_KEYS.inventoryMovements, ACTIVE_SEEDS.inventoryMovements)
   const saveMovements = (all: StoredMovement[]) =>
     store.saveRecords(MOCK_STORAGE_KEYS.inventoryMovements, all)
   const catalogItems = () =>
-    store.loadRecords<StoredCatalogItem>(MOCK_STORAGE_KEYS.catalogItems, SAMPLE_CATALOG_ITEMS)
+    store.loadRecords<StoredCatalogItem>(MOCK_STORAGE_KEYS.catalogItems, ACTIVE_SEEDS.catalogItems)
 
   const nextSeq = () =>
     Math.max(0, ...balances().map((b) => b.seq), ...movements().map((m) => m.seq)) + 1

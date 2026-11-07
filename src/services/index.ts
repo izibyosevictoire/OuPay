@@ -1,3 +1,4 @@
+import { DEMO_EXPERIENCE } from '@/lib/demoExperience'
 import { DEMO_TOOLS_BUILD } from '@/lib/demoTools'
 import type { AuthService } from './authService'
 import type { BankSimulatorService } from './bankSimulatorService'
@@ -57,6 +58,7 @@ import { createMockInvoiceService } from './mock/mockInvoiceService'
 import { createMockCollectionCodeService } from './mock/mockCollectionCodeService'
 import { createMockInventoryService } from './mock/mockInventoryService'
 import { createMockPosService } from './mock/mockPosService'
+import { createMockReportsService } from './mock/mockReportsService'
 import { createMockMerchantService } from './mock/mockMerchantService'
 import { createMockNotificationService } from './mock/mockNotificationService'
 import { createMockPaymentProfileService } from './mock/mockPaymentProfileService'
@@ -125,7 +127,8 @@ function createMockServices(): Services {
     branchService: createMockBranchService({ authStore: mockAuthStore }),
     staffService: createMockStaffService({ authStore: mockAuthStore }),
     dashboardService: createMockDashboardService(shared),
-    reportsService: null,
+    // Only the separate demo build shows a financial report, derived from the same demo ledger; other mock builds keep saying it needs the server.
+    reportsService: DEMO_EXPERIENCE ? createMockReportsService(shared) : null,
     invoiceService: mockInvoiceService,
     // The demo checkout goes through the very same mock invoice service and ledger as every other screen.
     checkoutService: createMockCheckoutService({ ...shared, invoiceService: mockInvoiceService }),

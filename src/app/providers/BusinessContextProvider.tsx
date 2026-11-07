@@ -8,10 +8,12 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { DEMO_EXPERIENCE } from '@/lib/demoExperience'
 import type { BusinessContextValue } from '@/types/businessContext'
 import { useAuth } from './AuthProvider'
 
-const STORAGE_KEY = 'oupay.selectedMerchant'
+// The demo experience keeps its own selection, in its own namespace, so it can never read or overwrite another build's.
+const STORAGE_KEY = DEMO_EXPERIENCE ? 'oupay.demo.selectedMerchant' : 'oupay.selectedMerchant'
 
 interface StoredSelection {
   userId: string

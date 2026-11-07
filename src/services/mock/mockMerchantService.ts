@@ -1,9 +1,9 @@
+import { ACTIVE_SEEDS } from './seeds'
 import { MerchantServiceError, type MerchantService } from '@/services/merchantService'
 import type { BusinessMembership } from '@/types/auth'
 import type { Merchant, MerchantSettings } from '@/types/merchant'
 import { createMockAuthStore, type MockAuthStore } from './mockAuthStore'
 import { MOCK_STORAGE_KEYS } from './mockStorageKeys'
-import { SAMPLE_MERCHANTS } from './sampleMerchants'
 import { simulateNetworkDelay } from './simulateNetwork'
 
 const STORAGE_KEY = MOCK_STORAGE_KEYS.merchants
@@ -60,7 +60,7 @@ export function loadStoredMerchants(storage: MerchantStorage): Merchant[] {
       // Corrupt data: start again from the sample records.
     }
   }
-  return withOperatingMode(structuredClone(SAMPLE_MERCHANTS))
+  return withOperatingMode(structuredClone(ACTIVE_SEEDS.merchants))
 }
 
 export function createMockMerchantService(

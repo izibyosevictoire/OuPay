@@ -1,3 +1,4 @@
+import { ACTIVE_SEEDS } from './seeds'
 import { hasPermission } from '@/features/auth/permissions/permissions'
 import type { Permission } from '@/features/auth/permissions/permissionDefinitions'
 import {
@@ -37,8 +38,6 @@ import { newId } from './ledger/mockLedgerStore'
 import {
   CANONICAL_UNIT,
   CATALOG_UNITS,
-  SAMPLE_CATALOG_ITEMS,
-  SAMPLE_CATALOG_PRICES,
   type StoredCatalogItem,
   type StoredCatalogPackage,
   type StoredPriceVersion,
@@ -46,7 +45,6 @@ import {
 import { MOCK_STORAGE_KEYS } from './mockStorageKeys'
 import {
   MOCK_APPROVED_TAX_TREATMENTS,
-  SAMPLE_CATALOG_TAX,
   type StoredCatalogTax,
 } from './sampleCatalogTax'
 
@@ -89,11 +87,11 @@ export function createMockCatalogService(options: MockCatalogServiceOptions): Ca
   const run = createOperationRunner(options.delayInMilliseconds ?? 350)
 
   const items = () =>
-    store.loadRecords<StoredCatalogItem>(MOCK_STORAGE_KEYS.catalogItems, SAMPLE_CATALOG_ITEMS)
+    store.loadRecords<StoredCatalogItem>(MOCK_STORAGE_KEYS.catalogItems, ACTIVE_SEEDS.catalogItems)
   const saveItems = (all: StoredCatalogItem[]) =>
     store.saveRecords(MOCK_STORAGE_KEYS.catalogItems, all)
   const prices = () =>
-    store.loadRecords<StoredPriceVersion>(MOCK_STORAGE_KEYS.catalogPrices, SAMPLE_CATALOG_PRICES)
+    store.loadRecords<StoredPriceVersion>(MOCK_STORAGE_KEYS.catalogPrices, ACTIVE_SEEDS.catalogPrices)
   const savePrices = (all: StoredPriceVersion[]) =>
     store.saveRecords(MOCK_STORAGE_KEYS.catalogPrices, all)
 
@@ -127,7 +125,7 @@ export function createMockCatalogService(options: MockCatalogServiceOptions): Ca
   }
 
   const taxRecords = () =>
-    store.loadRecords<StoredCatalogTax>(MOCK_STORAGE_KEYS.catalogTax, SAMPLE_CATALOG_TAX)
+    store.loadRecords<StoredCatalogTax>(MOCK_STORAGE_KEYS.catalogTax, ACTIVE_SEEDS.catalogTax)
   const taxOf = (item: StoredCatalogItem): ItemTax => {
     const found = taxRecords().find((t) => t.merchantId === item.merchantId && t.itemId === item.id)
     return {

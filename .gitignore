@@ -1,6 +1,7 @@
 # Dependencies and build output
 node_modules
 dist
+dist-demo
 build
 coverage
 backend/target
@@ -10,6 +11,8 @@ backend/target
 .env
 .env.*
 !.env.example
+# The public, secret-free flags of the demo build (R9c)
+!.env.demo
 *.pem
 *.key
 *.jks

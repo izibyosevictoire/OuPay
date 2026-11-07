@@ -1,3 +1,4 @@
+import { ACTIVE_SEEDS } from '../seeds'
 import type { BankConnection, PaymentDestination } from '@/types/banking'
 import type { AppNotification } from '@/types/notification'
 import type {
@@ -11,13 +12,6 @@ import type { PaymentProfile } from '@/types/paymentProfile'
 import type { MockAuthStore } from '../mockAuthStore'
 import { MOCK_STORAGE_KEYS } from '../mockStorageKeys'
 import {
-  SAMPLE_AUDIT_ENTRIES,
-  SAMPLE_BANK_CONNECTIONS,
-  SAMPLE_BANK_TRANSACTIONS,
-  SAMPLE_PAYMENT_ALLOCATIONS,
-  SAMPLE_PAYMENT_DESTINATIONS,
-  SAMPLE_PAYMENT_PROFILES,
-  SAMPLE_PAYMENT_REQUESTS,
   type StoredPaymentRequest,
 } from '../sampleLedger'
 
@@ -39,30 +33,30 @@ export function createLedgerStore(store: MockAuthStore) {
   return {
     bankConnections: collection<BankConnection>(
       MOCK_STORAGE_KEYS.bankConnections,
-      SAMPLE_BANK_CONNECTIONS,
+      ACTIVE_SEEDS.bankConnections,
     ),
     paymentDestinations: collection<PaymentDestination>(
       MOCK_STORAGE_KEYS.paymentDestinations,
-      SAMPLE_PAYMENT_DESTINATIONS,
+      ACTIVE_SEEDS.paymentDestinations,
     ),
     bankTransactions: collection<BankTransaction>(
       MOCK_STORAGE_KEYS.bankTransactions,
-      SAMPLE_BANK_TRANSACTIONS,
+      ACTIVE_SEEDS.bankTransactions,
     ),
     allocations: collection<PaymentAllocation>(
       MOCK_STORAGE_KEYS.paymentAllocations,
-      SAMPLE_PAYMENT_ALLOCATIONS,
+      ACTIVE_SEEDS.paymentAllocations,
     ),
     bankEvents: collection<BankEventRecord>(MOCK_STORAGE_KEYS.bankEvents, []),
-    auditEntries: collection<AuditEntry>(MOCK_STORAGE_KEYS.auditEntries, SAMPLE_AUDIT_ENTRIES),
+    auditEntries: collection<AuditEntry>(MOCK_STORAGE_KEYS.auditEntries, ACTIVE_SEEDS.auditEntries),
     notifications: collection<AppNotification>(MOCK_STORAGE_KEYS.notifications, []),
     paymentProfiles: collection<PaymentProfile>(
       MOCK_STORAGE_KEYS.paymentProfiles,
-      SAMPLE_PAYMENT_PROFILES,
+      ACTIVE_SEEDS.paymentProfiles,
     ),
     paymentRequests: collection<StoredPaymentRequest>(
       MOCK_STORAGE_KEYS.paymentRequests,
-      SAMPLE_PAYMENT_REQUESTS,
+      ACTIVE_SEEDS.paymentRequests,
     ),
     refunds: collection<RefundRecord>(MOCK_STORAGE_KEYS.refunds, []),
   }

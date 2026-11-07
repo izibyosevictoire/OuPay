@@ -1,15 +1,11 @@
+import { DEMO_EXPERIENCE } from '@/lib/demoExperience'
+import { initialiseDemoData } from './demoData'
+import { ACTIVE_SEEDS } from './seeds'
 import type { BusinessMembership, User } from '@/types/auth'
 import type { Branch, BranchAssignment } from '@/types/branch'
 import type { Invoice } from '@/types/invoice'
 import type { StaffInvitation } from '@/types/staff'
 import { MOCK_SCHEMA_VERSION, MOCK_STORAGE_KEYS } from './mockStorageKeys'
-import { DEMO_MEMBERSHIPS, DEMO_USERS } from './sampleAccounts'
-import { SAMPLE_INVOICES } from './sampleInvoices'
-import {
-  SAMPLE_BRANCH_ASSIGNMENTS,
-  SAMPLE_BRANCHES,
-  SAMPLE_INVITATIONS,
-} from './sampleOrganization'
 
 export type KeyValueStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
 
@@ -88,6 +84,9 @@ export function createMockAuthStore(options: MockAuthStoreOptions = {}): MockAut
     persistent.setItem(MOCK_STORAGE_KEYS.schemaVersion, MOCK_SCHEMA_VERSION)
   }
 
+  // The demo experience loads its example data ONCE, the first time it opens, and never again: from then on the stored records are the demo.
+  if (DEMO_EXPERIENCE) initialiseDemoData(persistent, ACTIVE_SEEDS)
+
   const load = <T>(key: string, seed: T[]): T[] => {
     const stored = persistent.getItem(key)
     if (stored) {
@@ -113,22 +112,22 @@ export function createMockAuthStore(options: MockAuthStoreOptions = {}): MockAut
   }
 
   return {
-    loadUsers: () => load(USERS_KEY, DEMO_USERS),
+    loadUsers: () => load(USERS_KEY, ACTIVE_SEEDS.users),
     saveUsers: (users) => persistent.setItem(USERS_KEY, JSON.stringify(users)),
-    loadMemberships: () => load(MEMBERSHIPS_KEY, DEMO_MEMBERSHIPS),
+    loadMemberships: () => load(MEMBERSHIPS_KEY, ACTIVE_SEEDS.memberships),
     saveMemberships: (memberships) =>
       persistent.setItem(MEMBERSHIPS_KEY, JSON.stringify(memberships)),
 
-    loadBranches: () => load(BRANCHES_KEY, SAMPLE_BRANCHES),
+    loadBranches: () => load(BRANCHES_KEY, ACTIVE_SEEDS.branches),
     saveBranches: (branches) => persistent.setItem(BRANCHES_KEY, JSON.stringify(branches)),
-    loadBranchAssignments: () => load(BRANCH_ASSIGNMENTS_KEY, SAMPLE_BRANCH_ASSIGNMENTS),
+    loadBranchAssignments: () => load(BRANCH_ASSIGNMENTS_KEY, ACTIVE_SEEDS.branchAssignments),
     saveBranchAssignments: (assignments) =>
       persistent.setItem(BRANCH_ASSIGNMENTS_KEY, JSON.stringify(assignments)),
-    loadInvitations: () => load(INVITATIONS_KEY, SAMPLE_INVITATIONS),
+    loadInvitations: () => load(INVITATIONS_KEY, ACTIVE_SEEDS.invitations),
     saveInvitations: (invitations) =>
       persistent.setItem(INVITATIONS_KEY, JSON.stringify(invitations)),
 
-    loadInvoices: () => load(INVOICES_KEY, SAMPLE_INVOICES),
+    loadInvoices: () => load(INVOICES_KEY, ACTIVE_SEEDS.invoices),
     saveInvoices: (invoices) => persistent.setItem(INVOICES_KEY, JSON.stringify(invoices)),
 
     loadRecords: (key, seed) => load(key, seed),

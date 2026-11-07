@@ -1,4 +1,5 @@
 import { FlaskConical } from 'lucide-react'
+import { DEMO_EXPERIENCE } from '@/lib/demoExperience'
 import { API_MODE } from '@/services/http/apiConfig'
 import { DEMO_ACCOUNT_DESCRIPTIONS } from '@/services/mock/sampleAccounts'
 import { DEMO_PASSWORD } from '@/services/mock/sampleAccounts'
@@ -7,6 +8,8 @@ import { DEMO_PASSWORD } from '@/services/mock/sampleAccounts'
 export function DemoAccountsNotice() {
   // The demo accounts only exist in demo mode; the real backend has none.
   if (API_MODE === 'http') return null
+  // The demo experience has its own entry screen with its own accounts.
+  if (DEMO_EXPERIENCE) return null
   return (
     <details className="rounded-lg border border-info/20 bg-info-soft text-sm text-info">
       <summary className="flex min-h-10 cursor-pointer items-center gap-2 px-3 font-medium">

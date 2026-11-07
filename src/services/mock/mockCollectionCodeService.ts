@@ -1,3 +1,4 @@
+import { ACTIVE_SEEDS } from './seeds'
 import {
   COLLECTION_CODE_MAX_BANK_REF,
   COLLECTION_CODE_MAX_LABEL,
@@ -25,8 +26,6 @@ import type { MockAuthStore } from './mockAuthStore'
 import { createLedgerStore, newId } from './ledger/mockLedgerStore'
 import { createOperationRunner, requireActor, type Actor } from './mockOrganizationAccess'
 import {
-  SAMPLE_CODE_ASSIGNMENTS,
-  SAMPLE_COLLECTION_CODES,
   type StoredCodeAssignment,
   type StoredCollectionCode,
 } from './sampleCollectionCodes'
@@ -72,14 +71,14 @@ export function createMockCollectionCodeService(
   const codes = () =>
     store.loadRecords<StoredCollectionCode>(
       MOCK_STORAGE_KEYS.collectionCodes,
-      SAMPLE_COLLECTION_CODES,
+      ACTIVE_SEEDS.collectionCodes,
     )
   const saveCodes = (all: StoredCollectionCode[]) =>
     store.saveRecords(MOCK_STORAGE_KEYS.collectionCodes, all)
   const assignments = () =>
     store.loadRecords<StoredCodeAssignment>(
       MOCK_STORAGE_KEYS.collectionCodeAssignments,
-      SAMPLE_CODE_ASSIGNMENTS,
+      ACTIVE_SEEDS.collectionCodeAssignments,
     )
   const saveAssignments = (all: StoredCodeAssignment[]) =>
     store.saveRecords(MOCK_STORAGE_KEYS.collectionCodeAssignments, all)
