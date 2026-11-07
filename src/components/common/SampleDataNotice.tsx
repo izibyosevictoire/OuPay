@@ -1,10 +1,25 @@
 import { Info } from 'lucide-react'
+import { DEMO_EXPERIENCE } from '@/lib/demoExperience'
 import { API_MODE } from '@/services/http/apiConfig'
 
 /** Makes it explicit that figures are mock data and not bank-verified. */
 export function SampleDataNotice() {
   // Server mode shows real, bank-verified data: the mock-data warning would be false there.
   if (API_MODE === 'http') return null
+  if (DEMO_EXPERIENCE) {
+    return (
+      <div
+        role="note"
+        className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning"
+      >
+        <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+        <p>
+          <strong className="font-semibold">Simulated demo data.</strong> These payments and totals are made up for the demo. They are not Equity
+          confirmations, and no real money moved.
+        </p>
+      </div>
+    )
+  }
   return (
     <div
       role="note"

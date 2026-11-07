@@ -1,3 +1,4 @@
+import { ACTIVE_SEEDS } from './seeds'
 import { hasPermission } from '@/features/auth/permissions/permissions'
 import {
   addExactDecimals,
@@ -22,7 +23,6 @@ import {
 import type { CodeSale } from '@/types/codeCheckout'
 import {
   MOCK_APPROVED_TAX_TREATMENTS,
-  SAMPLE_CATALOG_TAX,
   approvedLabelsOf,
   type StoredCatalogTax,
 } from './sampleCatalogTax'
@@ -57,12 +57,12 @@ import { createOperationRunner, requireActor, type Actor } from './mockOrganizat
 import {
   CANONICAL_UNIT,
   CATALOG_UNITS,
-  SAMPLE_CATALOG_ITEMS,
-  SAMPLE_CATALOG_PRICES,
   type StoredCatalogItem,
   type StoredPriceVersion,
 } from './sampleCatalog'
-import { SAMPLE_INVENTORY_BALANCES, type StoredBalance } from './sampleInventory'
+import {
+  type StoredBalance,
+} from './sampleInventory'
 import { MOCK_STORAGE_KEYS } from './mockStorageKeys'
 
 interface MockPosServiceOptions {
@@ -89,7 +89,7 @@ const MAX_SALE_DECIMALS = 3
 const MAX_INTEGRAL_DIGITS = 14
 const MAX_CANONICAL_DECIMALS = 6
 
-interface StoredPosDraft {
+export interface StoredPosDraft {
   id: string
   merchantId: string
   branchId: string
@@ -157,12 +157,12 @@ export function createMockPosService(options: MockPosServiceOptions): PosService
   const run = createOperationRunner(options.delayInMilliseconds ?? 300)
 
   const catalog = () =>
-    store.loadRecords<StoredCatalogItem>(MOCK_STORAGE_KEYS.catalogItems, SAMPLE_CATALOG_ITEMS)
+    store.loadRecords<StoredCatalogItem>(MOCK_STORAGE_KEYS.catalogItems, ACTIVE_SEEDS.catalogItems)
   const priceVersions = () =>
-    store.loadRecords<StoredPriceVersion>(MOCK_STORAGE_KEYS.catalogPrices, SAMPLE_CATALOG_PRICES)
+    store.loadRecords<StoredPriceVersion>(MOCK_STORAGE_KEYS.catalogPrices, ACTIVE_SEEDS.catalogPrices)
   const balances = () =>
-    store.loadRecords<StoredBalance>(MOCK_STORAGE_KEYS.inventoryBalances, SAMPLE_INVENTORY_BALANCES)
-  const drafts = () => store.loadRecords<StoredPosDraft>(MOCK_STORAGE_KEYS.posDrafts, [])
+    store.loadRecords<StoredBalance>(MOCK_STORAGE_KEYS.inventoryBalances, ACTIVE_SEEDS.inventoryBalances)
+  const drafts = () => store.loadRecords<StoredPosDraft>(MOCK_STORAGE_KEYS.posDrafts, ACTIVE_SEEDS.posDrafts)
   const saveDrafts = (all: StoredPosDraft[]) => store.saveRecords(MOCK_STORAGE_KEYS.posDrafts, all)
 
   const authorize = (merchantId: string): Actor => {
@@ -597,7 +597,7 @@ export function createMockPosService(options: MockPosServiceOptions): PosService
   // ---- billing (R7b) ----------------------------------------------------------------------------------------------------------------
 
   const taxRecords = () =>
-    store.loadRecords<StoredCatalogTax>(MOCK_STORAGE_KEYS.catalogTax, SAMPLE_CATALOG_TAX)
+    store.loadRecords<StoredCatalogTax>(MOCK_STORAGE_KEYS.catalogTax, ACTIVE_SEEDS.catalogTax)
   const posSales = () => store.loadRecords<StoredPosSale>(MOCK_STORAGE_KEYS.posSales, [])
 
   const toPosError = (error: unknown): never => {

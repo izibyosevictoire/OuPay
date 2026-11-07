@@ -1,3 +1,4 @@
+import { ACTIVE_SEEDS } from './seeds'
 import type { Permission } from '@/features/auth/permissions/permissionDefinitions'
 import {
   EntryDeviceServiceError,
@@ -36,7 +37,7 @@ interface MockEntryDeviceOptions {
   now?: () => number
 }
 
-interface StoredDevice {
+export interface StoredDevice {
   id: string
   merchantId: string
   deviceType: EntryDeviceType
@@ -53,7 +54,7 @@ interface StoredDevice {
   version: number
 }
 
-interface StoredAssignment {
+export interface StoredAssignment {
   id: string
   deviceId: string
   branchId: string
@@ -130,9 +131,9 @@ export function createMockEntryDevices(options: MockEntryDeviceOptions): {
   const now = options.now ?? (() => Date.now())
   const iso = (ms = now()) => new Date(ms).toISOString()
 
-  const devices = () => store.loadRecords<StoredDevice>(MOCK_STORAGE_KEYS.entryDevices, [])
+  const devices = () => store.loadRecords<StoredDevice>(MOCK_STORAGE_KEYS.entryDevices, ACTIVE_SEEDS.entryDevices)
   const assignments = () =>
-    store.loadRecords<StoredAssignment>(MOCK_STORAGE_KEYS.entryDeviceAssignments, [])
+    store.loadRecords<StoredAssignment>(MOCK_STORAGE_KEYS.entryDeviceAssignments, ACTIVE_SEEDS.entryDeviceAssignments)
   const bindings = () => store.loadRecords<StoredBinding>(MOCK_STORAGE_KEYS.entryBindings, [])
   const claims = () => store.loadRecords<StoredClaim>(MOCK_STORAGE_KEYS.entryClaims, [])
   const sales = () => store.loadRecords<StoredCodeSale>(MOCK_STORAGE_KEYS.codeSales, [])

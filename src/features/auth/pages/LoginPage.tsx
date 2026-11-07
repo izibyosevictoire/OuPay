@@ -13,9 +13,19 @@ import { Input } from '@/components/ui/input'
 import { PasswordInput } from '@/components/ui/password-input'
 import { AuthServiceError } from '@/services/authService'
 import { loginSchema, type LoginFormValues } from '../authSchemas'
+import { DEMO_EXPERIENCE, DEMO_URL } from '@/lib/demoExperience'
+import { DemoEntryPanel } from '@/features/demo/DemoEntryPanel'
 import { DemoAccountsNotice } from '../components/DemoAccountsNotice'
 
+/**
+ * In the separate demo build the front door is the demo entry (choose a person, open the pre-loaded supermarket). Everywhere else it is the
+ * ordinary sign-in.
+ */
 export function LoginPage() {
+  return DEMO_EXPERIENCE ? <DemoEntryPanel /> : <OrdinaryLoginPage />
+}
+
+function OrdinaryLoginPage() {
   const { login } = useAuth()
   const location = useLocation()
   const redirectState = location.state as LoginRedirectState | null
@@ -115,6 +125,14 @@ export function LoginPage() {
         </Link>
       </p>
       <DemoAccountsNotice />
+      {DEMO_URL && (
+        <p className="text-center text-sm text-muted-foreground">
+          Want to look around first?{' '}
+          <a href={DEMO_URL} target="_blank" rel="noopener noreferrer" className="rounded-sm font-medium text-primary hover:underline">
+            Try the demo (no real money moves)
+          </a>
+        </p>
+      )}
     </div>
   )
 }

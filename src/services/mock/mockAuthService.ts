@@ -1,3 +1,4 @@
+import { ACTIVE_SEEDS } from './seeds'
 import { AuthServiceError, type AuthService } from '@/services/authService'
 import type { AuthSession, User } from '@/types/auth'
 import { createMockAuthStore, type MockAuthStore } from './mockAuthStore'
@@ -5,7 +6,6 @@ import {
   DEMO_EXPIRED_RESET_TOKEN,
   DEMO_OUTAGE_EMAIL,
   DEMO_PASSWORD,
-  DEMO_USERS,
   DEMO_RESET_TARGET_EMAIL,
   DEMO_VALID_RESET_TOKEN,
   DEMO_VALID_VERIFICATION_TOKEN,
@@ -36,7 +36,7 @@ export function createMockAuthService(options: MockAuthServiceOptions = {}): Aut
 
   const demoPasswordsByEmail = new Map<string, string>(
     // PENDING users (invited by email, never signed up) have no credential at all.
-    DEMO_USERS.filter((user) => user.status === 'ACTIVE').map((user) => [
+    ACTIVE_SEEDS.users.filter((user) => user.status === 'ACTIVE').map((user) => [
       normalizeEmail(user.email),
       DEMO_PASSWORD,
     ]),

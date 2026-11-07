@@ -1,3 +1,4 @@
+import { ACTIVE_SEEDS } from './seeds'
 import {
   CODE_CHECKOUT_DEFAULT_DESCRIPTION,
   CODE_CHECKOUT_LIFETIME_MINUTES,
@@ -39,8 +40,6 @@ import { createOperationRunner, requireActor, type Actor } from './mockOrganizat
 import { newUniquePaymentReference } from './mockPaymentProfileService'
 import { MOCK_STORAGE_KEYS } from './mockStorageKeys'
 import {
-  SAMPLE_CODE_ASSIGNMENTS,
-  SAMPLE_COLLECTION_CODES,
   type StoredCodeAssignment,
   type StoredCollectionCode,
 } from './sampleCollectionCodes'
@@ -120,12 +119,12 @@ export function createMockCodeCheckout(options: MockCodeCheckoutOptions): {
   const codes = () =>
     store.loadRecords<StoredCollectionCode>(
       MOCK_STORAGE_KEYS.collectionCodes,
-      SAMPLE_COLLECTION_CODES,
+      ACTIVE_SEEDS.collectionCodes,
     )
   const assignments = () =>
     store.loadRecords<StoredCodeAssignment>(
       MOCK_STORAGE_KEYS.collectionCodeAssignments,
-      SAMPLE_CODE_ASSIGNMENTS,
+      ACTIVE_SEEDS.collectionCodeAssignments,
     )
 
   const actorFor = (merchantId: string): Actor => {
