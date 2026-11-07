@@ -15,6 +15,7 @@ import { BranchFormDialog } from './BranchFormDialog'
 import { BranchRowActions } from './BranchRowActions'
 import { BranchStatusDialog } from './BranchStatusDialog'
 import { useBranches } from './useBranchQueries'
+import { ExampleData } from '@/features/examples/ExampleData'
 
 type StatusFilter = 'ALL' | BranchStatus
 
@@ -217,6 +218,7 @@ export function BranchesPage() {
           onOpenChange={(open) => !open && setStatusTarget(null)}
         />
       )}
+      <ExampleData topic="branches" />
     </div>
   )
 }

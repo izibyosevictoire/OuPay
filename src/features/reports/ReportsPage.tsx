@@ -10,6 +10,7 @@ import { useSelectedMerchantId } from '@/features/branches/useBranchQueries'
 import { formatRwf } from '@/lib/format'
 import { reportsService } from '@/services'
 import type { ReportSummary } from '@/services/reportsService'
+import { ExampleData } from '@/features/examples/ExampleData'
 
 function kigaliToday(): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -235,6 +236,7 @@ export function ReportsPage() {
           </Card>
         </>
       )}
+      <ExampleData topic="reports" />
     </div>
   )
 }

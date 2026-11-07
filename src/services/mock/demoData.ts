@@ -2,7 +2,11 @@
 //
 // The demo keeps everything in the browser's own storage, in the `oupay.demo.*` namespace. Nothing here can reach a server, a database or a
 // real session: it only reads and writes the storage object it is given.
+import { KIGALI_FIXTURE_ANCHOR, rebaseSeedDates } from '@/lib/rebaseDates'
 import { MOCK_STORAGE_KEYS } from './mockStorageKeys'
+
+// Kept importable from here: the demo's own tests and callers use these names.
+export { KIGALI_FIXTURE_ANCHOR, rebaseSeedDates }
 import type { MockSeedSet } from './seeds'
 
 /** The minimal storage surface the demo needs (a `Storage`, or an in-memory stand-in in tests). */
@@ -16,32 +20,6 @@ export interface DemoStorage {
 const DEMO_SCOPED_PREFIXES = ['oupay.demo.', 'oupay.pos.', 'oupay.checkout.', 'oupay.codeCheckout.', 'oupay.kyc.', 'oupay.entry.'] as const
 
 const DAY_MS = 86_400_000
-const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
-
-/** The moment the fixtures were written for: the newest example event happens a little before it. */
-export const KIGALI_FIXTURE_ANCHOR = '2026-11-07T08:00:00+02:00'
-
-/**
- * Moves every date in the example data forward by a whole number of days, so the newest example is always about a day old whenever the demo
- * is opened (an invoice from "October 2026" would look broken a year later, and a "this month" report would be empty). Whole days, so every
- * time of day and every relationship between two records (a payment after its invoice, an assignment before its sale) is unchanged.
- */
-export function rebaseSeedDates<T>(value: T, days: number): T {
-  if (days <= 0) return value
-  const shift = (text: string): string => {
-    if (ISO_DATE_TIME.test(text)) return new Date(Date.parse(text) + days * DAY_MS).toISOString()
-    if (ISO_DATE.test(text)) return new Date(Date.parse(`${text}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10)
-    return text
-  }
-  const walk = (node: unknown): unknown => {
-    if (typeof node === 'string') return shift(node)
-    if (Array.isArray(node)) return node.map(walk)
-    if (node && typeof node === 'object') return Object.fromEntries(Object.entries(node).map(([key, child]) => [key, walk(child)]))
-    return node
-  }
-  return walk(value) as T
-}
 
 /**
  * Writes every example collection exactly once, the first time the demo opens (when it has no `demoInitialisedAt`). After that it never

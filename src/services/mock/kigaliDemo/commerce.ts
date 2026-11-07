@@ -8,11 +8,14 @@ import {
 import type { CatalogItemType, MeasurementDimension, MeasurementUnitCode } from '@/types/catalog'
 import type { PosPricedLine } from '@/types/pos'
 import type { StockMovementType } from '@/types/inventory'
-import { CANONICAL_UNIT, type StoredCatalogItem, type StoredPriceVersion } from '../sampleCatalog'
+import type { StoredCatalogItem, StoredPriceVersion } from '../sampleCatalog'
 import type { StoredCatalogTax } from '../sampleCatalogTax'
 import type { StoredBalance, StoredMovement } from '../sampleInventory'
 import type { StoredPosDraft } from '../mockPosService'
 import { KD, KD_PEOPLE } from './organization'
+
+/** The unit each dimension is stored in. Written here so these fixtures import no mock service code, only types. */
+const CANONICAL_UNIT: Record<MeasurementDimension, MeasurementUnitCode> = { COUNT: 'pc', MASS: 'g', VOLUME: 'ml', LENGTH: 'mm', AREA: 'mm2' }
 
 const at = (day: number, minute: number) =>
   `2026-10-${String(day).padStart(2, '0')}T09:${String(minute).padStart(2, '0')}:00+02:00`

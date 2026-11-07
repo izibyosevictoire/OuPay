@@ -22,6 +22,7 @@ import { isInvoiceOverdue, todayInKigali } from '@/lib/invoiceLifecycle'
 import type { Invoice, InvoicePaymentStatus, InvoiceStatus } from '@/types/invoice'
 import { summarizeInvoices } from './invoiceSummary'
 import { useInvoices } from './useInvoiceQueries'
+import { ExampleData } from '@/features/examples/ExampleData'
 
 type SortKey = 'NEWEST' | 'OLDEST' | 'HIGHEST' | 'LOWEST'
 
@@ -303,6 +304,7 @@ export function InvoicesPage() {
           }
         </QueryBoundary>
       </Card>
+      <ExampleData topic="invoices" />
     </div>
   )
 }

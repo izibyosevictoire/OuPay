@@ -9,6 +9,8 @@
  *   its own contract error type.
  */
 
+import { EXAMPLE_REFUSAL, referencesExampleData } from '@/lib/exampleData'
+
 export class HttpApiError extends Error {
   readonly status: number
   readonly code: string
@@ -91,6 +93,10 @@ export function createHttpClient({
     path: string,
     options: RequestOptions = {},
   ): Promise<T> {
+    // The built-in examples are never real: a request that names one is refused here, before anything leaves the browser or a CSRF token is fetched.
+    if (referencesExampleData(path) || referencesExampleData(options.query) || referencesExampleData(options.body)) {
+      throw new HttpApiError(0, 'example_data', EXAMPLE_REFUSAL)
+    }
     const headers: Record<string, string> = { Accept: 'application/json', ...options.headers }
     if (options.body !== undefined) headers['Content-Type'] = 'application/json'
     // The anonymous public API uses no cookies at all, so it needs (and gets) no CSRF token.

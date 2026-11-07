@@ -11,6 +11,7 @@ import { PaymentMethodBreakdown } from './components/PaymentMethodBreakdown'
 import { QuickActions } from './components/QuickActions'
 import { RecentInvoices } from './components/RecentInvoices'
 import { RecentTransactions } from './components/RecentTransactions'
+import { ExampleData } from '@/features/examples/ExampleData'
 
 export function DashboardPage() {
   const { scope } = usePermission('dashboard:view')
@@ -60,6 +61,7 @@ export function DashboardPage() {
           </div>
         </>
       )}
+      <ExampleData topic="dashboard" />
     </div>
   )
 }
